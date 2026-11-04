@@ -1,5 +1,7 @@
 # 单机部署（SSH 隧道）
 
+当前发布（2026-11-04）：服务端 **0.17.0** / `20261104-topics-02`；Android **versionCode 14** / `android-20261104-02`。备份 `/opt/pocket-agent/backups/pre-topics-20261104-02.tar.gz`。话题默认关闭，线上只读与 APK 下载哈希检查通过；未调用真实模型。详见[0.17 发布记录](../docs/release-0.17.md)。以下旧版本段落为历史记录。
+
 当前发布（2026-11-04）：服务端 **0.16.0** / `20261104-companion-01`；Android **0.16.0-debug / versionCode 13** / `android-20261104-01`。一致性备份 `/opt/pocket-agent/backups/pre-companion-20261104-01.tar.gz`。已完成线上只读检查和 APK 下载哈希检查，未调用真实模型。关怀 state.json 兼容读取 v1、后续写 v2，回退不可仅换旧二进制。详见[本次发布](../docs/release-0.16.md)。下文旧版本检查与发布段落为历史记录。
 
 2026-10-27 已部署至 `root@47.117.40.74`：Ubuntu 24.04 / Linux amd64。

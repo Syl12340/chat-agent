@@ -1,10 +1,8 @@
 # chat-agent
 
-开发进展（2026-11-04）：**0.17.0** 已实现共同话题的随机作息、有限网页筛选与双记录视图，默认关闭；本轮未部署。见[开发说明](docs/topics-0.17.md)。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
+当前发布为 **0.17.0**；Android 更新包为 **0.17.0-debug（versionCode 14）**。2026-11-04 已部署到现有服务器及更新通道，保留原包名、签名和设备身份。[本次发布](docs/release-0.17.md)。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
 
-线上已发布版本为 **0.16.0**；Android 更新包为 **0.16.0-debug（versionCode 13）**。2026-11-04 已部署到现有服务器和更新通道，保留包名、签名及设备身份。[本次发布](docs/release-0.16.md)。
-
-新增自动闲聊的概率闸门（默认 50%、关怀仍默认关闭）和可审核的 PROFILE.md 人设建议；同时交付 Harness 阶段 1–2 与会话/最新轮删除。10 项最小回归、构建与线上只读检查通过，没有进行真实模型或真机验收。[陪伴机制](docs/companion-mechanism-plan.md)、[Harness 规划](docs/dsh-harness-migration-plan.md)。
+新增共同话题的持久化随机作息、有界网页筛选和“运行记录／分享给你”双视图，默认关闭。沿用 0.16 的概率关怀、人设候选审核、Harness 阶段 1–2 和删除功能。本批八项最小回归、构建及线上只读检查通过，未做真实搜索、真实模型或真机验收。[共同话题说明](docs/topics-0.17.md)、[Harness 规划](docs/dsh-harness-migration-plan.md)。
 
 独立实现的轻量个人 AI 助手，当前具备 P0–P3 核心能力：运行时、PWA 聊天、角色/记忆、待办和提醒收件箱。Go 标准库 + 原生 HTML/CSS/JavaScript，**零第三方模块、无前端构建步骤**，网页资源嵌入单个可执行文件。
 
@@ -19,10 +17,10 @@
 需要 Go 1.26。Windows / PowerShell 7：
 
 ```powershell
-go build -buildvcs=false -o bin/chat-agent-0.16.0.exe ./cmd/server
+go build -buildvcs=false -o bin/chat-agent-0.17.0.exe ./cmd/server
 $env:POCKET_ACCESS_TOKEN = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 $env:POCKET_ACCESS_TOKEN  # 在自己的终端查看，随后输入网页登录框
-.\bin\chat-agent-0.16.0.exe -demo
+.\bin\chat-agent-0.17.0.exe -demo
 ```
 
 在浏览器打开 [本机页面](http://127.0.0.1:8080)，首次通过管理员维护入口批准设备指纹，之后由设备签名自动连接。点击“看看此刻的时间”即可体验完整工具循环。
@@ -45,7 +43,7 @@ Linux 构建：`go build -buildvcs=false -o bin/chat-agent ./cmd/server`。运�
 $env:POCKET_BASE_URL='https://your-api.example/v1'
 $env:POCKET_MODEL='your-model-id'
 # 在自己的终端安全设置 POCKET_API_KEY
-.\bin\chat-agent-0.16.0.exe
+.\bin\chat-agent-0.17.0.exe
 ```
 
 [.env.example](.env.example) 只是模板，程序不会自动加载 `.env`。
@@ -133,7 +131,7 @@ $env:POCKET_WEB_HOSTS='example.org,docs.example.org'
 
 抓取仅接受 HTTPS/443 和有效 DNS 域名，拒绝私有/保留地址、账号、IP 字面量和内网跳转，连接固定到已检查 IP，保持 TLS 校验，不使用环境代理。不会执行网页脚本；读取最多 256 KiB、正文返回最多 12 KiB，有明确超时和解析错误。结果始终是不可信参考，不授予写入权限。
 
-“共同话题”需要另行明确开启，并配置可以发送给搜索引擎的公开兴趣词。每次计划最多一次搜索、五条候选和两篇正文，模型可选择不分享；无后台手机推送承诺。[0.17 开发说明](docs/topics-0.17.md)。
+“共同话题”需要另行明确开启，并配置可以发送给搜索引擎的公开兴趣词。每次计划最多一次搜索、五条候选和两篇正文，模型可选择不分享；无后台手机推送承诺。[0.17 共同话题说明](docs/topics-0.17.md)。
 
 ## 上下文整理
 

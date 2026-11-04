@@ -1,5 +1,7 @@
 # chat-agent Android
 
+当前更新通道（2026-11-04）：**0.17.0-debug / versionCode 14** 已发布，原签名与设备身份延续。未在手机安装验收，使用现有应用内更新获取。见[发布记录](../docs/release-0.17.md)。以下旧版本说明保留。
+
 当前更新包（2026-11-04）：**0.16.0-debug / versionCode 13**，已发布到现有应用内更新通道，未在真机安装验收。保留原签名与设备密钥，完整性保护名单加入新的人设审核模块和主题模块；服务器设备 challenge 鉴权继续使用。见[0.16 发布说明](../docs/release-0.16.md)。下文早期口令连接与测试记录保留为历史说明。
 
 Kotlin + 系统 Activity/WebView 的轻量包装，复用现有 PWA 和 Go 服务。没有引入外部 Agent 项目、AndroidX 或 Compose。最低 Android 8.0（API 26），目标 API 36。
