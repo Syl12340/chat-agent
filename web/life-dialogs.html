@@ -1,0 +1,39 @@
+  <dialog id="life-dialog" class="knowledge-dialog life-dialog" aria-labelledby="life-heading">
+    <div class="dialog-heading"><div><span id="life-role" class="eyebrow">当前角色</span><h2 id="life-heading">下次还能接着聊的事</h2></div><button id="life-close" class="icon-button" aria-label="关闭事件记忆">×</button></div>
+    <p class="dialog-description">你确认的经历和未完话题，会用于这个角色之后的对话。可以纠正、结束或不再主动提及；原聊天仍可查看。</p>
+    <div class="life-toolbar"><label class="sr-only" for="life-query">查找事件</label><input id="life-query" type="search" maxlength="128" placeholder="找一件聊过的事"><label class="sr-only" for="life-filter">事件状态</label><select id="life-filter"><option value="all">全部</option><option value="pending">待确认</option><option value="open">正在经历</option><option value="resolved">已告一段落</option><option value="hidden">不主动提及</option></select><button id="life-refresh" class="text-button" type="button">刷新</button></div>
+    <div id="life-list" class="life-list"></div>
+    <form id="life-form" class="memory-form life-form">
+      <h3 id="life-editor-title" class="life-section-title">留下一件愿意下次接着聊的事</h3>
+      <label for="life-title">这件事的名字</label><input id="life-title" maxlength="128" placeholder="例如：周五的面试" required>
+      <label for="life-content">想留下的内容</label><textarea id="life-content" rows="3" maxlength="4096" placeholder="留下你愿意被记住的部分，也可以以后再补充进展。" required></textarea>
+      <div class="life-grid"><div><label for="life-event-at">事情时间（可选）</label><input id="life-event-at" type="datetime-local" step="60"></div><div><label for="life-followup-at">希望跟进的时间（可选）</label><input id="life-followup-at" type="datetime-local" step="60"></div></div>
+      <label class="life-check" for="life-allow-followup"><input id="life-allow-followup" type="checkbox"><span>允许在跟进时间准备一次关怀</span></label>
+      <p class="life-meta">还需要开启下方关怀收件箱中的关怀设置，才会准备问候。</p>
+      <label for="life-status">对话中的状态</label><select id="life-status"><option value="open">已确认，可以接着聊</option><option value="pending">先留作候选，暂不用于对话</option><option value="resolved">已经告一段落</option><option value="hidden">不主动提及</option></select>
+      <p id="life-time-zone" class="life-meta"></p>
+      <div class="life-form-actions"><button id="life-cancel-edit" class="text-button" type="button" hidden>取消编辑</button><button id="life-save" class="primary-button" type="submit">保存并用于对话</button></div>
+    </form>
+    <p id="life-message" class="dialog-message" role="status" hidden></p>
+  </dialog>
+  <dialog id="care-dialog" class="knowledge-dialog life-dialog" aria-labelledby="care-heading">
+    <div class="dialog-heading"><div><span id="care-role" class="eyebrow">当前角色</span><h2 id="care-heading">按你的节奏关心你</h2></div><button id="care-close" class="icon-button" aria-label="关闭关怀收件箱">×</button></div>
+    <p class="dialog-description">问候会留在应用内。开启自动生成后，应用可见时才会按额度调用模型；本机通知可在下方单独开启。关闭应用后不从服务器拉取新问候。</p>
+    <div class="life-toolbar care-toolbar"><h3 class="life-section-title">关怀收件箱</h3><button id="care-refresh" class="text-button" type="button">刷新</button></div>
+    <div id="care-list" class="life-list care-list"></div>
+    <form id="care-settings-form" class="memory-form life-form">
+      <h3 class="life-section-title">我希望怎样收到关怀</h3>
+      <label class="life-check" for="care-enabled"><input id="care-enabled" type="checkbox"><span>开启这个角色的应用内关怀</span></label>
+      <label class="life-check" for="care-auto-generate"><input id="care-auto-generate" type="checkbox"><span>允许打开应用时自动生成到期问候</span></label>
+      <p class="life-meta">生成问候会调用模型。每日上限包含失败的调用；失败或中断不会自动重试。关闭关怀后，尚未交付的问候停止。</p>
+      <label for="care-daily-limit">每日模型调用上限</label><input id="care-daily-limit" type="number" min="1" max="5" step="1" value="1" required>
+      <label for="care-min-interval">两次问候至少间隔（分钟）</label><input id="care-min-interval" type="number" min="15" max="1440" step="1" value="180" required>
+      <label for="care-snooze-until">暂停关怀到（可选）</label><input id="care-snooze-until" type="datetime-local" step="60"><p class="life-meta">暂停期间不生成新问候；留空并保存可恢复原计划，不会自动开启已关闭的关怀。日期输入使用设备时区。</p>
+      <div class="life-grid"><div><label for="care-quiet-start">安静时段开始</label><input id="care-quiet-start" type="time" value="22:00" required></div><div><label for="care-quiet-end">安静时段结束</label><input id="care-quiet-end" type="time" value="08:00" required></div></div>
+      <p class="life-meta">安静时段内不生成问候；开始和结束相同时表示不设置安静时段。</p>
+      <label for="care-daily-time">每日轻问候时间（可选）</label><input id="care-daily-time" type="time"><p class="life-meta">留空只跟进你允许的事件。设置时间按下面显示的用户时区解释。</p>
+      <p id="care-time-zone" class="life-meta"></p>
+      <div class="life-form-actions"><button id="care-settings-reload" class="text-button" type="button">重新读取设置</button><button id="care-settings-save" class="primary-button" type="submit" disabled>保存关怀设置</button></div>
+    </form>
+    <p id="care-message" class="dialog-message" role="status" hidden></p>
+  </dialog>

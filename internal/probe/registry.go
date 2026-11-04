@@ -1,0 +1,141 @@
+package probe
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"sort"
+	"strings"
+	"time"
+)
+
+// Registry/step admission follows DeepSeek Harness (MIT), independently
+// implemented in Go. See THIRD_PARTY_NOTICES.md for the pinned upstream source.
+// Only ToolSchema crosses the model boundary. Everything else is host-owned.
+type ToolSchema struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Parameters  json.RawMessage `json:"parameters"`
+}
+
+type Tool struct {
+	Name        string                                                     `json:"name"`
+	Description string                                                     `json:"description"`
+	Parameters  json.RawMessage                                            `json:"parameters"`
+	Usage       string                                                     `json:"-"`
+	Order       int                                                        `json:"-"`
+	Timeout     time.Duration                                              `json:"-"`
+	Available   func(context.Context, StepContext) (bool, error)           `json:"-"`
+	Validate    func(json.RawMessage) error                                `json:"-"`
+	Guard       ToolGuard                                                  `json:"-"`
+	Execute     func(context.Context, json.RawMessage) (ToolResult, error) `json:"-"`
+}
+
+type ToolExecution struct {
+	Step      StepContext
+	CallID    string
+	Name      string
+	Arguments json.RawMessage
+}
+
+type ToolGuard func(context.Context, ToolExecution) error
+
+type registeredTool struct {
+	definition Tool
+	schema     *parameterSchema
+}
+
+type ToolRegistry struct{ tools []registeredTool }
+
+// ToolSet is a step-owned admission snapshot shared by the assembler and
+// executor. Its maps and definitions are private; callers only get copies.
+type ToolSet struct {
+	step    StepContext
+	ordered []registeredTool
+	byName  map[string]registeredTool
+}
+
+func NewToolRegistry(definitions []Tool) (*ToolRegistry, error) {
+	if len(definitions) > 24 {
+		return nil, errors.New("too many tools")
+	}
+	r := &ToolRegistry{}
+	names := map[string]bool{}
+	for _, tool := range definitions {
+		if tool.Name == "" || tool.Execute == nil || tool.Timeout < 0 || names[tool.Name] {
+			return nil, errors.New("invalid or duplicate tool definition")
+		}
+		schema, err := parseParameterSchema(tool.Parameters)
+		if err != nil {
+			return nil, fmt.Errorf("tool %s: %w", tool.Name, err)
+		}
+		tool.Parameters = append(json.RawMessage(nil), tool.Parameters...)
+		r.tools = append(r.tools, registeredTool{tool, schema})
+		names[tool.Name] = true
+	}
+	sort.Slice(r.tools, func(i, j int) bool {
+		a, b := r.tools[i].definition, r.tools[j].definition
+		if a.Order == b.Order {
+			return a.Name < b.Name
+		}
+		return a.Order < b.Order
+	})
+	return r, nil
+}
+
+func (r *ToolRegistry) Resolve(ctx context.Context, step StepContext) (*ToolSet, error) {
+	set := &ToolSet{step: step, byName: map[string]registeredTool{}}
+	if !step.ToolsAllowed {
+		return set, ctx.Err()
+	}
+	for _, tool := range r.tools {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if tool.definition.Available != nil {
+			ok, err := tool.definition.Available(ctx, step)
+			if err != nil {
+				return nil, fmt.Errorf("tool availability failed: %s", tool.definition.Name)
+			}
+			if !ok {
+				continue
+			}
+		}
+		set.ordered = append(set.ordered, tool)
+		set.byName[tool.definition.Name] = tool
+	}
+	return set, nil
+}
+
+func (s *ToolSet) Schemas() []ToolSchema {
+	out := make([]ToolSchema, 0, len(s.ordered))
+	for _, t := range s.ordered {
+		d := t.definition
+		out = append(out, ToolSchema{Name: d.Name, Description: d.Description, Parameters: append(json.RawMessage(nil), d.Parameters...)})
+	}
+	return out
+}
+
+func (s *ToolSet) guidance() string {
+	if len(s.ordered) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n## How to use these tools\nCall a tool only when its result changes the reply; ordinary conversation needs none. Never claim a write succeeded before its result says so, and never repeat a completed call with the same arguments.\n")
+	for _, t := range s.ordered {
+		d := t.definition
+		if d.Usage != "" {
+			fmt.Fprintf(&b, "- %s — %s\n", d.Name, d.Usage)
+		}
+	}
+	return b.String()
+}
+
+func (s *ToolSet) names() []string {
+	names := make([]string, 0, len(s.ordered))
+	for _, t := range s.ordered {
+		names = append(names, t.definition.Name)
+	}
+	return names
+}

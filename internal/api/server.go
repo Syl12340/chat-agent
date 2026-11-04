@@ -1,0 +1,690 @@
+package api
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"pocket-agent/internal/companion"
+	"pocket-agent/internal/deviceauth"
+	"pocket-agent/internal/memory"
+	"pocket-agent/internal/probe"
+	"pocket-agent/internal/roles"
+	"pocket-agent/internal/semantic"
+	"pocket-agent/internal/tasks"
+	"pocket-agent/internal/topics"
+	"pocket-agent/internal/turns"
+	"pocket-agent/internal/webtools"
+	"pocket-agent/web"
+)
+
+type Config struct {
+	Agent             probe.Config
+	DataDir           string
+	AccessToken       string
+	RolesDir          string
+	TimeZone          string
+	Web               webtools.Config
+	AndroidReleaseDir string
+	Speech            SpeechConfig
+	Semantic          semantic.Config
+}
+
+type runState struct {
+	cancel context.CancelFunc
+	done   chan struct{}
+	queued bool
+}
+type Server struct {
+	config          Config
+	tokenHash       [32]byte
+	mu              sync.Mutex
+	sessions        map[string]*probe.Session
+	runs            map[string]*runState
+	closing         bool
+	roles           *roles.Manager
+	memory          *memory.Store
+	companion       *companion.Store
+	life            *companion.LifeStore
+	activities      *companion.ActivityStore
+	devices         *deviceauth.Store
+	turns           *turns.Store
+	workCtx         context.Context
+	workCancel      context.CancelFunc
+	workWG          sync.WaitGroup
+	careSlots       chan struct{}
+	tasks           *tasks.Store
+	web             *webtools.Client
+	location        *time.Location
+	schedulerCancel context.CancelFunc
+	schedulerDone   chan struct{}
+	schedulerOK     atomic.Bool
+	speechSlots     chan struct{}
+	speechAttempt   time.Time
+	topics          *topics.Store
+	topicSource     topicGateway
+	topicSweepMu    sync.Mutex
+}
+
+func New(c Config) (*Server, error) {
+	if len(c.AccessToken) < 32 {
+		return nil, errors.New("POCKET_ACCESS_TOKEN must contain at least 32 characters")
+	}
+	if _, err := probe.New(c.Agent, probe.NewSession()); err != nil {
+		return nil, err
+	}
+	if c.DataDir == "" {
+		return nil, errors.New("data directory is required")
+	}
+	if c.TimeZone == "" {
+		c.TimeZone = "Asia/Shanghai"
+	}
+	location, err := time.LoadLocation(c.TimeZone)
+	if err != nil {
+		return nil, errors.New("invalid user time zone")
+	}
+	path, err := filepath.Abs(c.DataDir)
+	if err != nil {
+		return nil, err
+	}
+	c.DataDir = path
+	if err := os.MkdirAll(filepath.Join(path, probe.AgentID), 0700); err != nil {
+		return nil, err
+	}
+	if c.RolesDir == "" {
+		c.RolesDir = filepath.Join(path, "roles")
+	}
+	roleManager, err := roles.Open(c.RolesDir)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := roleManager.List(); err != nil {
+		return nil, err
+	}
+	mem, err := memory.Open(filepath.Join(path, "memory"))
+	if err != nil {
+		return nil, err
+	}
+	if reranker := semantic.New(c.Semantic); reranker != nil {
+		mem.SetReranker(reranker)
+	}
+	taskStore, err := tasks.Open(filepath.Join(path, "tasks"))
+	if err != nil {
+		mem.Close()
+		return nil, err
+	}
+	webClient, err := webtools.New(c.Web)
+	if err != nil {
+		taskStore.Close()
+		mem.Close()
+		return nil, err
+	}
+	companionStore, err := companion.Open(filepath.Join(path, "companion"))
+	if err != nil {
+		webClient.Close()
+		taskStore.Close()
+		mem.Close()
+		return nil, err
+	}
+	lifeStore, err := companion.OpenLife(filepath.Join(path, "life"))
+	if err != nil {
+		companionStore.Close()
+		webClient.Close()
+		taskStore.Close()
+		mem.Close()
+		return nil, err
+	}
+	turnStore, err := turns.Open(filepath.Join(path, "turns"))
+	if err != nil {
+		lifeStore.Close()
+		companionStore.Close()
+		webClient.Close()
+		taskStore.Close()
+		mem.Close()
+		return nil, err
+	}
+	activityStore, err := companion.OpenActivities(filepath.Join(path, "activities"))
+	if err != nil {
+		turnStore.Close()
+		lifeStore.Close()
+		companionStore.Close()
+		webClient.Close()
+		taskStore.Close()
+		mem.Close()
+		return nil, err
+	}
+	deviceStore, err := deviceauth.Open(filepath.Join(path, "devices"))
+	if err != nil {
+		webClient.Close()
+		return nil, errors.Join(err, activityStore.Close(), turnStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
+	}
+	topicStore, err := topics.Open(filepath.Join(path, "topics"))
+	if err != nil {
+		webClient.Close()
+		return nil, errors.Join(err, deviceStore.Close(), activityStore.Close(), turnStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
+	}
+	workCtx, workCancel := context.WithCancel(context.Background())
+	s := &Server{devices: deviceStore, activities: activityStore, life: lifeStore, turns: turnStore, workCtx: workCtx, workCancel: workCancel, careSlots: make(chan struct{}, 1), config: c, tokenHash: sha256.Sum256([]byte(c.AccessToken)), sessions: map[string]*probe.Session{}, runs: map[string]*runState{}, roles: roleManager, memory: mem, companion: companionStore, tasks: taskStore, web: webClient, location: location}
+	s.speechSlots = make(chan struct{}, 1)
+	s.topics = topicStore
+	s.topicSource = webClient
+	s.startScheduler()
+	s.startTopicScheduler()
+	return s, nil
+}
+
+func (s *Server) Handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
+	mux.HandleFunc("GET /api/status", s.status)
+	mux.HandleFunc("POST /api/device/register", s.registerDevice)
+	mux.HandleFunc("POST /api/device/challenge", s.challengeDevice)
+	mux.HandleFunc("POST /api/device/verify", s.verifyDevice)
+	mux.HandleFunc("POST /api/device/logout", s.logoutDevice)
+	mux.HandleFunc("GET /api/devices", s.listDevices)
+	mux.HandleFunc("PATCH /api/devices/{id}", s.updateDevice)
+	mux.HandleFunc("POST /api/voice/speech", s.speech)
+	mux.HandleFunc("GET /api/updates/android", s.androidUpdate)
+	mux.HandleFunc("GET /api/updates/android/{sha}/app.apk", s.androidAPK)
+	mux.HandleFunc("GET /api/sessions", s.list)
+	mux.HandleFunc("POST /api/sessions", s.create)
+	mux.HandleFunc("DELETE /api/sessions/{id}", s.deleteSession)
+	mux.HandleFunc("GET /api/sessions/{id}/turns", s.listTurns)
+	mux.HandleFunc("POST /api/sessions/{id}/turns", s.enqueueTurn)
+	mux.HandleFunc("POST /api/sessions/{id}/turns/resume", s.resumeTurns)
+	mux.HandleFunc("DELETE /api/sessions/{id}/turns/{request}", s.withdrawTurn)
+	mux.HandleFunc("GET /api/episodes", s.listEpisodes)
+	mux.HandleFunc("POST /api/episodes", s.createEpisode)
+	mux.HandleFunc("PATCH /api/episodes/{id}", s.updateEpisode)
+	mux.HandleFunc("DELETE /api/episodes/{id}", s.deleteEpisode)
+	mux.HandleFunc("GET /api/care/settings", s.getCareSettings)
+	mux.HandleFunc("GET /api/topics/settings", s.getTopicSettings)
+	mux.HandleFunc("PATCH /api/topics/settings", s.updateTopicSettings)
+	mux.HandleFunc("GET /api/topics", s.listTopics)
+	mux.HandleFunc("PATCH /api/topics/{id}", s.markTopic)
+	mux.HandleFunc("DELETE /api/topics/{id}", s.deleteTopic)
+	mux.HandleFunc("PATCH /api/care/settings", s.updateCareSettings)
+	mux.HandleFunc("GET /api/care", s.listCare)
+	mux.HandleFunc("POST /api/care/check", s.checkCare)
+	mux.HandleFunc("POST /api/care/{id}/generate", s.generateCare)
+	mux.HandleFunc("PATCH /api/care/{id}", s.updateCare)
+	mux.HandleFunc("GET /api/activities", s.listActivities)
+	mux.HandleFunc("POST /api/activities", s.createActivity)
+	mux.HandleFunc("PATCH /api/activities/{id}", s.updateActivity)
+	mux.HandleFunc("DELETE /api/activities/{id}", s.deleteActivity)
+	mux.HandleFunc("POST /api/activities/{id}/attach", s.attachActivity)
+	mux.HandleFunc("GET /api/sessions/{id}/messages", s.history)
+	mux.HandleFunc("POST /api/sessions/{id}/messages", s.message)
+	mux.HandleFunc("POST /api/sessions/{id}/cancel", s.cancel)
+	mux.HandleFunc("POST /api/sessions/{id}/reset", s.reset)
+	mux.HandleFunc("POST /api/sessions/{id}/compact", s.compact)
+	mux.HandleFunc("GET /api/roles", s.listRoles)
+	mux.HandleFunc("GET /api/roles/{id}", s.getRole)
+	mux.HandleFunc("PATCH /api/roles/{id}", s.updateRole)
+	mux.HandleFunc("GET /api/roles/{id}/proposals", s.listRoleProposals)
+	mux.HandleFunc("PATCH /api/roles/{id}/proposals/{proposal}", s.reviewRoleProposal)
+	mux.HandleFunc("DELETE /api/roles/{id}/proposals/{proposal}", s.deleteRoleProposal)
+	mux.HandleFunc("GET /api/roles/{id}/companion", s.getCompanion)
+	mux.HandleFunc("PATCH /api/roles/{id}/companion", s.updateCompanion)
+	mux.HandleFunc("GET /api/memory", s.listMemory)
+	mux.HandleFunc("POST /api/memory", s.createMemory)
+	mux.HandleFunc("GET /api/memory/export", s.exportMemory)
+	mux.HandleFunc("PATCH /api/memory/{id}", s.updateMemory)
+	mux.HandleFunc("DELETE /api/memory/{id}", s.deleteMemory)
+	mux.HandleFunc("GET /api/todos", s.listTasks)
+	mux.HandleFunc("POST /api/todos", s.createTask)
+	mux.HandleFunc("PATCH /api/todos/{id}", s.updateTask)
+	mux.HandleFunc("DELETE /api/todos/{id}", s.deleteTask)
+	mux.HandleFunc("GET /api/reminders", s.listTasks)
+	mux.HandleFunc("POST /api/reminders", s.createTask)
+	mux.HandleFunc("PATCH /api/reminders/{id}", s.updateTask)
+	mux.HandleFunc("DELETE /api/reminders/{id}", s.deleteTask)
+	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { fail(w, 404, "接口不存在") })
+	mux.Handle("/", web.Handler())
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api" {
+			w.Header().Set("Cache-Control", "no-store")
+			if origin := r.Header.Get("Origin"); origin != "" {
+				u, err := url.Parse(origin)
+				if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host != r.Host {
+					deviceFail(w, 403, "cross_origin_denied", "不允许跨站访问")
+					return
+				}
+			}
+			if !publicDeviceRequest(r) {
+				var ok bool
+				r, ok = s.authenticateDeviceRequest(w, r)
+				if !ok {
+					return
+				}
+			}
+		}
+		mux.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) status(w http.ResponseWriter, r *http.Request) {
+	model := s.config.Agent.Model
+	if s.config.Agent.Demo {
+		model = "chat-agent Demo"
+	}
+	identity := currentAuth(r)
+	writeJSON(w, 200, map[string]any{"name": "chat-agent", "version": "0.17.0", "auth_method": identity.Method, "device_id": identity.Device.ID, "device_admin": identity.Method == "owner" || identity.Device.Admin, "speech_enabled": s.speechEnabled(), "speech_max_chars": 1200, "model": model, "demo": s.config.Agent.Demo, "max_output": s.config.Agent.MaxOutputTokens, "timeout_seconds": s.config.Agent.Timeout.Seconds(), "time_zone": s.location.String(), "web_fetch": s.web.FetchEnabled(), "web_search": s.web.SearchEnabled(), "reminder_delivery": "inbox", "scheduler_ok": s.schedulerOK.Load()})
+}
+
+func validID(id string) bool {
+	if len(id) == 0 || len(id) > 128 {
+		return false
+	}
+	for _, c := range id {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Server) session(id string) (*probe.Session, error) {
+	if !validID(id) {
+		return nil, os.ErrNotExist
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closing {
+		return nil, errors.New("server is shutting down")
+	}
+	if sess := s.sessions[id]; sess != nil {
+		return sess, nil
+	}
+	if _, err := os.Stat(filepath.Join(s.config.DataDir, probe.AgentID, id+".jsonl")); err != nil {
+		return nil, err
+	}
+	sess, err := probe.OpenSession(s.config.DataDir, probe.AgentID, id)
+	if err != nil {
+		return nil, err
+	}
+	s.sessions[id] = sess
+	return sess, nil
+}
+
+func (s *Server) get(w http.ResponseWriter, r *http.Request) (*probe.Session, bool) {
+	sess, err := s.session(r.PathValue("id"))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			fail(w, 404, "会话不存在")
+		} else {
+			fail(w, 503, "会话不可用，请检查数据目录或锁文件")
+		}
+		return nil, false
+	}
+	return sess, true
+}
+
+type sessionInfo struct {
+	ID          string    `json:"id"`
+	Title       string    `json:"title"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	Active      bool      `json:"active"`
+	Unavailable bool      `json:"unavailable,omitempty"`
+	RoleID      string    `json:"role_id"`
+}
+
+func title(messages []probe.Message) string {
+	for _, m := range messages {
+		if m.Role == "user" {
+			r := []rune(strings.Join(strings.Fields(m.Content), " "))
+			if len(r) > 32 {
+				return string(r[:32]) + "…"
+			}
+			if len(r) > 0 {
+				return string(r)
+			}
+		}
+	}
+	return "新会话"
+}
+
+func (s *Server) list(w http.ResponseWriter, r *http.Request) {
+	files, err := os.ReadDir(filepath.Join(s.config.DataDir, probe.AgentID))
+	if err != nil {
+		fail(w, 500, "无法读取会话列表")
+		return
+	}
+	items := []sessionInfo{}
+	for _, file := range files {
+		if !strings.HasSuffix(file.Name(), ".jsonl") {
+			continue
+		}
+		id := strings.TrimSuffix(file.Name(), ".jsonl")
+		if !validID(id) {
+			continue
+		}
+		info, err := file.Info()
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		item := sessionInfo{ID: id, Title: "无法读取的会话", UpdatedAt: info.ModTime()}
+		sess, err := s.session(id)
+		if err != nil {
+			item.Unavailable = true
+		} else {
+			item.Title = title(sess.Messages())
+			item.RoleID = sess.RoleID()
+		}
+		s.mu.Lock()
+		item.Active = s.runs[id] != nil
+		s.mu.Unlock()
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].UpdatedAt.After(items[j].UpdatedAt) })
+	writeJSON(w, 200, items)
+}
+
+func (s *Server) create(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		RoleID string `json:"role_id"`
+	}
+	if r.Body != nil {
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+		decoder.DisallowUnknownFields()
+		err := decoder.Decode(&input)
+		if err != nil && err != io.EOF {
+			fail(w, 400, "角色参数无效")
+			return
+		}
+		if err == nil {
+			var extra any
+			if decoder.Decode(&extra) != io.EOF {
+				fail(w, 400, "角色参数无效")
+				return
+			}
+		}
+	}
+	if input.RoleID == "" {
+		input.RoleID = "companion"
+	}
+	if _, err := s.roles.Load(input.RoleID); err != nil {
+		fail(w, 400, "角色不存在或配置无效")
+		return
+	}
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		fail(w, 500, "无法创建会话")
+		return
+	}
+	id := hex.EncodeToString(b[:])
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closing {
+		fail(w, 503, "服务正在关闭")
+		return
+	}
+	sess, err := probe.OpenSession(s.config.DataDir, probe.AgentID, id)
+	if err != nil {
+		fail(w, 500, "无法创建会话")
+		return
+	}
+	if err := sess.BindRole(input.RoleID); err != nil {
+		sess.Close()
+		fail(w, 500, "无法绑定会话角色")
+		return
+	}
+	s.sessions[id] = sess
+	writeJSON(w, 201, sessionInfo{ID: id, Title: "新会话", UpdatedAt: time.Now().UTC(), RoleID: input.RoleID})
+}
+
+func (s *Server) history(w http.ResponseWriter, r *http.Request) {
+	sess, ok := s.get(w, r)
+	if !ok {
+		return
+	}
+	s.mu.Lock()
+	active := s.runs[r.PathValue("id")] != nil
+	s.mu.Unlock()
+	items, paused, err := s.turns.List(r.PathValue("id"))
+	if err != nil {
+		turnFailure(w, err)
+		return
+	}
+	activity, err := s.activities.Session(sess.RoleID(), r.PathValue("id"))
+	if err != nil {
+		fail(w, 503, "活动暂时不可用，请稍后重试")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"id": r.PathValue("id"), "messages": sess.Messages(), "active": active, "role_id": sess.RoleID(), "summary": sess.Summary(), "turns": items, "queue_paused": paused, "activity": activity})
+}
+
+func (s *Server) message(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Content string `json:"content"`
+		Mode    string `json:"mode"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 128<<10)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		fail(w, 400, "消息格式无效或请求过大")
+		return
+	}
+	var extra any
+	if decoder.Decode(&extra) != io.EOF || strings.TrimSpace(input.Content) == "" || len(input.Content) > 64<<10 || !companion.ValidMode(input.Mode) {
+		fail(w, 400, "娑堟伅椤讳负闈炵┖鏂囨湰锛屾渶澶?64 KiB")
+		return
+	}
+	sess, ok := s.get(w, r)
+	if !ok {
+		return
+	}
+	if _, ok := w.(http.Flusher); !ok {
+		fail(w, 500, "服务不支持流式响应")
+		return
+	}
+	id := r.PathValue("id")
+	ctx, cancel := context.WithCancel(r.Context())
+	state := &runState{cancel: cancel, done: make(chan struct{})}
+	s.mu.Lock()
+	if s.closing || s.runs[id] != nil || len(s.runs) >= 4 {
+		closing, busy := s.closing, s.runs[id] != nil
+		s.mu.Unlock()
+		cancel()
+		if closing {
+			fail(w, 503, "服务正在关闭")
+		} else if busy {
+			fail(w, 409, "此会话正在生成，请先停止")
+		} else {
+			fail(w, 429, "同时生成的会话过多，请稍后重试")
+		}
+		return
+	}
+	agent, err := s.agent(sess, input.Content, id, input.Mode)
+	if err != nil {
+		s.mu.Unlock()
+		cancel()
+		fail(w, 503, "模型或陪伴上下文暂时不可用")
+		return
+	}
+	s.runs[id] = state
+	s.mu.Unlock()
+	var once sync.Once
+	finish := func() {
+		once.Do(func() { cancel(); s.mu.Lock(); delete(s.runs, id); close(state.done); s.mu.Unlock() })
+	}
+	defer finish()
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	w.Header().Set("X-Accel-Buffering", "no")
+	controller := http.NewResponseController(w)
+	send := func(event string, data any) {
+		_ = controller.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		b, _ := json.Marshal(data)
+		if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, b); err != nil {
+			cancel()
+			return
+		}
+		if err := controller.Flush(); err != nil {
+			cancel()
+		}
+	}
+	send("ready", map[string]string{"id": id})
+	err = probe.Run(ctx, agent, s.config.Agent.Timeout, input.Content, func(ev probe.Event) {
+		switch ev.Type {
+		case probe.EventTextDelta:
+			send("text_delta", map[string]string{"text": ev.Text})
+		case probe.EventToolCallStart:
+			send("tool_start", map[string]string{"id": ev.ToolCall.ID, "name": ev.ToolCall.Function.Name})
+		case probe.EventToolResult:
+			send("tool_result", map[string]any{"id": ev.ToolCall.ID, "name": ev.ToolCall.Function.Name, "output": ev.Result.Output, "error": ev.Result.Error})
+		case probe.EventCompactionStart:
+			send("compaction_start", map[string]bool{"active": true})
+		case probe.EventCompactionDone:
+			send("compaction_done", map[string]bool{"changed": ev.Text != "skipped"})
+		}
+	})
+	finish()
+	if err == nil {
+		send("done", map[string]bool{"ok": true})
+		return
+	}
+	if errors.Is(err, context.Canceled) {
+		send("canceled", map[string]string{"message": "已停止生成"})
+		return
+	}
+	message := "生成失败，请检查服务器配置或稍后重试"
+	if errors.Is(err, context.DeadlineExceeded) {
+		message = "响应超时，请稍后重试"
+	}
+	safe := err.Error()
+	if s.config.Agent.APIKey != "" {
+		safe = strings.ReplaceAll(safe, s.config.Agent.APIKey, "[REDACTED]")
+	}
+	log.Printf("generation failed: %s", safe)
+	send("error", map[string]string{"message": message})
+}
+
+func (s *Server) cancel(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.get(w, r); !ok {
+		return
+	}
+	if err := s.turns.Pause(r.PathValue("id"), true); err != nil {
+		turnFailure(w, err)
+		return
+	}
+	s.mu.Lock()
+	state := s.runs[r.PathValue("id")]
+	s.mu.Unlock()
+	if state != nil {
+		state.cancel()
+		select {
+		case <-state.done:
+		case <-r.Context().Done():
+			return
+		}
+	}
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
+	sess, ok := s.get(w, r)
+	if !ok {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.runs[r.PathValue("id")] != nil {
+		fail(w, 409, "请先停止生成再重置")
+		return
+	}
+	if err := sess.Reset(); err != nil {
+		fail(w, 500, "无法重置会话")
+		return
+	}
+	if err := s.turns.Reset(r.PathValue("id")); err != nil {
+		turnFailure(w, err)
+		return
+	}
+	if err := s.life.ResetFloor(sess.RoleID(), r.PathValue("id")); err != nil {
+		fail(w, 503, "会话已清空，但上下文边界暂时不可用")
+		return
+	}
+	if err := s.activities.ResetFloor(sess.RoleID(), r.PathValue("id")); err != nil {
+		fail(w, 503, "会话已清空，但活动上下文边界暂时不可用")
+		return
+	}
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+// Close cancels runs, joins them, then releases session files and writer locks.
+func (s *Server) Close(ctx context.Context) error {
+	s.mu.Lock()
+	s.closing = true
+	s.workCancel()
+	states := make([]*runState, 0, len(s.runs))
+	for _, state := range s.runs {
+		states = append(states, state)
+	}
+	sessions := make([]*probe.Session, 0, len(s.sessions))
+	for _, sess := range s.sessions {
+		sessions = append(sessions, sess)
+	}
+	s.mu.Unlock()
+	for _, state := range states {
+		state.cancel()
+	}
+	s.schedulerCancel()
+	select {
+	case <-s.schedulerDone:
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+	for _, state := range states {
+		select {
+		case <-state.done:
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		}
+	}
+	joined := make(chan struct{})
+	go func() { s.workWG.Wait(); close(joined) }()
+	select {
+	case <-joined:
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+	var err error
+	for _, sess := range sessions {
+		err = errors.Join(err, sess.Close())
+	}
+	err = errors.Join(err, s.memory.Close())
+	err = errors.Join(err, s.tasks.Close())
+	err = errors.Join(err, s.companion.Close(), s.life.Close(), s.turns.Close(), s.activities.Close())
+	err = errors.Join(err, s.devices.Close())
+	err = errors.Join(err, s.topics.Close())
+	s.web.Close()
+	return err
+}
+
+func writeJSON(w http.ResponseWriter, status int, data any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(data)
+}
+func fail(w http.ResponseWriter, status int, message string) {
+	writeJSON(w, status, map[string]string{"error": message})
+}

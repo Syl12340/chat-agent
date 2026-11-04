@@ -1,0 +1,17 @@
+/data/
+/bin/
+/.cache/
+.env
+.env.*
+!.env.example
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.apk
+*.aab
+*.log
+.idea/
+.vscode/
+*.exe

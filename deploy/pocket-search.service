@@ -1,0 +1,38 @@
+[Unit]
+Description=Pocket Agent local web search
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=pocket-search
+Group=pocket-search
+EnvironmentFile=/etc/pocket-search/search.env
+Environment=GOMEMLIMIT=64MiB GOMAXPROCS=1
+ExecStart=/opt/pocket-search/current/pocket-search -listen 127.0.0.1:9993
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+LockPersonality=true
+MemoryMax=128M
+TasksMax=64
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pocket-search
+
+[Install]
+WantedBy=multi-user.target

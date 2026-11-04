@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#6750A4" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+  <meta name="description" content="随时有话可说。你的轻量个人 AI 助手。">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>chat-agent · 随时有话可说</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/theme.js"></script>
+  <script src="/app.js" type="module"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <button id="drawer-scrim" class="drawer-scrim" aria-label="关闭会话列表" hidden></button>
+    <aside id="sidebar" class="sidebar" aria-label="会话导航">
+      <a class="brand" href="/" aria-label="chat-agent 首页"><img src="/icon.svg" alt="" width="38" height="38"><span>chat-agent<span class="brand-sub">你的随身助手</span></span></a>
+      <label class="role-picker-label" for="role-picker">和谁聊聊</label><select id="role-picker" class="role-picker" disabled><option value="companion">小伴</option></select>
+      <button id="new-chat" class="new-chat"><span aria-hidden="true">＋</span> 开始新会话 <kbd>N</kbd></button>
+      <div class="knowledge-actions"><button id="memory-open" disabled>记忆管理 <span id="memory-count" hidden></span></button><button id="tasks-open" disabled>待办提醒 <span id="tasks-count" hidden></span></button><button id="role-open" disabled>角色设置</button><button id="role-proposals-open" aria-controls="role-proposals-dialog" disabled>角色变化建议</button><button id="companion-open" disabled>陪伴偏好</button><button id="activities-open" disabled>共同活动</button><button id="topics-open" aria-controls="topics-dialog" disabled>共同话题</button><button id="life-open" disabled>事件记忆</button><button id="care-open" disabled>关怀收件箱 <span id="care-count" hidden></span></button></div>
+      <div class="list-heading">最近会话 <span id="session-count">0</span></div>
+      <nav id="sessions" class="session-list" aria-label="历史会话"><p class="list-empty">还没有会话，聊点什么吧。</p></nav>
+      <div class="sidebar-note"><span class="note-dot"></span><div>一点想法，随时放进口袋。<small>对话保存在你的服务器上</small></div></div>
+      <div class="sidebar-footer"><span class="protected"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10h12v10H6zM8 10V7a4 4 0 0 1 8 0v3"/></svg>访问已保护</span><button id="logout" class="text-button">退出</button></div>
+    </aside>
+
+    <main class="main-panel">
+      <header class="topbar">
+        <button id="menu" class="icon-button mobile-menu" aria-label="打开会话列表" aria-controls="sidebar" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+        <div class="conversation-heading"><span id="chat-title">新的开始</span><small><span class="status-dot"></span><span id="connection-label">等待连接</span></small></div>
+        <div class="topbar-actions"><span id="demo-badge" class="demo-badge" hidden>本地演示</span><button id="settings" class="icon-button" aria-label="连接信息"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v1"/></svg></button><button id="reset-chat" class="icon-button" aria-label="重置当前会话" title="重置当前会话" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1 7M4 4v6h6"/></svg></button><button id="delete-session" class="icon-button" aria-label="删除这个会话" title="删除这个会话" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg></button></div>
+      </header>
+
+      <div id="offline-banner" class="offline-banner" role="status" hidden>当前离线。恢复连接后可以继续聊天。</div>
+      <div id="reminder-banner" class="reminder-banner" role="status" hidden><button id="reminder-view"></button></div>
+      <div id="care-banner" class="care-banner" role="status" hidden><button id="care-view"></button></div>
+      <div id="activity-banner" class="activity-banner" role="status" hidden><span id="activity-current"></span><button id="activity-manage" type="button">管理活动</button></div>
+      <section id="conversation" class="conversation" aria-label="聊天内容" aria-busy="false">
+        <div id="welcome" class="welcome">
+          <div class="welcome-icon"><img src="/icon.svg" width="60" height="60" alt=""></div>
+          <div class="eyebrow">随时有话可说</div>
+          <h1>你好，今天想聊些什么？</h1>
+          <p>一个想法，一段心情，或者一个还没想清楚的问题。<br>从这里开始，慢慢聊。</p>
+          <div class="suggestions">
+            <button class="suggestion" data-prompt="现在几点？请查一下当前 UTC 时间。"><span class="suggestion-icon">◷</span><strong>看看此刻的时间</strong><small>用时间工具，开启今天的对话</small><span class="suggestion-arrow">↗</span></button>
+            <button class="suggestion" data-prompt="我有一个想法还没想清楚。请先问我一个问题，帮我一起梳理。"><span class="suggestion-icon">✧</span><strong>一起梳理想法</strong><small>把脑海里的碎片，一点点拼起来</small><span class="suggestion-arrow">↗</span></button>
+            <button class="suggestion" data-prompt="我想把一个目标拆成今天就能开始的小步骤。请先问问我是什么目标。"><span class="suggestion-icon">⌁</span><strong>从一小步开始</strong><small>让有点遥远的目标，变得具体</small><span class="suggestion-arrow">↗</span></button>
+          </div>
+        </div>
+        <div id="messages" class="messages" role="log" aria-label="对话记录"></div>
+      </section>
+
+      <div class="composer-area">
+        <div id="notice" class="notice" role="status" hidden></div>
+<div id="turn-queue" class="turn-queue" role="region" aria-label="消息发送状态" hidden>
+  <div class="turn-queue-heading"><span id="turn-queue-label" role="status"></span><div class="turn-queue-actions"><button id="turn-resume" type="button" hidden>继续发送</button><button id="turn-refresh" type="button">查询状态</button></div></div>
+  <div id="turn-queue-list" class="turn-queue-list"></div>
+  <div id="turn-unknown" class="turn-unknown" hidden><p id="turn-unknown-text"></p><div class="turn-queue-actions"><button id="turn-retry" type="button">用同一标识确认提交</button><button id="turn-restore-draft" type="button" hidden>放回输入框</button></div></div>
+  <p id="turn-queue-error" class="turn-queue-error" role="status" hidden></p>
+</div>
+
+        <div id="voice-player" class="voice-player" hidden><span id="voice-status" role="status"></span><audio id="voice-audio" controls preload="none"></audio><button id="voice-stop" type="button">停止朗读</button></div>
+        <form id="composer" class="composer">
+          <label class="sr-only" for="prompt">给 chat-agent 发消息</label>
+          <textarea id="prompt" name="message" rows="1" placeholder="有什么想说的，放进来吧…" maxlength="64000" required disabled></textarea>
+          <div class="composer-bottom"><span class="composer-label"><span class="status-dot"></span><span id="model-label">chat-agent</span></span><button id="voice-input" class="voice-input" type="button" title="系统识别可能联网；文字确认后才发送" hidden>语音输入</button><button id="send" class="send-button" type="submit" aria-label="发送消息" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button><button id="stop" class="stop-button" type="button" aria-label="停止生成" hidden><span></span>停止生成</button></div>
+        </form>
+        <p class="composer-hint"><span>Enter 发送 · Shift + Enter 换行</span><span>AI 的回答可能存在偏差，请核实重要信息</span></p>
+      </div>
+    </main>
+  </div>
+
+  <div id="login-overlay" class="login-overlay" role="dialog" aria-modal="true" aria-labelledby="login-title">
+    <form id="login-form" class="login-card" aria-labelledby="login-title">
+      <img src="/icon.svg" width="52" height="52" alt="">
+      <span class="eyebrow">你的随身助手</span>
+      <h1 id="login-title">欢迎来到 chat-agent</h1><p>给这台设备起个名字，即可申请连接。<br>首次注册需要主人批准，之后会自动连接。</p>
+      <section id="device-auth-panel" aria-label="设备连接">
+        <label for="device-name">设备名称</label><input id="device-name" type="text" maxlength="80" autocomplete="off" placeholder="例如：我的手机">
+        <div class="device-fingerprint-block"><span class="field-label">设备公开指纹</span><code id="device-fingerprint" aria-label="设备公开指纹" aria-readonly="true" tabindex="0">准备中…</code><small>请让主人核对这枚指纹，再批准设备。</small></div>
+        <p id="device-auth-state" role="status" aria-live="polite">准备连接这台设备。</p>
+        <button id="device-connect" type="button" class="primary-button">注册并连接 <span aria-hidden="true">→</span></button>
+      </section>
+      <button id="device-admin-toggle" type="button" class="text-button device-admin-toggle" aria-controls="legacy-login-fields" aria-expanded="false">管理员维护入口</button>
+      <div id="legacy-login-fields" hidden>
+      <label for="access-token">访问口令</label><input id="access-token" type="password" autocomplete="current-password" placeholder="输入管理员访问口令">
+      <button id="login-button" type="submit" class="primary-button">进入管理 <span aria-hidden="true">→</span></button>
+      </div>
+      <p id="login-error" class="login-error" role="alert" hidden></p>
+      <small>对话连接到你自己的服务。<br>批准过的设备，可在连接信息中管理。</small>
+    </form>
+  </div>
+  <dialog id="settings-dialog" class="settings-dialog"><div class="dialog-heading"><h2>连接信息</h2><button id="close-settings" class="icon-button" aria-label="关闭连接信息">×</button></div><dl id="connection-info"></dl><button id="compact-context" class="secondary-button" disabled>整理较早的对话</button><p id="compact-message" role="status">整理只影响发给模型的上下文，完整聊天记录仍保留。</p><details id="summary-details" hidden><summary>查看上下文摘要</summary><pre id="summary-content"></pre></details><section id="appearance" class="appearance" aria-labelledby="appearance-title"><div class="appearance-heading"><h3 id="appearance-title">主题色</h3></div><p>浅色模式下可以换一个喜欢的颜色；深色模式固定纯黑，不使用彩色强调。</p><div id="accent-options" class="accent-options" role="radiogroup" aria-label="主题色"></div><p id="accent-note" class="appearance-note" role="status" hidden>深色模式下主题色暂不生效，切回浅色即可看到。</p></section><section id="device-management" class="device-management" aria-labelledby="device-management-title"><div class="device-management-heading"><h3 id="device-management-title">设备管理</h3><button id="device-refresh" type="button" class="text-button">刷新</button></div><p>仅获授权管理员可管理设备</p><div id="device-list" class="device-list"></div><p id="device-management-status" role="status" aria-live="polite"></p></section><p>添加到手机主屏幕，即可像应用一样打开。手机安装需要 HTTPS。</p><button id="install" class="primary-button" hidden>添加到主屏幕</button></dialog>
+  <dialog id="companion-dialog" class="knowledge-dialog" aria-labelledby="companion-heading">
+    <div class="dialog-heading"><div><span class="eyebrow" id="companion-role-name">当前角色</span><h2 id="companion-heading">按你喜欢的方式聊</h2></div><button id="companion-close" class="icon-button" aria-label="关闭陪伴偏好">×</button></div>
+    <p class="dialog-description">偏好会用于这个角色之后的对话。“跟随角色设定”保留你原来的风格。临时想换一种方式，直接在聊天里说就好。</p>
+    <form id="companion-form" class="companion-form">
+      <label for="companion-preferred_name">希望怎样称呼你</label><input id="companion-preferred_name" maxlength="40" autocomplete="off" placeholder="可留空，按对话自然称呼">
+      <label for="companion-reply_length">回复长短</label><select id="companion-reply_length"><option value="default">跟随角色设定</option><option value="short">简短一点</option><option value="detailed">需要时聊得详细些</option></select>
+      <label for="companion-tone">说话语气</label><select id="companion-tone"><option value="default">跟随角色设定</option><option value="natural">自然直接</option><option value="warm">温和亲切</option><option value="playful">轻松俏皮，适时认真</option></select>
+      <label for="companion-advice">给建议的习惯</label><select id="companion-advice"><option value="default">随对话自然调整</option><option value="ask_first">先听，再问我要不要建议</option><option value="on_request">我主动求助时再给建议</option></select>
+      <label for="companion-questions">追问的习惯</label><select id="companion-questions"><option value="default">跟随角色设定</option><option value="light">少追问，留些空间</option><option value="normal">适当追问，继续聊下去</option></select>
+      <div class="companion-actions"><button id="companion-defaults" class="text-button" type="button">恢复角色默认</button><button id="companion-save" class="primary-button" type="submit" disabled>保存偏好</button></div>
+    </form><p id="companion-message" class="dialog-message" role="status" hidden></p>
+  </dialog>
+  <dialog id="memory-dialog" class="knowledge-dialog" aria-labelledby="memory-title">
+    <div class="dialog-heading"><div><span class="eyebrow" id="memory-role-name">当前角色</span><h2 id="memory-title">留在口袋里的记忆</h2></div><button id="memory-close" class="icon-button" aria-label="关闭记忆管理">×</button></div>
+    <p class="dialog-description">只有审核通过的事实会用于跨会话对话。不同角色的记忆彼此独立。</p>
+    <div class="memory-toolbar"><div class="memory-tabs" role="group" aria-label="记忆状态"><button data-memory-filter="pending" class="selected">待审核</button><button data-memory-filter="approved">已审核</button></div><button id="memory-export" class="text-button">导出 Markdown ↗</button></div>
+    <div id="memory-list" class="memory-list"></div>
+    <form id="memory-form" class="memory-form"><label for="memory-content" id="memory-form-label">添加一条值得记住的事实</label><textarea id="memory-content" rows="3" maxlength="4096" placeholder="例如：我喜欢清淡的乌龙茶。" required></textarea><div class="memory-form-bottom"><label for="memory-status" class="sr-only">保存后的记忆状态</label><select id="memory-status"><option value="pending">待审核，暂不用于对话</option><option value="approved">已确认，允许用于对话</option></select><button id="memory-cancel-edit" class="text-button" type="button" hidden>取消编辑</button><button id="memory-save" class="primary-button" type="submit">保存候选</button></div></form>
+    <p id="memory-message" class="dialog-message" role="status" hidden></p>
+  </dialog>
+  <dialog id="role-dialog" class="knowledge-dialog" aria-labelledby="role-title">
+    <div class="dialog-heading"><div><span class="eyebrow" id="role-id-label">角色工作区</span><h2 id="role-title">角色设置</h2></div><button id="role-close" class="icon-button" aria-label="关闭角色设置">×</button></div>
+    <p class="dialog-description">人格、规则与交流风格分别保存，之后的新请求会使用更新后的配置。旧会话绑定的角色不会改变。</p>
+    <form id="role-form"><label for="role-file">编辑文档</label><select id="role-file"><option value="IDENTITY.md">人格 · IDENTITY</option><option value="RULES.md">规则 · RULES</option><option value="PROFILE.md">风格 · PROFILE</option></select><label for="role-content" class="sr-only">角色文档内容</label><textarea id="role-content" class="role-editor" rows="9" required></textarea><button id="role-save" class="primary-button" type="submit">保存当前文档</button></form>
+    <h3 class="skills-heading">可用 Skills <small>按需加载，不执行代码</small></h3><div id="role-skills"></div><p id="role-message" class="dialog-message" role="status" hidden></p>
+  </dialog>
+  <dialog id="role-proposals-dialog" class="knowledge-dialog role-proposals-dialog" aria-labelledby="role-proposals-heading" aria-describedby="role-proposals-description">
+    <div class="dialog-heading"><div><span id="role-proposals-role" class="eyebrow">当前角色</span><h2 id="role-proposals-heading">一起决定角色的变化</h2></div><button id="role-proposals-close" type="button" class="icon-button" aria-label="关闭角色变化建议">×</button></div>
+    <p id="role-proposals-description" class="dialog-description">助手可以根据相处提出交流风格的变化。先核对修改前后全文，再由你决定是否应用；只有点击“批准并应用”并确认，才会更新这个角色的风格设定。</p>
+    <div class="life-toolbar"><label class="sr-only" for="role-proposals-filter">建议状态</label><select id="role-proposals-filter"><option value="pending">待审核</option><option value="all">全部建议</option><option value="applied">已应用</option><option value="rejected">已拒绝</option></select><button id="role-proposals-refresh" type="button" class="text-button">重新读取列表</button></div>
+    <p id="role-proposals-message" class="dialog-message" role="status" aria-live="polite" hidden></p>
+    <div id="role-proposals-list" class="role-proposals-list" aria-label="当前角色的变化建议" aria-busy="false"></div>
+  </dialog>
+  <dialog id="tasks-dialog" class="knowledge-dialog" aria-labelledby="tasks-heading">
+    <div class="dialog-heading"><div><span id="tasks-role" class="eyebrow">当前角色</span><h2 id="tasks-heading">留一点空间，做一点小事</h2></div><button id="tasks-close" class="icon-button" aria-label="关闭待办提醒">×</button></div>
+    <p class="dialog-description">待办和提醒按角色保存。到期提醒会留在收件箱；这一版不提供关闭应用后的系统推送。</p>
+    <div class="memory-toolbar"><div class="memory-tabs" role="group" aria-label="任务类型"><button data-task-tab="todo" class="selected">待办</button><button data-task-tab="reminder">提醒收件箱</button></div><button id="tasks-refresh" class="text-button">刷新</button></div>
+    <div id="tasks-list" class="memory-list task-list"></div>
+    <form id="tasks-form" class="memory-form"><label for="tasks-title">添加一件小事</label><input id="tasks-title" maxlength="256" placeholder="例如：整理本周的项目笔记" required><div id="tasks-time" hidden><label for="tasks-due">提醒时间 <small id="tasks-time-zone"></small></label><input id="tasks-due" type="datetime-local" step="1"></div><button id="tasks-save" class="primary-button" type="submit">添加待办</button></form>
+    <p id="tasks-message" class="dialog-message" role="status" hidden></p>
+  </dialog>
+  <dialog id="life-dialog" class="knowledge-dialog life-dialog" aria-labelledby="life-heading">
+    <div class="dialog-heading"><div><span id="life-role" class="eyebrow">当前角色</span><h2 id="life-heading">下次还能接着聊的事</h2></div><button id="life-close" class="icon-button" aria-label="关闭事件记忆">×</button></div>
+    <p class="dialog-description">你确认的经历和未完话题，会用于这个角色之后的对话。可以纠正、结束或不再主动提及；原聊天仍可查看。</p>
+    <div class="life-toolbar"><label class="sr-only" for="life-query">查找事件</label><input id="life-query" type="search" maxlength="128" placeholder="找一件聊过的事"><label class="sr-only" for="life-filter">事件状态</label><select id="life-filter"><option value="all">全部</option><option value="pending">待确认</option><option value="open">正在经历</option><option value="resolved">已告一段落</option><option value="hidden">不主动提及</option></select><button id="life-refresh" class="text-button" type="button">刷新</button></div>
+    <div id="life-list" class="life-list"></div>
+    <form id="life-form" class="memory-form life-form">
+      <h3 id="life-editor-title" class="life-section-title">留下一件愿意下次接着聊的事</h3>
+      <label for="life-title">这件事的名字</label><input id="life-title" maxlength="128" placeholder="例如：周五的面试" required>
+      <label for="life-content">想留下的内容</label><textarea id="life-content" rows="3" maxlength="4096" placeholder="留下你愿意被记住的部分，也可以以后再补充进展。" required></textarea>
+      <div class="life-grid"><div><label for="life-event-at">事情时间（可选）</label><input id="life-event-at" type="datetime-local" step="60"></div><div><label for="life-followup-at">希望跟进的时间（可选）</label><input id="life-followup-at" type="datetime-local" step="60"></div></div>
+      <label class="life-check" for="life-allow-followup"><input id="life-allow-followup" type="checkbox"><span>允许在跟进时间准备一次关怀</span></label>
+      <p class="life-meta">还需要开启下方关怀收件箱中的关怀设置，才会准备问候。</p>
+      <label for="life-status">对话中的状态</label><select id="life-status"><option value="open">已确认，可以接着聊</option><option value="pending">先留作候选，暂不用于对话</option><option value="resolved">已经告一段落</option><option value="hidden">不主动提及</option></select>
+      <p id="life-time-zone" class="life-meta"></p>
+      <div class="life-form-actions"><button id="life-cancel-edit" class="text-button" type="button" hidden>取消编辑</button><button id="life-save" class="primary-button" type="submit">保存并用于对话</button></div>
+    </form>
+    <p id="life-message" class="dialog-message" role="status" hidden></p>
+  </dialog>
+  <dialog id="care-dialog" class="knowledge-dialog life-dialog" aria-labelledby="care-heading">
+    <div class="dialog-heading"><div><span id="care-role" class="eyebrow">当前角色</span><h2 id="care-heading">按你的节奏关心你</h2></div><button id="care-close" class="icon-button" aria-label="关闭关怀收件箱">×</button></div>
+    <p class="dialog-description">问候会留在应用内。开启自动生成后，应用可见时才会按额度调用模型；本机通知可在下方单独开启。关闭应用后不从服务器拉取新问候。</p>
+    <div class="life-toolbar care-toolbar"><h3 class="life-section-title">关怀收件箱</h3><button id="care-refresh" class="text-button" type="button">刷新</button></div>
+    <div id="care-list" class="life-list care-list"></div>
+    <form id="care-settings-form" class="memory-form life-form">
+      <h3 class="life-section-title">我希望怎样收到关怀</h3>
+      <label class="life-check" for="care-enabled"><input id="care-enabled" type="checkbox"><span>开启这个角色的应用内关怀</span></label>
+      <label class="life-check" for="care-auto-generate"><input id="care-auto-generate" type="checkbox"><span>允许打开应用时自动生成到期问候</span></label>
+      <p class="life-meta">生成问候会调用模型。每日上限包含失败的调用；失败或中断不会自动重试。关闭关怀后，尚未交付的问候停止。</p>
+      <label for="care-auto-probability">自动闲聊概率（%）</label><input id="care-auto-probability" type="number" min="0" max="100" step="1" value="50" aria-describedby="care-auto-probability-help" required><p id="care-auto-probability-help" class="life-meta">仅影响自动闲聊；明确的事件跟进不随机跳过。每次到期只决定一次；未选中不会调用模型。手动生成不受此概率影响。</p>
+      <label for="care-daily-limit">每日模型调用上限</label><input id="care-daily-limit" type="number" min="1" max="5" step="1" value="1" required>
+      <label for="care-min-interval">两次问候至少间隔（分钟）</label><input id="care-min-interval" type="number" min="15" max="1440" step="1" value="180" required>
+      <label for="care-snooze-until">暂停关怀到（可选）</label><input id="care-snooze-until" type="datetime-local" step="60"><p class="life-meta">暂停期间不生成新问候；留空并保存可恢复原计划，不会自动开启已关闭的关怀。日期输入使用设备时区。</p>
+      <div class="life-grid"><div><label for="care-quiet-start">安静时段开始</label><input id="care-quiet-start" type="time" value="22:00" required></div><div><label for="care-quiet-end">安静时段结束</label><input id="care-quiet-end" type="time" value="08:00" required></div></div>
+      <p class="life-meta">安静时段内不生成问候；开始和结束相同时表示不设置安静时段。</p>
+      <label for="care-daily-time">每日轻问候时间（可选）</label><input id="care-daily-time" type="time"><p class="life-meta">留空只跟进你允许的事件。设置时间按下面显示的用户时区解释。</p>
+      <p id="care-time-zone" class="life-meta"></p>
+      <div class="life-form-actions"><button id="care-settings-reload" class="text-button" type="button">重新读取设置</button><button id="care-settings-save" class="primary-button" type="submit" disabled>保存关怀设置</button></div>
+    </form>
+    <section id="native-care-controls" class="life-native-care" hidden>
+  <h3 class="life-section-title">这台手机的通知</h3>
+  <p id="native-care-status" class="life-meta" role="status"></p>
+  <p class="life-meta">首次开启只建立现有问候的基线；之后同步的新关怀可通知一次。关闭应用后不会从服务器拉取或远程推送，锁屏隐藏正文。</p>
+  <div class="life-actions"><button id="native-care-enable" type="button" class="text-button">开启本机通知</button><button id="native-care-disable" type="button" class="text-button">关闭本机通知</button></div>
+</section>
+
+    <p id="care-message" class="dialog-message" role="status" hidden></p>
+  </dialog>
+
+  <dialog id="activities-dialog" class="knowledge-dialog activities-dialog" aria-labelledby="activities-heading">
+    <div class="dialog-heading"><div><span id="activities-role" class="eyebrow">当前角色</span><h2 id="activities-heading">一起慢慢做的事</h2></div><button id="activities-close" class="icon-button" aria-label="关闭共同活动">×</button></div>
+    <p class="dialog-description">像平常一样聊天就好，助手会根据上下文选择合适的工具。想一起持续做一件事，也可以直接聊起来；这里用于查看、纠正和手动整理活动。只有你希望保留的进展才会保存，聊天原文单独保留。</p>
+    <div class="activities-toolbar"><h3 class="activities-section-title">我的活动</h3><button id="activities-refresh" class="text-button" type="button">重新读取列表</button></div>
+    <div id="activities-list" class="activities-list"></div>
+    <div id="activities-pending" class="activities-pending" role="status" hidden><p id="activities-pending-text"></p><button id="activities-confirm" class="activities-action" type="button">用同一标识确认保存</button><button id="activities-dismiss-pending" class="activities-action" type="button" hidden>结束确认并保留草稿</button></div>
+    <form id="activities-form" class="memory-form activities-form">
+      <h3 id="activities-editor-title" class="activities-section-title">留下一件想一起做的事</h3>
+      <label for="activities-kind">整理标签</label><select id="activities-kind"><option value="bedtime">睡前聊一会儿</option><option value="reflection">一天里的一件小事</option><option value="interest">共同兴趣</option><option value="small_step">小目标陪伴</option></select>
+      <label for="activities-title">给它起个名字</label><input id="activities-title" maxlength="256" placeholder="例如：睡前聊一会儿" required>
+      <label for="activities-goal">想怎样聊，或一起做什么</label><textarea id="activities-goal" rows="3" maxlength="2048" placeholder="可以很轻松，也可以只说一个你感兴趣的话题。" required></textarea>
+      <div id="activities-progress-field" hidden><label for="activities-progress">愿意留到下次的进展</label><textarea id="activities-progress" rows="4" maxlength="4096" placeholder="由你决定留下什么；清空后保存即可移除这段进展。"></textarea><p class="activities-meta">保存修改后，之后的活动对话会使用新内容；原聊天仍可查看。</p></div>
+      <div class="activities-form-actions"><button id="activities-cancel-edit" class="text-button" type="button" hidden>取消编辑</button><button id="activities-reload-edit" class="text-button" type="button" hidden>读取最新记录并替换草稿</button><button id="activities-save" class="primary-button" type="submit">创建并打开聊天</button></div>
+    </form>
+    <p id="activities-message" class="dialog-message" role="status" hidden></p>
+  </dialog>
+
+  <dialog id="topics-dialog" class="knowledge-dialog topics-dialog" aria-labelledby="topics-heading">
+    <div class="dialog-heading"><div><span id="topics-role" class="eyebrow">当前角色</span><h2 id="topics-heading">共同话题</h2></div><button id="topics-close" class="icon-button" aria-label="关闭共同话题">×</button></div>
+    <p class="dialog-description">让这个角色在你允许的时间里，偶尔看看公开网页，留下一点想和你分享的话题。查看这里不会发起搜索或调用模型。</p>
+    <div class="memory-toolbar topics-toolbar"><div class="memory-tabs" role="group" aria-label="共同话题记录视图"><button type="button" data-topics-view="share" class="selected" aria-pressed="true">分享给你</button><button type="button" data-topics-view="runs" aria-pressed="false">运行记录</button></div><button id="topics-refresh" class="text-button" type="button">刷新记录</button></div>
+    <p id="topics-records-help" class="life-meta">这里只展示已经准备好或标为已读的分享。打开列表不会自动标记已读。</p>
+    <div id="topics-list" class="topics-list" aria-live="polite"></div>
+    <form id="topics-settings-form" class="memory-form topics-form">
+      <h3 class="life-section-title">什么时候，一起看点什么</h3>
+      <div class="topics-notice" id="topics-settings-notice">
+        <p>默认关闭。只有你勾选开启并保存后，服务器才会按计划检索。兴趣查询会发送到公开搜索引擎，请不要填写私密信息。</p>
+        <p>仅访问 HTTPS 公开页面，不登录任何平台。每次唤醒最多检查 5 个候选结果、读取 2 篇正文、调用 1 次模型；未选中时不会调用模型。</p>
+        <p>所有角色合计每天最多调用 3 次模型，两次检索至少间隔 3 小时；有未读分享时会减少打扰。错过的旧时段不会集中补跑。</p>
+        <p>沿用主动关怀设置中的每日尝试额度、安静时段和暂停；无需开启普通问候。实际可执行次数还受这些设置限制。</p>
+        <p>关闭应用后服务器仍可能处理计划。分享留在应用内，目前还没有可靠的手机远程推送。</p>
+      </div>
+      <label class="topics-check" for="topics-enabled"><input id="topics-enabled" type="checkbox" aria-describedby="topics-settings-notice"><span>允许这个角色按计划寻找共同话题</span></label>
+      <label for="topics-queries">兴趣查询（每行一个，最多 5 个）</label><textarea id="topics-queries" rows="4" maxlength="2560" placeholder="例如：天文摄影新发现&#10;城市散步与建筑" aria-describedby="topics-queries-help"></textarea>
+      <p id="topics-queries-help" class="life-meta">填写你愿意公开检索的主题；开启时至少填写一个。不同角色单独保存。</p>
+      <div class="topics-grid"><div><label for="topics-window-start">时间窗开始</label><input id="topics-window-start" type="time" value="09:00" required></div><div><label for="topics-window-end">时间窗结束</label><input id="topics-window-end" type="time" value="21:00" required></div></div>
+      <p id="topics-time-zone" class="life-meta">时间按服务端用户时区解释。开始须早于结束，不跨天。</p>
+      <div class="topics-grid"><div><label for="topics-visits-per-day">每天安排次数</label><input id="topics-visits-per-day" type="number" min="1" max="2" step="1" value="2" required></div><div><label for="topics-scan-probability">每次检索概率（%）</label><input id="topics-scan-probability" type="number" min="0" max="100" step="1" value="70" required></div></div>
+      <p class="life-meta">每天最多安排 2 次；每次只做一次概率选择，跳过就结束这一时段。</p>
+      <label for="topics-daily-limit">这个角色每日模型调用上限</label><input id="topics-daily-limit" type="number" min="1" max="3" step="1" value="3" required>
+      <p class="life-meta">同时受所有角色每天合计 3 次的上限约束，失败调用也计入额度。</p>
+      <div class="life-form-actions"><button id="topics-settings-reload" class="text-button" type="button">重新读取设置</button><button id="topics-settings-save" class="primary-button" type="submit" disabled>保存共同话题设置</button></div>
+    </form>
+    <p id="topics-message" class="dialog-message" role="status" hidden></p>
+  </dialog>
+</body>
+</html>

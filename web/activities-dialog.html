@@ -1,0 +1,16 @@
+  <dialog id="activities-dialog" class="knowledge-dialog activities-dialog" aria-labelledby="activities-heading">
+    <div class="dialog-heading"><div><span id="activities-role" class="eyebrow">当前角色</span><h2 id="activities-heading">一起慢慢做的事</h2></div><button id="activities-close" class="icon-button" aria-label="关闭共同活动">×</button></div>
+    <p class="dialog-description">像平常一样聊天就好，助手会根据上下文选择合适的工具。想一起持续做一件事，也可以直接聊起来；这里用于查看、纠正和手动整理活动。只有你希望保留的进展才会保存，聊天原文单独保留。</p>
+    <div class="activities-toolbar"><h3 class="activities-section-title">我的活动</h3><button id="activities-refresh" class="text-button" type="button">重新读取列表</button></div>
+    <div id="activities-list" class="activities-list"></div>
+    <div id="activities-pending" class="activities-pending" role="status" hidden><p id="activities-pending-text"></p><button id="activities-confirm" class="activities-action" type="button">用同一标识确认保存</button><button id="activities-dismiss-pending" class="activities-action" type="button" hidden>结束确认并保留草稿</button></div>
+    <form id="activities-form" class="memory-form activities-form">
+      <h3 id="activities-editor-title" class="activities-section-title">留下一件想一起做的事</h3>
+      <label for="activities-kind">整理标签</label><select id="activities-kind"><option value="bedtime">睡前聊一会儿</option><option value="reflection">一天里的一件小事</option><option value="interest">共同兴趣</option><option value="small_step">小目标陪伴</option></select>
+      <label for="activities-title">给它起个名字</label><input id="activities-title" maxlength="256" placeholder="例如：睡前聊一会儿" required>
+      <label for="activities-goal">想怎样聊，或一起做什么</label><textarea id="activities-goal" rows="3" maxlength="2048" placeholder="可以很轻松，也可以只说一个你感兴趣的话题。" required></textarea>
+      <div id="activities-progress-field" hidden><label for="activities-progress">愿意留到下次的进展</label><textarea id="activities-progress" rows="4" maxlength="4096" placeholder="由你决定留下什么；清空后保存即可移除这段进展。"></textarea><p class="activities-meta">保存修改后，之后的活动对话会使用新内容；原聊天仍可查看。</p></div>
+      <div class="activities-form-actions"><button id="activities-cancel-edit" class="text-button" type="button" hidden>取消编辑</button><button id="activities-reload-edit" class="text-button" type="button" hidden>读取最新记录并替换草稿</button><button id="activities-save" class="primary-button" type="submit">创建并打开聊天</button></div>
+    </form>
+    <p id="activities-message" class="dialog-message" role="status" hidden></p>
+  </dialog>

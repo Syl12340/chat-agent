@@ -1,0 +1,70 @@
+# chat-agent Android
+
+当前更新包（2026-11-04）：**0.16.0-debug / versionCode 13**，已发布到现有应用内更新通道，未在真机安装验收。保留原签名与设备密钥，完整性保护名单加入新的人设审核模块和主题模块；服务器设备 challenge 鉴权继续使用。见[0.16 发布说明](../docs/release-0.16.md)。下文早期口令连接与测试记录保留为历史说明。
+
+Kotlin + 系统 Activity/WebView 的轻量包装，复用现有 PWA 和 Go 服务。没有引入外部 Agent 项目、AndroidX 或 Compose。最低 Android 8.0（API 26），目标 API 36。
+
+## 安装和连接
+
+开发 APK：`../bin/chat-agent-android-debug.apk`（本地构建后生成）。首次启动填写服务器**根地址**，随后在网页登录框输入 `POCKET_ACCESS_TOKEN`。访问口令通过系统 Keystore 加密保存，并绑定实际服务器地址；之后启动和覆盖升级自动恢复，退出登录清除。模型密钥保留在服务器。
+
+当前默认地址为 **`pocket://47.117.40.74:9992`**，直接通过自定义加密 TCP 连接云端，无需电脑 SSH 隧道、域名或公共 CA 证书。APK 内置该服务公钥，联网时先验签再交换业务数据；公网链路使用临时会话密钥和 AES-GCM。本机 WebView 通过原生回环代理访问网页。[协议、密钥与验证说明](../docs/encrypted-transport.md)。
+
+- Android 模拟器连接电脑服务：`http://10.0.2.2:8080`，Go 服务可监听 `127.0.0.1:8080`。
+- 真机局域网调试：填写电脑的私有 IPv4 地址，例如 `http://192.168.1.20:8080`；服务须监听可访问的网卡地址，电脑防火墙须允许该端口。
+- 两种构建均接受 `pocket://` 加密 TCP 或有效证书的 HTTPS；调试版额外允许 localhost、回环地址和私有 IPv4 的 HTTP。正式版只为内部回环代理允许 127.0.0.1 明文，不允许用户配置公网 HTTP。地址不接受账号、路径、查询参数或片段。
+
+调试服务示例（演示模式不调用模型）：
+
+```powershell
+$env:POCKET_ACCESS_TOKEN = '<设置自己的长随机访问口令>'
+.\bin\chat-agent.exe -demo -listen 127.0.0.1:8080
+```
+
+顶部按钮支持刷新及更换服务器。更换地址会清理 WebView 的存储和缓存。返回键先关闭网页弹窗/侧栏，再处理网页历史。断网、HTTP 错误和证书错误显示原生重试页面；外部 HTTP(S) 链接使用浏览器打开。
+
+Markdown 导出使用系统保存窗口，不申请存储权限。原生与网页之间提供限定服务器来源、页面随机标记的消息通道，用于加密登录存储及最大 4 MiB 文本导出，没有通用 JavaScript 原生接口。服务需使用当前仓库的网页版本。
+
+## 构建
+
+需要 JDK 17 或更新的受支持版本、Android SDK Platform 36 和 Build Tools 36.0.0。使用仓库自带的 Gradle 9.1.0 wrapper（固定官方 SHA-256）与 AGP 9.0.0 内置 Kotlin 2.2.10。首次构建需要下载标准 Android/Kotlin 构建依赖；应用运行不需要 npm 或第三方 Agent 框架。
+
+```powershell
+# 设置 JAVA_HOME、ANDROID_HOME，或用 Android Studio 打开 android 目录
+.\android\gradlew.bat -p android :app:assembleDebug :app:testDebugUnitTest
+Copy-Item android\app\build\outputs\apk\debug\app-debug.apk bin\chat-agent-android-debug.apk
+```
+
+仅保留两项 JVM 测试：地址来源/HTTP 策略，以及静态模块完整性边界。本次新增的模块检查单独运行，不重复完整设备矩阵。无需运行完整后端测试矩阵。`assembleRelease` 生成未签名正式包；正式发布前由应用所有者使用自己的签名配置签署，密钥不加入仓库。
+
+## 当前范围
+
+APK 不内置 Go 服务或本地模型；聊天、记忆、待办和提醒仍由服务器负责。提醒沿用服务端收件箱，没有 Android 后台保活、系统推送或离线聊天。现已支持启动后自动检查版本及顶部“更新”按钮，经哈希、包名、版本与同签名校验后交给系统确认安装。[自动登录与更新发布说明](../docs/android-updates.md)。
+
+## 本次构建
+
+2026-11-03：0.15.0-debug（versionCode 12）已构建、发布并覆盖安装到用户手机。新增 Keystore 设备身份、challenge 签名桥及 Material 配色外壳；按用户要求跳过显式测试和验收。详见[本次说明](../docs/release-0.15.md)。
+
+## 历史最小验证
+
+2026-11-03：0.14.0-debug（versionCode 11）已发布至 `android-20261103-06`。保留包名、签名与原登录；识别退出结果隔离和重新登录、断网恢复无消息重放、实际播放通过隔离模拟器验证。用户暂时没有真机，真机验收待完成。[联合交付](../docs/release-0.14.md)。
+
+2026-11-03：0.12.0-debug（versionCode 9）新增系统语音输入桥，识别结果回到草稿并由用户确认发送；无需应用申请麦克风权限，识别能力由手机系统提供。服务端点选朗读和播放/停止入口见[语音说明](../docs/release-0.12.md)。
+
+2026-11-03：0.11.0-debug（versionCode 8）新增已同步关怀的本机通知，默认关闭、显式申请系统权限、首次基线、有界去重和锁屏正文隐藏。API 35 模拟器的一条完整流程通过，原鉴权与同签名覆盖安装正常。[范围与限制](../docs/release-0.11.md)。
+
+2026-11-03：0.7.0-debug（versionCode 7，900,880 字节）已发布至 `android-20261103-02`，沿用原包名、签名、Keystore 登录和加密通道。API 35 模拟器通过[共同活动流程](../docs/activities-0.7.md)。
+
+2026-11-03：产品改名 chat-agent，0.6.1-debug（versionCode 6，900,880 字节）已发布；APK 原包名和签名保留，改名不创建另一个应用。安装标签与名称通过 APK 元数据检查，发布验证鉴权、完整下载哈希及同签名。
+
+2026-11-02：v0.6.0-debug（versionCode 5，900,888 字节）已发布至原更新通道。隔离 API 35 模拟器通过连续发送/停止/撤回/恢复、事件纠正与跨会话隔离、可选关怀完整流程；见[本次说明](../docs/companion-0.6.md)。只升级包装版本，未新增原生依赖。
+
+2026-11-02：v0.4.0-debug（versionCode 4，900,892 字节）已发布至服务器，延续原签名与更新机制。隔离 API 35 模拟器通过陪伴偏好面板、三段真实模型对话、新会话保持与角色隔离；见[交付说明](../docs/companion.md)。
+
+2026-10-30：v0.3.0-debug（versionCode 3）已发布至服务器。Keystore 加密存储、进程重启自动登录、退出清理及应用内覆盖升级见[验收范围](../docs/android-updates.md)。旧 0.2.0 需手动安装此包一次，之后使用应用内更新。
+
+2026-10-27：v0.2.0 开发 APK（886,052 字节）已通过公网加密 TCP 直连云端的模拟器流程，包括登录、原生导出通道建立、SSE 时间工具和取消回复；9 项 Go 核心检查及 1 项 Kotlin 地址测试通过。安装新版后，在“服务器”中选择 `pocket://47.117.40.74:9992`；升级会保留此前填写的地址，不会静默覆盖。当时为演示模式；当前使用 ecnu-max，协议边界见[加密传输说明](../docs/encrypted-transport.md)。
+
+2026-10-26：开发 APK 编译成功（872,150 字节），1 项 JVM 地址策略测试通过。在隔离的 API 35 模拟器中完成连接设置、网页登录、SSE 时间工具回复、返回键关闭网页弹窗、系统选择位置保存 Markdown，并读取文件确认内容。真实软键盘打开时，输入框及发送按钮保持可见；该流程未发现网页错误或应用崩溃。没有使用真实模型额度，也未安装到真实手机；正式 HTTPS 部署和其他 Android 版本尚未做设备验收。
+
+构建说明参考：[AGP 9.0](https://developer.android.com/build/releases/agp-9-0-0-release-notes)、[内置 Kotlin](https://developer.android.com/build/migrate-to-built-in-kotlin)。

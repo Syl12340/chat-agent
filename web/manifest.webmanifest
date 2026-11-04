@@ -1,0 +1,16 @@
+{
+  "id": "/",
+  "name": "chat-agent",
+  "short_name": "chat-agent",
+  "description": "随时有话可说。你的轻量个人 AI 助手。",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FFFBFE",
+  "theme_color": "#6750A4",
+  "icons": [
+    {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+    {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}
+  ]
+}
