@@ -1,8 +1,8 @@
 # chat-agent
 
-当前发布为 **0.17.0**；Android 更新包为 **0.17.0-debug（versionCode 14）**。2026-11-04 已部署到现有服务器及更新通道，保留原包名、签名和设备身份。[本次发布](docs/release-0.17.md)。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
+当前发布为 **0.18.0**；Android 更新包为 **0.18.0-debug（versionCode 15）**。2026-11-05 已部署到现有服务器及更新通道，保留原包名、签名和设备身份。[本次发布](docs/release-0.18.md)。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
 
-新增共同话题的持久化随机作息、有界网页筛选和“运行记录／分享给你”双视图，默认关闭。沿用 0.16 的概率关怀、人设候选审核、Harness 阶段 1–2 和删除功能。本批八项最小回归、构建及线上只读检查通过，未做真实搜索、真实模型或真机验收。[共同话题说明](docs/topics-0.17.md)、[Harness 规划](docs/dsh-harness-migration-plan.md)。
+本批调整陪伴表达、交付 Harness 3A 存储契约，并增加默认关闭的 Android 加密后台接收。后台接收关怀、共同话题和到期提醒，须显式开启常驻通知；不保证系统强停或省电时实时送达。七项关键 Go 流程、构建及线上只读检查通过，未调用真实搜索/模型或安装真机。3B/3C 恢复迁移仍未实施。[推送渠道](docs/push-channel.md)、[Harness 规划](docs/dsh-harness-migration-plan.md)。
 
 独立实现的轻量个人 AI 助手，当前具备 P0–P3 核心能力：运行时、PWA 聊天、角色/记忆、待办和提醒收件箱。Go 标准库 + 原生 HTML/CSS/JavaScript，**零第三方模块、无前端构建步骤**，网页资源嵌入单个可执行文件。
 
@@ -17,10 +17,10 @@
 需要 Go 1.26。Windows / PowerShell 7：
 
 ```powershell
-go build -buildvcs=false -o bin/chat-agent-0.17.0.exe ./cmd/server
+go build -buildvcs=false -o bin/chat-agent-0.18.0.exe ./cmd/server
 $env:POCKET_ACCESS_TOKEN = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 $env:POCKET_ACCESS_TOKEN  # 在自己的终端查看，随后输入网页登录框
-.\bin\chat-agent-0.17.0.exe -demo
+.\bin\chat-agent-0.18.0.exe -demo
 ```
 
 在浏览器打开 [本机页面](http://127.0.0.1:8080)，首次通过管理员维护入口批准设备指纹，之后由设备签名自动连接。点击“看看此刻的时间”即可体验完整工具循环。
@@ -43,7 +43,7 @@ Linux 构建：`go build -buildvcs=false -o bin/chat-agent ./cmd/server`。运�
 $env:POCKET_BASE_URL='https://your-api.example/v1'
 $env:POCKET_MODEL='your-model-id'
 # 在自己的终端安全设置 POCKET_API_KEY
-.\bin\chat-agent-0.17.0.exe
+.\bin\chat-agent-0.18.0.exe
 ```
 
 [.env.example](.env.example) 只是模板，程序不会自动加载 `.env`。
@@ -109,7 +109,7 @@ Android 当前可以填写 `pocket://47.117.40.74:9992`，通过固定服务器�
 
 服务端每秒检查一次，将到期提醒持久化为“已到期”。重启后补记停机期间过期的提醒，后续扫描不会反复触发。页面打开时每 15 秒刷新到期计数，也可手动刷新；切回页面会立即检查。
 
-**这一版是持久化收件箱，不是 Web Push。** 手机关闭应用后不会收到系统推送；服务端仍记录到期状态，重新打开页面后可以查看。待办提醒本身不调用模型；另有默认关闭的[应用内关怀](docs/companion-0.6.md)，需要用户开启后才按设置生成问候。
+到期状态持久保留在收件箱，提醒本身不调用模型。Android 0.18 可在关怀面板单独开启[加密后台接收](docs/push-channel.md)，显示常驻通知，按角色安静/暂停设置通知。默认关闭，不等同于系统级可靠推送。关怀也需用户另行开启，接收在线时才补后台自动生成，继续遵守概率和额度。
 
 创建请求使用持久化的 `idempotency_key`。相同角色内的同名有效待办、同标题且同时间的有效提醒也会合并；最多保留 16 个去重请求别名，已使用标识不能改绑其他任务。修改/删除校验 revision，旧版本不能重新打开或覆盖新状态。每个角色最多 500 条、总计最多 2000 条记录，标题最多 256 字节。
 
@@ -126,7 +126,7 @@ Android 当前可以填写 `pocket://47.117.40.74:9992`，通过固定服务器�
 $env:POCKET_SEARCH_URL='https://cn.bing.com/search'
 # 可选缩小网页抓取域名范围；留空允许经过校验的公开 HTTPS 站点。
 $env:POCKET_WEB_HOSTS='example.org,docs.example.org'
-.\bin\chat-agent-0.17.0.exe -enable-web
+.\bin\chat-agent-0.18.0.exe -enable-web
 ```
 
 抓取仅接受 HTTPS/443 和有效 DNS 域名，拒绝私有/保留地址、账号、IP 字面量和内网跳转，连接固定到已检查 IP，保持 TLS 校验，不使用环境代理。不会执行网页脚本；读取最多 256 KiB、正文返回最多 12 KiB，有明确超时和解析错误。结果始终是不可信参考，不授予写入权限。
