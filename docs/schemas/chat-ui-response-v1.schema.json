@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:chat-agent:chat-ui-response:v1",
-  "title": "chat-agent read-only UI response v1 (planned)",
+  "title": "chat-agent read-only UI response v1",
   "description": "The server must also verify source hash, completed assistant origin, context floor, exact option/field IDs, readonly tools, and queue identity. This envelope does not grant write permission.",
   "type": "object",
   "additionalProperties": false,

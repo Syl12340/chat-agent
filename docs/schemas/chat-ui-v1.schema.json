@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:chat-agent:chat-ui:v1",
-  "title": "chat-agent UI Protocol v1 (planned)",
+  "title": "chat-agent UI Protocol v1",
   "description": "Documentation contract. Runtime byte/count/source checks are additionally required by generative-ui-v0.1.md.",
   "type": "object",
   "additionalProperties": false,

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"pocket-agent/internal/companion"
+	"pocket-agent/internal/interactive"
 	"pocket-agent/internal/media"
 	"pocket-agent/internal/probe"
 	"pocket-agent/internal/turns"
@@ -52,6 +53,11 @@ func (s *Server) enqueueTurn(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	uiResponse, reserved, responseErr := interactive.ParseResponse(input.Content)
+	if responseErr != nil || (reserved && len(input.ImageIDs) > 0) {
+		fail(w, 400, "互动答案格式无效，不能附带图片")
+		return
+	}
 	choice, err := s.selectChat(input.Model, input.Thinking)
 	if err != nil {
 		fail(w, 400, err.Error())
@@ -90,6 +96,12 @@ func (s *Server) enqueueTurn(w http.ResponseWriter, r *http.Request) {
 	if s.closing {
 		fail(w, 503, "服务正在关闭")
 		return
+	}
+	if uiResponse != nil {
+		if err := s.validateUIResponse(sess, id, uiResponse); err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
 	}
 	if current := s.runs[id]; current != nil && !current.queued {
 		fail(w, 409, "旧版聊天请求正在生成，请先停止")
@@ -218,7 +230,8 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 			case <-timer.C:
 			}
 			batch, err := s.turns.Begin(id, len(sess.Messages()), func(t turns.Turn) bool {
-				return true
+				_, reserved, _ := interactive.ParseResponse(t.Content)
+				return !reserved
 			})
 			if err != nil {
 				_ = s.turns.Pause(id, true)
@@ -247,15 +260,32 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 				query = append(query, t.Content)
 			}
 			choice, selectionErr := s.selectChat(batch[0].Model, batch[0].Thinking)
-			agent, err := s.agentForTurn(sess, query, id, func(c *probe.Config) {
-				c.Model = choice.Model
-				c.Thinking = choice.ProviderThinking
-				c.ReasoningEffort = choice.Effort
-				c.Timeout = s.chatTimeout(choice)
-				if choice.Thinking != "off" {
-					c.MaxOutputTokens = s.config.ThinkingMaxOutput
+			var agent *probe.Agent
+			// Recheck a queued answer before building an agent or appending a
+			// user message: context may have changed while the queue was paused.
+			for _, t := range batch {
+				response, _, parseErr := interactive.ParseResponse(t.Content)
+				if parseErr != nil {
+					err = parseErr
+					break
 				}
-			})
+				if response != nil {
+					if err = s.validateUIResponse(sess, id, response); err != nil {
+						break
+					}
+				}
+			}
+			if err == nil {
+				agent, err = s.agentForTurn(sess, query, id, func(c *probe.Config) {
+					c.Model = choice.Model
+					c.Thinking = choice.ProviderThinking
+					c.ReasoningEffort = choice.Effort
+					c.Timeout = s.chatTimeout(choice)
+					if choice.Thinking != "off" {
+						c.MaxOutputTokens = s.config.ThinkingMaxOutput
+					}
+				})
+			}
 			if selectionErr != nil {
 				err = selectionErr
 			}

@@ -55,7 +55,7 @@ export function createTurnsUI({ state, json, storage, onError, onHistory, onStat
     ui['turn-queue-list'].replaceChildren();
     for (const item of queued) {
       const row = document.createElement('div'); row.className = 'turn-queue-item'; row.dataset.requestId = item.id;
-      const label = document.createElement('span'); label.textContent = item.content || `图片消息 · ${item.images?.length || 0} 张`; row.append(label);
+      const label = document.createElement('span'); label.textContent = answerLabel(item.content) || item.content || `图片消息 · ${item.images?.length || 0} 张`; row.append(label);
       const button = document.createElement('button'); button.type = 'button'; button.textContent = '撤回'; button.disabled = queueBusy || state.submitting;
       button.addEventListener('click',() => queueAction(async sid => json(path(sid,`/turns/${encodeURIComponent(item.id)}`),{method:'DELETE'})));
       row.append(button); ui['turn-queue-list'].append(row);
@@ -64,10 +64,11 @@ export function createTurnsUI({ state, json, storage, onError, onHistory, onStat
     ui['turn-resume'].disabled = queueBusy || state.submitting || Boolean(history?.active);
     ui['turn-refresh'].disabled = queueBusy || !state.token;
     ui['turn-unknown'].hidden = !pending || pending.phase === 'submitting';
-    if (pending) ui['turn-unknown-text'].textContent = `${pending.phase === 'rejected' ? '这条尚未提交':'这条可能已被接收，请查询或用同一标识确认'}：${pending.content}${pending.image_ids?.length ? `（${pending.image_ids.length} 张图片）`:''}`;
+    if (pending) ui['turn-unknown-text'].textContent = `${pending.phase === 'rejected' ? '这条尚未提交':'这条可能已被接收，请查询或用同一标识确认'}：${answerLabel(pending.content) || pending.content}${pending.image_ids?.length ? `（${pending.image_ids.length} 张图片）`:''}`;
     ui['turn-retry'].disabled = state.submitting || queueBusy || pending?.status === 409;
     ui['turn-retry'].textContent = pending?.phase === 'rejected' ? '重试提交':'用同一标识确认提交';
     ui['turn-restore-draft'].hidden = pending?.phase !== 'rejected';
+    ui['turn-restore-draft'].textContent = answerLabel(pending?.content) ? '放弃这次答案' : '放回输入框';
     onState();
   }
   function schedule() {
@@ -84,7 +85,7 @@ export function createTurnsUI({ state, json, storage, onError, onHistory, onStat
       (pending.image_ids===undefined || JSON.stringify((item.images || []).map(image=>image.id))===JSON.stringify(pending.image_ids));
     if (pending && history.turns.some(matchesPending)) { const accepted=pending; pending = null; savePending(); say(''); onAccepted?.(accepted); }
     state.streaming = Boolean(history.active); state.external = false;
-    const nextSignature = JSON.stringify([history.messages,history.turns,history.active,history.queue_paused,history.activity]);
+    const nextSignature = JSON.stringify([history.messages,history.turns,history.active,history.queue_paused,history.activity,history.ui_context_floor]);
     if (signature !== nextSignature) { signature = nextSignature; onHistory(history); }
     renderQueue();
     const terminal = JSON.stringify(history.turns.filter(item => !['queued','running'].includes(item.status)).map(item => [item.id,item.status]));
@@ -183,10 +184,20 @@ export function createTurnsUI({ state, json, storage, onError, onHistory, onStat
   ui['turn-restore-draft'].addEventListener('click',async () => {
     if (!pending || pending.phase !== 'rejected') return;
     const original=pending;
-    if (await onDraftRestore(pending.content,pending.mode,pending) === false || pending!==original) return;
+    if (!answerLabel(pending.content) && (await onDraftRestore(pending.content,pending.mode,pending) === false || pending!==original)) return;
     pending = null; savePending(); say(''); renderQueue(); schedule();
   });
   document.addEventListener('visibilitychange',() => { if (document.visibilityState === 'visible') refresh().catch(report); else cancelRead(); });
   window.addEventListener('online',() => refresh().catch(report));
-  return {watch,detach,clear,submit,stop,refresh};
+  return {watch,detach,clear,submit,stop,refresh,pendingSnapshot:()=>({turns:history?.turns || [],pending:pending ? {...pending}:null})};
+}
+
+function answerLabel(content) {
+  try {
+    const r=JSON.parse(content)?.chat_ui_response;
+    if (r?.schema_version!==1) return '';
+    if (r.component_type==='quiz.single_choice' && typeof r.answer?.option_id==='string') return `互动答案 · ${r.answer.option_id}`;
+    if (r.component_type==='quiz.fill_blank' && Array.isArray(r.answer?.fields)) return `互动答案 · ${r.answer.fields.map(f=>f.value).join(' / ')}`;
+  } catch {}
+  return '';
 }

@@ -13,6 +13,8 @@
   <link rel="apple-touch-icon" href="/icon-192.png">
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="/chat-ui.css">
+  <link rel="stylesheet" href="/desktop-workspace.css">
+  <link rel="stylesheet" href="/ui/ui.css">
   <script src="/theme.js"></script>
   <script src="/app.js" type="module"></script>
 </head>
@@ -25,6 +27,7 @@
       <button id="new-chat" class="new-chat"><span aria-hidden="true">＋</span> 开始新会话 <kbd>N</kbd></button>
       <details class="utility-menu"><summary>陪伴与工具</summary><div class="knowledge-actions"><button id="memory-open" disabled>记忆管理 <span id="memory-count" hidden></span></button><button id="tasks-open" disabled>待办提醒 <span id="tasks-count" hidden></span></button><button id="role-open" disabled>角色设置</button><button id="role-proposals-open" aria-controls="role-proposals-dialog" disabled>角色变化建议</button><button id="companion-open" disabled>陪伴偏好</button><button id="activities-open" disabled>共同活动</button><button id="topics-open" aria-controls="topics-dialog" disabled>共同话题</button><button id="life-open" disabled>事件记忆</button><button id="care-open" disabled>关怀收件箱 <span id="care-count" hidden></span></button></div></details>
       <div class="list-heading">最近会话 <span id="session-count">0</span></div>
+      <label class="sr-only" for="session-filter">筛选会话标题</label><input id="session-filter" class="session-filter" type="search" placeholder="筛选会话标题" maxlength="120" autocomplete="off" aria-controls="sessions">
       <nav id="sessions" class="session-list" aria-label="历史会话"><p class="list-empty">还没有会话，聊点什么吧。</p></nav>
       <div class="sidebar-note"><span class="note-dot"></span><div>一点想法，随时放进口袋。<small>对话保存在你的服务器上</small></div></div>
       <div class="sidebar-footer"><span class="protected"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10h12v10H6zM8 10V7a4 4 0 0 1 8 0v3"/></svg>访问已保护</span><button id="logout" class="text-button">退出</button></div>
@@ -78,6 +81,12 @@
         <p class="composer-hint"><span>Enter 发送 · Shift + Enter 换行</span><span>AI 的回答可能存在偏差，请核实重要信息</span></p>
       </div>
     </main>
+    <button id="desktop-workbench-scrim" class="desktop-workbench-scrim" type="button" aria-label="收回互动工作台" hidden></button>
+    <aside id="desktop-workbench" class="desktop-workbench" aria-labelledby="desktop-workbench-title" hidden>
+      <header class="desktop-workbench-header"><div><span class="desktop-workbench-eyebrow">互动工作台</span><h2 id="desktop-workbench-title">互动内容</h2></div><button id="desktop-workbench-close" class="icon-button" type="button" aria-label="收回工作台" title="收回工作台（Esc）">×</button></header>
+      <div id="desktop-workbench-body" class="desktop-workbench-body"></div>
+      <p class="desktop-workbench-note">与对话共用同一份内容，展开和调整图形不调用模型。</p>
+    </aside>
   </div>
 
   <dialog id="image-viewer" class="image-viewer" aria-label="图片预览"><button id="image-viewer-close" type="button" aria-label="关闭图片预览">×</button><img id="image-viewer-image" alt="放大的对话图片"></dialog>

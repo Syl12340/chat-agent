@@ -295,7 +295,7 @@ export function createChatInput({state,request,json,createSession,notice,onChang
   $('image-viewer-close').addEventListener('click',()=>preview.close());
   preview.addEventListener('close',()=>large.removeAttribute('src'));
   preview.addEventListener('click',event=>{if(event.target===preview)preview.close();});
-  return {refreshOptions,lock,prepare,accepted,restoreUploaded,renderImages,syncScope,beforeHistoryRender:()=>observer?.disconnect(),ready:()=>Boolean(options && selectedModel()),hasImages:()=>Boolean(drafts.length),
+  return {refreshOptions,lock,prepare,accepted,restoreUploaded,renderImages,syncScope,beforeHistoryRender:()=>observer?.disconnect(),ready:()=>Boolean(options && selectedModel()),hasImages:()=>Boolean(drafts.length),selection:()=>({model,thinking:level,image_ids:[]}),
     clear(){ clearDrafts(false); clearCache(); options=null; model=''; level='off'; boundRole=state.roleID; boundSession=null; picker.replaceChildren(); thinking.replaceChildren(); lock(); },
     discard(){ clearDrafts(); clearCache(); boundRole=state.roleID; boundSession=state.current; },
     hasUnsentImages:()=>Boolean(drafts.length)};

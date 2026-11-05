@@ -4,12 +4,14 @@ import { createCompanionUI } from '/companion.js';
 import { createRoleProposalsUI } from '/role-proposals.js';
 import { createTopicsUI } from '/topics.js';
 import { createLifeUI } from '/life.js';
-import { createTurnsUI, replyBubbles } from '/turns.js';
+import { createTurnsUI } from '/turns.js';
 import { createActivitiesUI } from '/activities.js';
 import { createNativeCare } from '/native-care.js';
 import { createVoiceUI } from '/voice.js';
 import { createDeviceAuth } from '/device-auth.js';
 import { createChatInput } from '/chat-input.js';
+import { createUIRenderer } from '/ui/render.js';
+import { createDesktopWorkspace } from '/desktop-workspace.js';
 const $ = id => document.getElementById(id);
 const ui = Object.fromEntries(['sidebar','drawer-scrim','menu','new-chat','sessions','session-count','logout','chat-title','connection-label','demo-badge','conversation','welcome','messages','prompt','composer','send','stop','notice','model-label','login-overlay','login-form','access-token','login-button','login-error','settings','settings-dialog','close-settings','connection-info','reset-chat','delete-session','offline-banner','install'].map(id => [id, $(id)]));
 for (const id of ['role-picker','memory-open','memory-count','role-open','memory-dialog','memory-close','memory-role-name','memory-list','memory-form','memory-content','memory-status','memory-save','memory-cancel-edit','memory-form-label','memory-export','memory-message','role-dialog','role-close','role-id-label','role-title','role-form','role-file','role-content','role-save','role-skills','role-message','compact-context','compact-message','summary-details','summary-content']) ui[id] = $(id);
@@ -49,6 +51,8 @@ function forgetToken() {
 }
 const state = { token: storage.get('pocket-token') || '', current: null, sessions: [], config: null, loading: false, streaming: false, external: false, stopping: false, controller: null, follow: true };
 let chatInput = null;
+let interactiveUI = null, historyRevision = 0, uiFloor = 0, uiSourceMessages = [];
+const workspace = createDesktopWorkspace();
 Object.assign(state, { roles: [], roleID: 'companion', memories: [], memoryFilter: 'pending', memoryEditing: null, roleDocument: null, summary: null, compacting: false });
 const deviceAuth = createDeviceAuth({state,onToken:token=>connect(token,'device'),onError:handleError,adminRequest:json});
 const taskUI = createTaskUI({ state, request, json, roleName, drawer, onError: handleError });
@@ -61,6 +65,7 @@ const lifeUI = createLifeUI({ state, json, drawer, onError: handleError, onOpenS
 const turnUI = createTurnsUI({ state, json, storage, onError: handleError, onHistory: applyTurnHistory, onState: updateUI, onSettled: refreshAfterTurn, createSession: createRemoteSession, onDraftRestore: restoreTurnDraft, onAccepted: payload=>chatInput?.accepted(payload) });
 const activitiesUI = createActivitiesUI({ state, json, drawer, onError: handleError, onContinue: openActivityChat, onChanged: () => turnUI.refresh() });
 chatInput = createChatInput({state,request,json,createSession:createRemoteSession,notice,onChange:updateUI,onImageLoad:()=>scrollBottom()});
+interactiveUI = createUIRenderer({onSubmit:submitUIAnswer,onExpand:(node,meta)=>workspace.expand(node,meta),onPlace:node=>workspace.placement(node),canSubmit:uiSubmitPermission});
 // A manual connection owns authentication immediately, even while native restore awaits.
 let authEpoch = 0, connectionWork = Promise.resolve(), connectionAbort = null, renewalWork = null;
 const staleAuth = () => new DOMException('认证请求已过期', 'AbortError');
@@ -104,6 +109,38 @@ function updateUI() {
   activitiesUI.lock();
   voiceUI.lock();
   chatInput?.lock();
+  interactiveUI?.reconcileResponses(answerTurns(turnUI.pendingSnapshot().turns),turnUI.pendingSnapshot().pending);
+  interactiveUI?.update();
+}
+
+function uiSubmitPermission(context) {
+  if (!state.token || !ui['login-overlay'].hidden || context.session !== state.current || context.role !== state.roleID) return '请在原会话中登录后提交';
+  if (!context.eligible || context.messageIndex < uiFloor) return '这条互动已过期或回答尚未完成';
+  if (state.loading || state.streaming || state.external || state.compacting || state.submitting || state.submitUnknown || state.queuedCount || state.queuePaused || state.stopping || state.imageBusy) return '请先等待当前回复和队列完成';
+  if (ui.prompt.value.trim() || chatInput?.hasUnsentImages()) return '输入框还有草稿，请先发送或清空';
+  return chatInput?.ready() ? true : '模型选项尚未就绪';
+}
+async function submitUIAnswer({content,context}) {
+  const allowed=uiSubmitPermission(context);
+  if (allowed!==true) { notice(allowed); return {status:'rejected'}; }
+  const epoch=authEpoch, session=state.current, role=state.roleID;
+  const options=chatInput.selection();
+  state.follow=false;
+  await turnUI.submit(content,'auto',false,options);
+  if (epoch!==authEpoch || session!==state.current || role!==state.roleID) return {status:'stale'};
+  const snapshot=turnUI.pendingSnapshot();
+  const pending=snapshot.pending?.content===content ? snapshot.pending : null;
+  const accepted=[...snapshot.turns].reverse().find(t=>t.content===content);
+  return {request_id:pending?.request_id || accepted?.id,status:pending?.phase || accepted?.status || 'rejected'};
+}
+function clearInteractiveUI() {
+  historyRevision++; workspace.reset(); interactiveUI?.syncScope('', ''); uiFloor=0; uiSourceMessages=[];
+}
+function answerTurns(turns) {
+  // The queue trims old payloads but retains their committed message ranges.
+  // UI answers never merge, so the original user envelope remains recoverable.
+  return turns.map(t=>!t.content && t.batch_id===t.id && uiSourceMessages[t.start_index]?.role==='user'
+    ? {...t,content:uiSourceMessages[t.start_index].content} : t);
 }
 
 async function renewDeviceSession() {
@@ -156,6 +193,7 @@ function handleError(error) {
   else notice(error.message || '连接失败，请稍后重试。');
 }
 function logout() {
+  clearInteractiveUI();
   deviceAuth.logout(state.token);
   authEpoch++; connectionAbort?.abort(); connectionAbort = null;
   ui['login-button'].disabled = false; ui['login-button'].textContent = '进入 chat-agent →';
@@ -248,7 +286,10 @@ function renderSessions() {
   if (!state.sessions.length) {
     const empty = document.createElement('p'); empty.className = 'list-empty'; empty.textContent = '还没有会话，聊点什么吧。'; ui.sessions.append(empty);
   }
-  for (const item of state.sessions) {
+  const filter=($('session-filter')?.value || '').trim().toLocaleLowerCase();
+  const visible=state.sessions.filter(item=>!filter || `${item.title || ''} ${roleName(item.role_id || 'companion')}`.toLocaleLowerCase().includes(filter));
+  if (filter && !visible.length) { const empty=document.createElement('p'); empty.className='list-empty'; empty.textContent='没有匹配的会话标题'; ui.sessions.append(empty); }
+  for (const item of visible) {
     const row = document.createElement('div');
     row.className = `session-row${item.id === state.current ? ' active-row' : ''}`;
     const button = document.createElement('button');
@@ -285,6 +326,7 @@ async function deleteSession(item) {
   const wasCurrent = state.current === item.id;
   state.sessions = state.sessions.filter(s => s.id !== item.id);
   if (wasCurrent) {
+    clearInteractiveUI(); turnUI.detach(); sessionSelection++;
     chatInput.discard();
     state.current = null;
     ui.messages.replaceChildren(); ui.welcome.hidden = false;
@@ -354,7 +396,7 @@ function markdown(text) {
   flush(); return fragment;
 }
 
-function card(role, text = '', key = '', images = []) {
+function card(role, text = '', key = '', images = [], context = null) {
   ui.welcome.hidden = true;
   const article = document.createElement('article'); article.className = `message ${role}`; article.dataset.role = role;
   if (key) article.dataset.messageId = key;
@@ -370,11 +412,35 @@ function card(role, text = '', key = '', images = []) {
   const copy=document.createElement('button'); copy.type='button'; copy.className='message-copy'; copy.textContent='复制回答'; copy.setAttribute('aria-label','复制这条回答');
   content.append(label, logs, attachments, body, status); if(role==='assistant'){actions.append(copy);content.append(actions);}
   article.append(avatar, content); ui.messages.append(article);
-  const result = { node: article, body, status, logs, tools: new Map(), text: '', setText(value) { this.text = value; if (role === 'user') body.textContent = value; else replyBubbles(body, value, markdown, key || `${state.current}:reply`); } };
+  const result = { node: article, body, status, logs, tools: new Map(), text: '',
+    appendSegment(value,source) {
+      this.text=[this.text,value].filter(Boolean).join('\n\n');
+      copy.disabled=!this.text;
+      const bubble=document.createElement('div'); bubble.className='reply-bubble';
+      bubble.append(interactiveUI.renderMessage(value,source,markdown)); body.append(bubble);
+    },
+    setText(value,source=context) {
+      this.text=''; body.replaceChildren();
+      if (role==='user') { this.text=value; renderUserContent(body,value); }
+      else this.appendSegment(value,source || {role:state.roleID,session:state.current,messageIndex:-1,sha256:'',eligible:false,floor:uiFloor});
+    }
+  };
   copy.addEventListener('click',()=>copyText(result.text,copy));
   copy.disabled=!text;
   const original=result.setText; result.setText=function(value){original.call(this,value);copy.disabled=!value;};
   result.setText(text); return result;
+}
+
+function renderUserContent(body,text) {
+  let response;
+  try { response=JSON.parse(text)?.chat_ui_response; } catch {}
+  if (response?.schema_version!==1 || !['quiz.single_choice','quiz.fill_blank'].includes(response.component_type)) {body.textContent=text;return;}
+  const summary=document.createElement('p'); summary.className='ui-answer-summary';
+  if (response.component_type==='quiz.single_choice' && typeof response.answer?.option_id==='string') summary.textContent=`互动答案 · 选择 ${response.answer.option_id}`;
+  else if (Array.isArray(response.answer?.fields) && response.answer.fields.every(f=>typeof f.id==='string' && typeof f.value==='string')) summary.textContent=`互动答案 · ${response.answer.fields.map(f=>`${f.id}：${f.value}`).join(' / ')}`;
+  else {body.textContent=text;return;}
+  const details=document.createElement('details'), label=document.createElement('summary'), source=document.createElement('pre');
+  label.textContent='查看原始答案'; source.textContent=text; details.append(label,source); body.append(summary,details);
 }
 
 const toolStarts = new Map();
@@ -423,8 +489,9 @@ function toolLog(message, data, pending = false) {
   log.summary.textContent = `${label}${hint ? ' ' + hint : ''} · ${state}`;
   log.output.textContent = pending ? '等待工具返回结果…' : data.error || data.output || '执行完成';
 }
-function renderHistory(messages, turns = []) {
+function renderHistory(messages, turns = [], hashes = new Map()) {
   chatInput.beforeHistoryRender();
+  const focus=interactiveUI.captureFocus();
   const top = ui.conversation.scrollTop;
   ui.messages.replaceChildren(); ui.welcome.hidden = messages.length > 0;
   const relevant = turns.filter(t => t.content || t.text || t.error || t.images?.length);
@@ -437,7 +504,7 @@ function renderHistory(messages, turns = []) {
     const bound = root.status === 'running' ? messages.length : root.end_index;
     for (const [offset,t] of (members.get(root.id) || []).entries()) if (root.start_index + offset < bound) userKeys.set(root.start_index + offset,`${state.current}:user:${t.id}`);
   }
-  const owner = index => [...roots].reverse().find(root => index >= root.start_index && (root.status === 'running' || index < root.end_index));
+  const owner = index => [...turns].reverse().find(root => root.batch_id===root.id && index >= root.start_index && (root.status === 'running' || index < root.end_index));
   let current = null, currentStart = -1;
   const calls = new Map(), inserted = new Set();
   let legacyUser = 0;
@@ -462,8 +529,9 @@ function renderHistory(messages, turns = []) {
     const message = messages[index], root = owner(index), key = root ? `${state.current}:turn:${root.id}`:`${state.current}:message:${index}`;
     if (message.role === 'user') { legacyUser = index; card('user',message.content,userKeys.get(index) || `${state.current}:message:${index}`,message.images || []); current = null; currentStart = -1; }
     else if (message.role === 'assistant') {
-      if (!current) { current = card('assistant',message.content,key); currentStart = index; }
-      else if (message.content) current.setText([current.text,message.content].filter(Boolean).join('\n\n'));
+      const source={role:state.roleID,session:state.current,messageIndex:index,sha256:hashes.get(index) || '',eligible:Boolean(hashes.get(index) && root?.status==='completed' && index===root.end_index-1 && !message.tool_calls?.length),floor:uiFloor};
+      if (!current) { current = card('assistant',message.content,key,[],source); currentStart = index; }
+      else if (message.content) current.appendSegment(message.content,source);
       for (const call of message.tool_calls || []) { toolLog(current,{id:call.id,name:call.function.name},true); calls.set(`${root?.id || `legacy-${legacyUser}`}:${call.id}`,{card:current,name:call.function.name}); }
       if (!message.tool_calls?.length) {
         if (!root || root.status === 'completed') {
@@ -482,6 +550,9 @@ function renderHistory(messages, turns = []) {
   for (const t of relevant.filter(t => t.status === 'queued').sort((a,b) => a.sequence - b.sequence)) {
     const pending = card('user',t.content,`${state.current}:user:${t.id}`,t.images || []); pending.node.classList.add('queued'); pending.status.textContent = '待发送';
   }
+  workspace.reconcile();
+  interactiveUI.reconcileResponses(answerTurns(turns),turnUI.pendingSnapshot().pending);
+  interactiveUI.update(); interactiveUI.restoreFocus(focus);
   if (!messages.length && !relevant.length) ui.conversation.scrollTop = 0;
   else if (!state.follow) ui.conversation.scrollTop = top;
   else scrollBottom(true);
@@ -523,13 +594,27 @@ function updateLatest(changed = false) {
   $('scroll-latest-label').textContent=unreadBelow?'查看新回复':'回到最新消息';
 }
 function scrollBottom(force = false) { if (force || state.follow) { ui.conversation.scrollTop = ui.conversation.scrollHeight; if(force)state.follow=true; updateLatest(); } }
-function applyTurnHistory(history) {
+async function applyTurnHistory(history) {
   if (!state.token || history.id !== state.current) return;
+  const revision=++historyRevision, epoch=authEpoch, session=state.current;
   if (state.roleID !== (history.role_id || 'companion')) { roleProposalsUI.clear(); topicsUI.clear(); state.memories = []; ui['memory-count'].hidden = true; }
   state.roleID = history.role_id || 'companion'; state.summary = history.summary; ui['role-picker'].value = state.roleID; showSummary();
   chatInput.syncScope();
+  interactiveUI.syncScope(state.roleID,state.current);
+  uiFloor=history.ui_context_floor || 0;
   activitiesUI.context(history.activity || null);
-  renderHistory(history.messages || [],history.turns || []);
+  const hashes=new Map();
+  try {
+    await Promise.all((history.messages || []).map(async(message,index)=>{
+      if(message.role!=='assistant' || !message.content?.includes('chat-ui') || !crypto.subtle) return;
+      const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(message.content));
+      hashes.set(index,Array.from(new Uint8Array(hash),b=>b.toString(16).padStart(2,'0')).join(''));
+    }));
+  } catch { notice('当前浏览器无法校验互动来源，组件保持只读。'); }
+  if (revision!==historyRevision || epoch!==authEpoch || session!==state.current) return;
+  uiSourceMessages=history.messages || [];
+  interactiveUI.retainSources([...hashes].map(([message_index,sha256])=>({message_index,sha256})));
+  renderHistory(history.messages || [],history.turns || [],hashes);
 }
 async function refreshAfterTurn() {
   if (!state.token) return;
@@ -538,6 +623,7 @@ async function refreshAfterTurn() {
 async function selectSession(id) {
   if (state.submitting || state.compacting || state.imageBusy) return;
   voiceUI.clear();
+  if(id!==state.current)clearInteractiveUI();
   chatInput.discard(); state.follow=true;
   const selected = ++sessionSelection;
   turnUI.detach(); state.loading = true; updateUI(); notice();
@@ -561,6 +647,7 @@ async function createRemoteSession() {
 async function newChat() {
   if (state.streaming || state.external || state.loading || state.compacting || state.submitting || state.submitUnknown || state.imageBusy) return;
   voiceUI.clear();
+  clearInteractiveUI();
   chatInput.discard(); state.follow=true;
   const selected = ++sessionSelection;
   state.loading = true; turnUI.detach(); updateUI(); notice();
@@ -578,6 +665,7 @@ async function openActivityChat(activity) {
   if (ui.prompt.value.trim() || chatInput.hasUnsentImages()) throw new Error('输入框里还有草稿，请先发送或清空，再开始活动聊天。');
   if (activity.role_id !== state.roleID || activity.status !== 'active') throw new Error('请在当前角色下恢复活动，再接着聊。');
   voiceUI.clear();
+  clearInteractiveUI();
   const selected = ++sessionSelection, auth = state.token, role = state.roleID;
   state.loading = true; turnUI.detach(); updateUI(); notice();
   try {
@@ -622,6 +710,7 @@ async function stopMessage() { await turnUI.stop(); }
 ui['login-form'].addEventListener('submit', event => { event.preventDefault(); if($('legacy-login-fields').hidden){deviceAuth.connect();return;} const token=ui['access-token'].value.trim();if(token)connect(token); });
 ui.logout.addEventListener('click', logout);
 ui['new-chat'].addEventListener('click', newChat);
+$('session-filter').addEventListener('input',renderSessions);
 ui.menu.addEventListener('click', () => drawer(!ui.sidebar.classList.contains('open')));
 ui['drawer-scrim'].addEventListener('click', () => drawer(false));
 ui.composer.addEventListener('submit', sendMessage);
@@ -629,6 +718,7 @@ ui.stop.addEventListener('click', stopMessage);
 ui.prompt.addEventListener('input', () => { ui.prompt.style.height = 'auto'; ui.prompt.style.height = `${Math.min(ui.prompt.scrollHeight, 160)}px`; updateUI(); });
 ui.prompt.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && !matchMedia('(pointer: coarse)').matches) { event.preventDefault(); sendMessage(); } });
 ui.conversation.addEventListener('scroll', () => { state.follow = ui.conversation.scrollHeight - ui.conversation.scrollTop - ui.conversation.clientHeight < 100; updateLatest(); }, { passive: true });
+document.addEventListener('focusin',event=>{ if(event.target.closest?.('.chat-ui-card')) {state.follow=false;updateLatest();} });
 $('scroll-latest').addEventListener('click',()=>scrollBottom(true));
 if(window.ResizeObserver)new ResizeObserver(entries=>{document.querySelector('.main-panel').style.setProperty('--composer-height',`${Math.ceil(entries[0].target.getBoundingClientRect().height)}px`);}).observe(document.querySelector('.composer-area'));
 document.querySelectorAll('[data-prompt]').forEach(button => button.addEventListener('click', () => { if (!state.streaming && !state.external && !state.loading) { ui.prompt.value = button.dataset.prompt; sendMessage(); } }));
@@ -641,6 +731,7 @@ ui['delete-session'].addEventListener('click', () => {
 ui['reset-chat'].addEventListener('click', async () => {
   if (!state.current || !confirm('重置会清空当前对话上下文，原始聊天记录和本角色长期记忆仍保留。是否继续？')) return;
   voiceUI.clear();
+  clearInteractiveUI();
   try { await json(`/api/sessions/${state.current}/reset`, { method: 'POST' }); await refreshSessions(); await selectSession(state.current); }
   catch (error) { handleError(error); }
 });

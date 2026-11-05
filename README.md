@@ -6,7 +6,7 @@
 
 独立实现的轻量个人 AI 助手，当前具备 P0–P3 核心能力：运行时、PWA 聊天、角色/记忆、待办和提醒收件箱。Go 标准库 + 原生 HTML/CSS/JavaScript，**零第三方模块、无前端构建步骤**，网页资源嵌入单个可执行文件。
 
-下一步规划：[Generative UI v0.1 实施规范](docs/generative-ui-v0.1.md)与[电脑端网页工作台方案](docs/desktop-web-plan.md)已形成，含组件/响应 Schema；尚未实现或发布，继续保留现有技术栈。
+0.20 已实现[Generative UI 四组件](docs/generative-ui-v0.1.md)与[电脑端网页工作台](docs/desktop-web-plan.md)，包含来源验证、只读答案反馈和同实例展开，正在准备发布。[0.20 发布记录](docs/release-0.20.md)。继续保留现有技术栈。
 
 **0.7.0 已交付**：睡前闲聊、一天复盘、共同兴趣和小目标陪伴。共同活动支持手动保存进展、跨会话继续、暂停与结束，只影响明确关联的会话。[使用说明](docs/activities-0.7.md)。原有[连续聊天、事件与关怀](docs/companion-0.6.md)、[陪伴偏好](docs/companion.md)继续保留。
 

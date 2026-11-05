@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"pocket-agent/internal/interactive"
 )
 
 // demoStream is an explicitly selected, deterministic local demo. No API calls.
@@ -111,6 +113,19 @@ func (a *Agent) demoStream(ctx context.Context, tools *ToolSet, emit func(Event)
 				text = fmt.Sprintf("时间工具返回的 UTC 时间是：`%s`。\n\n这是本地演示中真实执行的服务端时间工具。", last.Content)
 			}
 		}
+	} else if response, _, _ := interactive.ParseResponse(last.Content); response != nil {
+		text = "已收到你的答案。这是本地演示反馈，没有调用真实模型，也没有修改记忆、人设或任务。\n\n"
+		if response.ComponentType == "quiz.single_choice" {
+			text += "你选择了选项 **" + response.Answer.OptionID + "**。示例题里，2 大于 1，因此 B 更合适。"
+		} else {
+			text += "你完成了填空。真实对话中，模型会结合题目给出解释与反馈。"
+		}
+	} else if strings.TrimSpace(last.Content) == "互动演示" {
+		text = "这是四种互动组件的本地演示。答题需要点击提交；曲线滑块仅在本机计算。\n\n" +
+			"```chat-ui\n" + `{"schema_version":1,"id":"demo-choice","type":"quiz.single_choice","props":{"title":"试一试","question":"哪个数更大？","options":[{"id":"A","label":"1"},{"id":"B","label":"2"}]}}` + "\n```\n\n" +
+			"```chat-ui\n" + `{"schema_version":1,"id":"demo-fill","type":"quiz.fill_blank","props":{"question":"用一句话描述你看到的波形。","fields":[{"id":"description","label":"你的描述","placeholder":"例如：上下周期变化"}]}}` + "\n```\n\n" +
+			"```chat-ui\n" + `{"schema_version":1,"id":"demo-wave","type":"chart.line","props":{"title":"正弦波","x_label":"时间 (s)","y_label":"位移","source":{"kind":"sine","amplitude":1,"frequency":1,"duration":2,"controls":["amplitude","frequency","phase"]}}}` + "\n```\n\n" +
+			"```chat-ui\n" + `{"schema_version":1,"id":"demo-vectors","type":"diagram.vector","props":{"title":"二维矢量","vectors":[{"id":"a","label":"A","from":{"x":0,"y":0},"to":{"x":2,"y":1}},{"id":"b","label":"B","from":{"x":0,"y":0},"to":{"x":-1,"y":2}}]}}` + "\n```\n\n你可以展开组件，在工作台中继续操作。"
 	} else if _, ok := tools.byName["todo_add"]; ok && strings.HasPrefix(strings.TrimSpace(last.Content), "待办：") {
 		input, _ := json.Marshal(map[string]string{"title": strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(last.Content), "待办："))})
 		return demoCall("todo_add", string(input)), nil

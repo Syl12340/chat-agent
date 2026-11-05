@@ -22,6 +22,7 @@ import (
 
 	"pocket-agent/internal/companion"
 	"pocket-agent/internal/deviceauth"
+	"pocket-agent/internal/interactive"
 	"pocket-agent/internal/media"
 	"pocket-agent/internal/memory"
 	"pocket-agent/internal/probe"
@@ -330,7 +331,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		model = "chat-agent Demo"
 	}
 	identity := currentAuth(r)
-	writeJSON(w, 200, map[string]any{"name": "chat-agent", "version": "0.19.0", "auth_method": identity.Method, "device_id": identity.Device.ID, "device_admin": identity.Method == "owner" || identity.Device.Admin, "speech_enabled": s.speechEnabled(), "speech_max_chars": 1200, "model": model, "demo": s.config.Agent.Demo, "max_output": s.config.Agent.MaxOutputTokens, "timeout_seconds": s.config.Agent.Timeout.Seconds(), "time_zone": s.location.String(), "web_fetch": s.web.FetchEnabled(), "web_search": s.web.SearchEnabled(), "reminder_delivery": "inbox", "scheduler_ok": s.schedulerOK.Load()})
+	writeJSON(w, 200, map[string]any{"name": "chat-agent", "version": "0.20.0", "auth_method": identity.Method, "device_id": identity.Device.ID, "device_admin": identity.Method == "owner" || identity.Device.Admin, "speech_enabled": s.speechEnabled(), "speech_max_chars": 1200, "model": model, "demo": s.config.Agent.Demo, "max_output": s.config.Agent.MaxOutputTokens, "timeout_seconds": s.config.Agent.Timeout.Seconds(), "time_zone": s.location.String(), "web_fetch": s.web.FetchEnabled(), "web_search": s.web.SearchEnabled(), "reminder_delivery": "inbox", "scheduler_ok": s.schedulerOK.Load()})
 }
 
 func validID(id string) bool {
@@ -515,7 +516,12 @@ func (s *Server) history(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, "活动暂时不可用，请稍后重试")
 		return
 	}
-	writeJSON(w, 200, map[string]any{"id": r.PathValue("id"), "messages": visibleMessages(sess.Messages()), "active": active, "role_id": sess.RoleID(), "summary": sess.Summary(), "turns": items, "queue_paused": paused, "activity": activity})
+	floor, err := s.uiContextFloor(sess, r.PathValue("id"))
+	if err != nil {
+		fail(w, 503, "互动上下文暂时不可用")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"id": r.PathValue("id"), "messages": visibleMessages(sess.Messages()), "active": active, "role_id": sess.RoleID(), "summary": sess.Summary(), "turns": items, "queue_paused": paused, "activity": activity, "ui_context_floor": floor})
 }
 
 func (s *Server) message(w http.ResponseWriter, r *http.Request) {
@@ -533,6 +539,10 @@ func (s *Server) message(w http.ResponseWriter, r *http.Request) {
 	var extra any
 	if decoder.Decode(&extra) != io.EOF || strings.TrimSpace(input.Content) == "" || len(input.Content) > 64<<10 || !companion.ValidMode(input.Mode) {
 		fail(w, 400, "娑堟伅椤讳负闈炵┖鏂囨湰锛屾渶澶?64 KiB")
+		return
+	}
+	if _, reserved, _ := interactive.ParseResponse(input.Content); reserved {
+		fail(w, 400, "互动答案请通过消息队列提交")
 		return
 	}
 	sess, ok := s.get(w, r)
