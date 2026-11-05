@@ -1,0 +1,526 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:chat-agent:chat-ui:v1",
+  "title": "chat-agent UI Protocol v1 (planned)",
+  "description": "Documentation contract. Runtime byte/count/source checks are additionally required by generative-ui-v0.1.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "type": {
+      "enum": [
+        "quiz.single_choice",
+        "quiz.fill_blank",
+        "chart.line",
+        "diagram.vector"
+      ]
+    },
+    "props": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "type",
+    "props"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "quiz.single_choice"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "props": {
+            "$ref": "#/$defs/quiz"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "quiz.fill_blank"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "props": {
+            "$ref": "#/$defs/fill"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "chart.line"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "props": {
+            "$ref": "#/$defs/chart"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "diagram.vector"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "props": {
+            "$ref": "#/$defs/vectors"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "point": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "type": "number",
+          "minimum": -1000000,
+          "maximum": 1000000
+        },
+        "y": {
+          "type": "number",
+          "minimum": -1000000,
+          "maximum": 1000000
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ]
+    },
+    "option": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "id",
+        "label"
+      ]
+    },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "placeholder": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "id",
+        "label"
+      ]
+    },
+    "quiz": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "question": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "options": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/option"
+          }
+        },
+        "submit_label": {
+          "const": "提交答案"
+        }
+      },
+      "required": [
+        "question",
+        "options"
+      ]
+    },
+    "fill": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "question": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/field"
+          }
+        },
+        "submit_label": {
+          "const": "提交答案"
+        }
+      },
+      "required": [
+        "question",
+        "fields"
+      ]
+    },
+    "series": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "points": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/point"
+          }
+        }
+      },
+      "required": [
+        "points"
+      ]
+    },
+    "samples": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "samples"
+        },
+        "series": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/series"
+          }
+        }
+      },
+      "required": [
+        "kind",
+        "series"
+      ]
+    },
+    "sine": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "sine"
+        },
+        "amplitude": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "frequency": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 5
+        },
+        "phase": {
+          "type": "number",
+          "minimum": -3.141592653589793,
+          "maximum": 3.141592653589793
+        },
+        "duration": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 5
+        },
+        "offset": {
+          "type": "number",
+          "minimum": -10,
+          "maximum": 10
+        },
+        "controls": {
+          "type": "array",
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "amplitude",
+              "frequency",
+              "phase"
+            ]
+          }
+        }
+      },
+      "required": [
+        "kind",
+        "amplitude",
+        "frequency",
+        "duration"
+      ]
+    },
+    "chart": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "x_label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "y_label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "source": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/samples"
+            },
+            {
+              "$ref": "#/$defs/sine"
+            }
+          ]
+        }
+      },
+      "required": [
+        "source"
+      ]
+    },
+    "vector": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "from": {
+          "$ref": "#/$defs/point"
+        },
+        "to": {
+          "$ref": "#/$defs/point"
+        }
+      },
+      "required": [
+        "id",
+        "from",
+        "to"
+      ]
+    },
+    "vectors": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "x_label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "y_label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "vectors": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/vector"
+          }
+        }
+      },
+      "required": [
+        "vectors"
+      ]
+    }
+  },
+  "examples": [
+    {
+      "schema_version": 1,
+      "id": "quiz-001",
+      "type": "quiz.single_choice",
+      "props": {
+        "question": "经过平衡位置时哪个物理量最大？",
+        "options": [
+          {
+            "id": "A",
+            "label": "位移"
+          },
+          {
+            "id": "B",
+            "label": "速度"
+          },
+          {
+            "id": "C",
+            "label": "加速度"
+          }
+        ]
+      }
+    },
+    {
+      "schema_version": 1,
+      "id": "fill-001",
+      "type": "quiz.fill_blank",
+      "props": {
+        "question": "写出你理解的振幅含义。",
+        "fields": [
+          {
+            "id": "meaning",
+            "label": "你的回答"
+          }
+        ]
+      }
+    },
+    {
+      "schema_version": 1,
+      "id": "wave-001",
+      "type": "chart.line",
+      "props": {
+        "title": "正弦波演示",
+        "x_label": "时间 (s)",
+        "y_label": "位移",
+        "source": {
+          "kind": "sine",
+          "amplitude": 1,
+          "frequency": 1,
+          "duration": 2,
+          "controls": [
+            "amplitude",
+            "frequency",
+            "phase"
+          ]
+        }
+      }
+    },
+    {
+      "schema_version": 1,
+      "id": "vector-001",
+      "type": "diagram.vector",
+      "props": {
+        "title": "两个二维矢量",
+        "vectors": [
+          {
+            "id": "a",
+            "label": "A",
+            "from": {
+              "x": 0,
+              "y": 0
+            },
+            "to": {
+              "x": 2,
+              "y": 1
+            }
+          },
+          {
+            "id": "b",
+            "label": "B",
+            "from": {
+              "x": 0,
+              "y": 0
+            },
+            "to": {
+              "x": -1,
+              "y": 2
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

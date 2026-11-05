@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:chat-agent:chat-ui-response:v1",
+  "title": "chat-agent read-only UI response v1 (planned)",
+  "description": "The server must also verify source hash, completed assistant origin, context floor, exact option/field IDs, readonly tools, and queue identity. This envelope does not grant write permission.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "chat_ui_response": {
+      "$ref": "#/$defs/response"
+    }
+  },
+  "required": [
+    "chat_ui_response"
+  ],
+  "$defs": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "message_index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "message_index",
+        "sha256"
+      ]
+    },
+    "choice": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "option_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": [
+        "option_id"
+      ]
+    },
+    "answer_field": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 128,
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "value"
+      ]
+    },
+    "fill_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/answer_field"
+          }
+        }
+      },
+      "required": [
+        "fields"
+      ]
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "component_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "component_type": {
+          "enum": [
+            "quiz.single_choice",
+            "quiz.fill_blank"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "answer": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "schema_version",
+        "component_id",
+        "component_type",
+        "source",
+        "answer"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "component_type": {
+                "const": "quiz.single_choice"
+              }
+            },
+            "required": [
+              "component_type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "$ref": "#/$defs/choice"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "component_type": {
+                "const": "quiz.fill_blank"
+              }
+            },
+            "required": [
+              "component_type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "$ref": "#/$defs/fill_answer"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "examples": [
+    {
+      "chat_ui_response": {
+        "schema_version": 1,
+        "component_id": "quiz-001",
+        "component_type": "quiz.single_choice",
+        "source": {
+          "message_index": 7,
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "answer": {
+          "option_id": "B"
+        }
+      }
+    },
+    {
+      "chat_ui_response": {
+        "schema_version": 1,
+        "component_id": "fill-001",
+        "component_type": "quiz.fill_blank",
+        "source": {
+          "message_index": 8,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "answer": {
+          "fields": [
+            {
+              "id": "meaning",
+              "value": "偏离平衡位置的最大距离"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
