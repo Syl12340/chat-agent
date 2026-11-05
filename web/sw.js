@@ -1,4 +1,4 @@
-﻿const CACHE = 'pocket-shell-v21';
+const CACHE = 'pocket-shell-v22';
 const SHELL = ['/', '/app.js', '/theme.js', '/tasks.js', '/companion.js', '/life.js', '/turns.js', '/activities.js', '/native.js', '/native-care.js', '/voice.js', '/device-auth.js', '/role-proposals.js', '/topics.js', '/style.css', '/sw.js', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));

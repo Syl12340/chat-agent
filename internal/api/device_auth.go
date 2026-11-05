@@ -204,10 +204,14 @@ func (s *Server) updateDevice(w http.ResponseWriter, r *http.Request) {
 		deviceFailure(w, err)
 		return
 	}
+	if device.Status != "approved" {
+		_ = s.push.set(device.ID, false)
+	}
 	writeJSON(w, 200, map[string]any{"device": device, "server_id": s.devices.ServerID()})
 }
 func (s *Server) logoutDevice(w http.ResponseWriter, r *http.Request) {
 	if currentAuth(r).Method == "device" {
+		_ = s.push.set(currentAuth(r).Device.ID, false)
 		s.devices.Logout(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 	}
 	writeJSON(w, 200, map[string]bool{"ok": true})

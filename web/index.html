@@ -131,7 +131,7 @@
   </dialog>
   <dialog id="tasks-dialog" class="knowledge-dialog" aria-labelledby="tasks-heading">
     <div class="dialog-heading"><div><span id="tasks-role" class="eyebrow">当前角色</span><h2 id="tasks-heading">留一点空间，做一点小事</h2></div><button id="tasks-close" class="icon-button" aria-label="关闭待办提醒">×</button></div>
-    <p class="dialog-description">待办和提醒按角色保存。到期提醒会留在收件箱；这一版不提供关闭应用后的系统推送。</p>
+    <p class="dialog-description">待办和提醒按角色保存，到期提醒会留在收件箱。Android 0.18 可在关怀面板开启后台接收；系统省电或强制停止可能延迟通知。</p>
     <div class="memory-toolbar"><div class="memory-tabs" role="group" aria-label="任务类型"><button data-task-tab="todo" class="selected">待办</button><button data-task-tab="reminder">提醒收件箱</button></div><button id="tasks-refresh" class="text-button">刷新</button></div>
     <div id="tasks-list" class="memory-list task-list"></div>
     <form id="tasks-form" class="memory-form"><label for="tasks-title">添加一件小事</label><input id="tasks-title" maxlength="256" placeholder="例如：整理本周的项目笔记" required><div id="tasks-time" hidden><label for="tasks-due">提醒时间 <small id="tasks-time-zone"></small></label><input id="tasks-due" type="datetime-local" step="1"></div><button id="tasks-save" class="primary-button" type="submit">添加待办</button></form>
@@ -157,7 +157,7 @@
   </dialog>
   <dialog id="care-dialog" class="knowledge-dialog life-dialog" aria-labelledby="care-heading">
     <div class="dialog-heading"><div><span id="care-role" class="eyebrow">当前角色</span><h2 id="care-heading">按你的节奏关心你</h2></div><button id="care-close" class="icon-button" aria-label="关闭关怀收件箱">×</button></div>
-    <p class="dialog-description">问候会留在应用内。开启自动生成后，应用可见时才会按额度调用模型；本机通知可在下方单独开启。关闭应用后不从服务器拉取新问候。</p>
+    <p class="dialog-description">问候留在收件箱。开启自动生成后按额度生成；下方另行开启后台接收后，接收连接在线时也可在关闭页面后生成。关闭接收不会改动角色设置。</p>
     <div class="life-toolbar care-toolbar"><h3 class="life-section-title">关怀收件箱</h3><button id="care-refresh" class="text-button" type="button">刷新</button></div>
     <div id="care-list" class="life-list care-list"></div>
     <form id="care-settings-form" class="memory-form life-form">
@@ -178,7 +178,7 @@
     <section id="native-care-controls" class="life-native-care" hidden>
   <h3 class="life-section-title">这台手机的通知</h3>
   <p id="native-care-status" class="life-meta" role="status"></p>
-  <p class="life-meta">首次开启只建立现有问候的基线；之后同步的新关怀可通知一次。关闭应用后不会从服务器拉取或远程推送，锁屏隐藏正文。</p>
+  <p class="life-meta">0.18 Android 支持加密后台接收所有角色的关怀、共同话题与到期提醒，开启后显示常驻通知，锁屏隐藏正文。首次连接只建立基线；不自动标记服务器消息已读。接收在线时，服务器可按已启用的自动关怀设置生成问候，继续遵守概率、额度、暂停和安静时段。系统省电或强制停止可能中断接收，重新打开应用可恢复。</p>
   <div class="life-actions"><button id="native-care-enable" type="button" class="text-button">开启本机通知</button><button id="native-care-disable" type="button" class="text-button">关闭本机通知</button></div>
 </section>
 
@@ -215,7 +215,7 @@
         <p>仅访问 HTTPS 公开页面，不登录任何平台。每次唤醒最多检查 5 个候选结果、读取 2 篇正文、调用 1 次模型；未选中时不会调用模型。</p>
         <p>所有角色合计每天最多调用 3 次模型，两次检索至少间隔 3 小时；有未读分享时会减少打扰。错过的旧时段不会集中补跑。</p>
         <p>沿用主动关怀设置中的每日尝试额度、安静时段和暂停；无需开启普通问候。实际可执行次数还受这些设置限制。</p>
-        <p>关闭应用后服务器仍可能处理计划。分享留在应用内，目前还没有可靠的手机远程推送。</p>
+        <p>关闭应用后服务器仍可处理已开启的计划。Android 0.18 可在关怀面板另行开启后台接收；系统省电或强制停止可能延迟通知。</p>
       </div>
       <label class="topics-check" for="topics-enabled"><input id="topics-enabled" type="checkbox" aria-describedby="topics-settings-notice"><span>允许这个角色按计划寻找共同话题</span></label>
       <label for="topics-queries">兴趣查询（每行一个，最多 5 个）</label><textarea id="topics-queries" rows="4" maxlength="2560" placeholder="例如：天文摄影新发现&#10;城市散步与建筑" aria-describedby="topics-queries-help"></textarea>

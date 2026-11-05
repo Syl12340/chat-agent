@@ -79,6 +79,8 @@ type Server struct {
 	topics          *topics.Store
 	topicSource     topicGateway
 	topicSweepMu    sync.Mutex
+	push            *pushStore
+	pushSlots       chan struct{}
 }
 
 func New(c Config) (*Server, error) {
@@ -179,12 +181,21 @@ func New(c Config) (*Server, error) {
 		return nil, errors.Join(err, deviceStore.Close(), activityStore.Close(), turnStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
 	}
 	workCtx, workCancel := context.WithCancel(context.Background())
+	push, err := openPush(filepath.Join(path, "delivery"))
+	if err != nil {
+		workCancel()
+		webClient.Close()
+		return nil, errors.Join(err, topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
+	}
 	s := &Server{devices: deviceStore, activities: activityStore, life: lifeStore, turns: turnStore, workCtx: workCtx, workCancel: workCancel, careSlots: make(chan struct{}, 1), config: c, tokenHash: sha256.Sum256([]byte(c.AccessToken)), sessions: map[string]*probe.Session{}, runs: map[string]*runState{}, roles: roleManager, memory: mem, companion: companionStore, tasks: taskStore, web: webClient, location: location}
 	s.speechSlots = make(chan struct{}, 1)
 	s.topics = topicStore
 	s.topicSource = webClient
+	s.push = push
+	s.pushSlots = make(chan struct{}, 4)
 	s.startScheduler()
 	s.startTopicScheduler()
+	s.startPushScheduler()
 	return s, nil
 }
 
@@ -192,6 +203,9 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
 	mux.HandleFunc("GET /api/status", s.status)
+	mux.HandleFunc("GET /api/push/settings", s.getPushSettings)
+	mux.HandleFunc("PATCH /api/push/settings", s.updatePushSettings)
+	mux.HandleFunc("GET /api/push/inbox", s.pushInbox)
 	mux.HandleFunc("POST /api/device/register", s.registerDevice)
 	mux.HandleFunc("POST /api/device/challenge", s.challengeDevice)
 	mux.HandleFunc("POST /api/device/verify", s.verifyDevice)
@@ -287,7 +301,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		model = "chat-agent Demo"
 	}
 	identity := currentAuth(r)
-	writeJSON(w, 200, map[string]any{"name": "chat-agent", "version": "0.17.0", "auth_method": identity.Method, "device_id": identity.Device.ID, "device_admin": identity.Method == "owner" || identity.Device.Admin, "speech_enabled": s.speechEnabled(), "speech_max_chars": 1200, "model": model, "demo": s.config.Agent.Demo, "max_output": s.config.Agent.MaxOutputTokens, "timeout_seconds": s.config.Agent.Timeout.Seconds(), "time_zone": s.location.String(), "web_fetch": s.web.FetchEnabled(), "web_search": s.web.SearchEnabled(), "reminder_delivery": "inbox", "scheduler_ok": s.schedulerOK.Load()})
+	writeJSON(w, 200, map[string]any{"name": "chat-agent", "version": "0.18.0", "auth_method": identity.Method, "device_id": identity.Device.ID, "device_admin": identity.Method == "owner" || identity.Device.Admin, "speech_enabled": s.speechEnabled(), "speech_max_chars": 1200, "model": model, "demo": s.config.Agent.Demo, "max_output": s.config.Agent.MaxOutputTokens, "timeout_seconds": s.config.Agent.Timeout.Seconds(), "time_zone": s.location.String(), "web_fetch": s.web.FetchEnabled(), "web_search": s.web.SearchEnabled(), "reminder_delivery": "inbox", "scheduler_ok": s.schedulerOK.Load()})
 }
 
 func validID(id string) bool {
@@ -676,6 +690,7 @@ func (s *Server) Close(ctx context.Context) error {
 	err = errors.Join(err, s.companion.Close(), s.life.Close(), s.turns.Close(), s.activities.Close())
 	err = errors.Join(err, s.devices.Close())
 	err = errors.Join(err, s.topics.Close())
+	err = errors.Join(err, s.push.close())
 	s.web.Close()
 	return err
 }

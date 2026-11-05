@@ -9,7 +9,9 @@ export function createNativeCare({state}) {
     controls.hidden=!nativeShell;
     $('native-care-enable').disabled=busy||!state.token||!bridge();
     $('native-care-disable').disabled=busy||!state.token||!bridge()||!status?.enabled;
-    $('native-care-status').textContent=!bridge()?'升级到 0.11 Android 包后可开启手机通知。':!status?'正在读取本机通知设置…':!status.enabled?'本机通知未开启。':!status.permission?'本机已开启，系统通知权限或通知频道尚未允许。':'本机通知已开启；只通知手机同步后出现的新关怀。';
+    $('native-care-enable').textContent=status?.background_supported?'开启后台接收':'开启本机通知';
+    $('native-care-disable').textContent=status?.background_supported?'关闭后台接收':'关闭本机通知';
+    $('native-care-status').textContent=!bridge()?'升级 Android 包后可开启手机通知。':!status?'正在读取本机通知设置…':!status.enabled?'本机通知未开启。':!status.permission?'本机已开启，系统通知权限或通知频道尚未允许。':status.background_supported?(status.background_state||'后台接收状态尚未更新。'):'本机通知已开启；升级到 0.18 Android 包后可启用后台接收。';
   }
   async function refresh() {
     render();if(!bridge()||!state.token)return;
@@ -34,7 +36,7 @@ export function createNativeCare({state}) {
       await bridge().deliver(role,ready);
     } catch { /* A notification failure never changes the server inbox. */ }
   }
-  function clear() { generation++;busy=false;status=null;bridge()?.configure(false).catch(()=>{});render(); }
+  function clear() { generation++;busy=false;status=null;render(); }
   $('native-care-enable')?.addEventListener('click',()=>configure(true));
   $('native-care-disable')?.addEventListener('click',()=>configure(false));
   window.addEventListener('pocket-native-ready',refresh);

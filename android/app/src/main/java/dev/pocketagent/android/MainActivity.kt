@@ -77,7 +77,10 @@ class MainActivity : Activity() {
     private val prefs by lazy { getSharedPreferences("pocket-shell", MODE_PRIVATE) }
     private val vault by lazy { CredentialVault(this) }
     private val deviceIdentity by lazy { DeviceIdentity(this) }
-    private val careNotifications by lazy { CareNotifications(this) }
+    private val careNotifications by lazy { CareNotifications.get(this) }
+    private var activityVisible = false
+    private var carePermissionOrigin: String? = null
+    private var carePermissionReady = false
     private var updateBusy = false
     private var autoUpdateChecked = false
     private var pendingInstall: File? = null
@@ -254,6 +257,10 @@ class MainActivity : Activity() {
                 val address = try { ServerAddress.parse(input.text.toString(), BuildConfig.DEBUG) }
                 catch (error: IllegalArgumentException) { input.error = error.message; return@setOnClickListener }
                 if (configuredServer?.origin != address.origin) {
+                    configuredServer?.origin?.let { old ->
+                        PushReceiverService.stop(this, old, true)
+                        deviceIdentity.setSuspended(old, true); vault.clear(old); careNotifications.configure(old, false)
+                    }
                     autoUpdateChecked = false; pendingInstall = null
                     gateway?.close(); gateway = null; server = null
                     closePort(); web.stopLoading(); content.removeView(web); web.destroy()
@@ -361,9 +368,9 @@ class MainActivity : Activity() {
                                     val token = payload.getString("token")
                                     vault.save(remoteOrigin, token)
                                     if (token.startsWith("dvc1_")) deviceIdentity.setSuspended(remoteOrigin, false)
-                                    root.post { checkUpdates(false) }
+                                    root.post { checkUpdates(false); if (activityVisible) PushReceiverService.resume(this@MainActivity, remoteOrigin) }
                                 }
-                                "auth_forget" -> { cancelSpeechReply(); deviceIdentity.setSuspended(remoteOrigin, true); vault.clear(remoteOrigin); pendingInstall = null; careNotifications.clearVisible(remoteOrigin) }
+                                "auth_forget" -> { cancelSpeechReply(); PushReceiverService.stop(this@MainActivity, remoteOrigin, true); deviceIdentity.setSuspended(remoteOrigin, true); vault.clear(remoteOrigin); pendingInstall = null; careNotifications.configure(remoteOrigin, false) }
                             }
                             reply.put("ok", true)
                         } catch (_: Exception) { reply.put("ok", false) }
@@ -373,13 +380,26 @@ class MainActivity : Activity() {
                         val reply = try {
                             require(data.length <= 100000)
                             val result = when (type) {
-                                "care_configure" -> careNotifications.configure(remoteOrigin, payload.getBoolean("enabled"))
+                                "care_configure" -> {
+                                    val enabled = payload.getBoolean("enabled")
+                                    if (enabled) {
+                                        check(activityVisible)
+                                        require(vault.read(remoteOrigin).orEmpty().startsWith("dvc1_")) { "请先完成设备登录" }
+                                    }
+                                    val configured = careNotifications.configure(remoteOrigin, enabled)
+                                    if (enabled) PushReceiverService.enable(this@MainActivity, remoteOrigin)
+                                    else PushReceiverService.stop(this@MainActivity, remoteOrigin, true)
+                                    configured
+                                }
                                 "care_deliver" -> careNotifications.deliver(remoteOrigin, payload.getString("role"), payload.getJSONArray("items"))
                                 else -> careNotifications.status(remoteOrigin)
                             }
+                            val background = PushReceiverService.status(this@MainActivity, remoteOrigin)
+                            background.keys().forEach { key -> result.put(key, background.get(key)) }
                             if (type == "care_configure" && result.optBoolean("request_permission")) {
                                 root.post {
                                     if (configuredServer?.origin == remoteOrigin && Build.VERSION.SDK_INT >= 33 && !isFinishing && !isDestroyed) {
+                                        carePermissionOrigin = remoteOrigin
                                         requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), CARE_PERMISSION)
                                     }
                                 }
@@ -503,8 +523,23 @@ class MainActivity : Activity() {
     }
     @Deprecated("Used only on Android versions before OnBackInvokedDispatcher")
     override fun onBackPressed() { handleBack() }
-    override fun onPause() { web.onPause(); super.onPause() }
-    override fun onResume() { super.onResume(); if (::web.isInitialized) web.onResume() }
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == CARE_PERMISSION) { carePermissionReady = true; completeCarePermission() }
+    }
+    private fun completeCarePermission() {
+        val origin = carePermissionOrigin ?: return
+        if (!carePermissionReady || !activityVisible) return
+        carePermissionOrigin = null; carePermissionReady = false
+        if (configuredServer?.origin == origin) PushReceiverService.afterPermission(this, origin)
+    }
+    override fun onPause() { activityVisible = false; web.onPause(); super.onPause() }
+    override fun onResume() {
+        super.onResume(); activityVisible = true
+        if (::web.isInitialized) web.onResume()
+        completeCarePermission()
+        configuredServer?.origin?.let { PushReceiverService.resume(this, it) }
+    }
     override fun onDestroy() { closePort(); gateway?.close(); pendingExport = null; content.removeView(web); web.destroy(); io.shutdown(); super.onDestroy() }
     private fun toast(message: String) { Toast.makeText(this, message, Toast.LENGTH_SHORT).show() }
     companion object { private const val SAVE_DOCUMENT = 20; private const val INSTALL_PERMISSION = 21; private const val CARE_PERMISSION = 22; private const val SPEECH_INPUT = 23; private const val MAX_EXPORT = 4 * 1024 * 1024 }
