@@ -331,7 +331,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		model = "chat-agent Demo"
 	}
 	identity := currentAuth(r)
-	writeJSON(w, 200, map[string]any{"name": "chat-agent", "version": "0.21.0", "auth_method": identity.Method, "device_id": identity.Device.ID, "device_admin": identity.Method == "owner" || identity.Device.Admin, "speech_enabled": s.speechEnabled(), "speech_max_chars": 1200, "model": model, "demo": s.config.Agent.Demo, "max_output": s.config.Agent.MaxOutputTokens, "timeout_seconds": s.config.Agent.Timeout.Seconds(), "time_zone": s.location.String(), "web_fetch": s.web.FetchEnabled(), "web_search": s.web.SearchEnabled(), "reminder_delivery": "inbox", "scheduler_ok": s.schedulerOK.Load()})
+	writeJSON(w, 200, map[string]any{"name": "chat-agent", "version": "0.21.1", "auth_method": identity.Method, "device_id": identity.Device.ID, "device_admin": identity.Method == "owner" || identity.Device.Admin, "speech_enabled": s.speechEnabled(), "speech_max_chars": 1200, "model": model, "demo": s.config.Agent.Demo, "max_output": s.config.Agent.MaxOutputTokens, "timeout_seconds": s.config.Agent.Timeout.Seconds(), "time_zone": s.location.String(), "web_fetch": s.web.FetchEnabled(), "web_search": s.web.SearchEnabled(), "reminder_delivery": "inbox", "scheduler_ok": s.schedulerOK.Load()})
 }
 
 func validID(id string) bool {
@@ -622,15 +622,8 @@ func (s *Server) message(w http.ResponseWriter, r *http.Request) {
 		send("canceled", map[string]string{"message": "已停止生成"})
 		return
 	}
-	message := "生成失败，请检查服务器配置或稍后重试"
-	if errors.Is(err, context.DeadlineExceeded) {
-		message = "响应超时，请稍后重试"
-	}
-	safe := err.Error()
-	if s.config.Agent.APIKey != "" {
-		safe = strings.ReplaceAll(safe, s.config.Agent.APIKey, "[REDACTED]")
-	}
-	log.Printf("generation failed: %s", safe)
+	code, message := generationFailure(err)
+	log.Printf("generation failed: category=%s", code)
 	send("error", map[string]string{"message": message})
 }
 

@@ -157,16 +157,16 @@ func (p *ChatCompletionsProvider) Stream(ctx context.Context, input ModelRequest
 	req.Header.Set("Authorization", "Bearer "+p.key)
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return Message{}, fmt.Errorf("model request failed: %w", err)
+		return Message{}, &ModelError{Kind: "transport", cause: err}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		// Omit raw response bodies and credentials from errors.
-		return Message{}, fmt.Errorf("model endpoint returned HTTP %d", resp.StatusCode)
+		return Message{}, &ModelError{Kind: "http", HTTPStatus: resp.StatusCode}
 	}
 	media, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	if media != "text/event-stream" {
-		return Message{}, errors.New("model endpoint did not return text/event-stream")
+		return Message{}, &ModelError{Kind: "stream"}
 	}
 	limited := &io.LimitedReader{R: resp.Body, N: (4 << 20) + 1}
 	scanner := bufio.NewScanner(limited)
@@ -205,10 +205,10 @@ func (p *ChatCompletionsProvider) Stream(ctx context.Context, input ModelRequest
 			} `json:"choices"`
 		}
 		if json.Unmarshal([]byte(line), &chunk) != nil {
-			return false, errors.New("invalid SSE JSON")
+			return false, &ModelError{Kind: "stream"}
 		}
 		if len(chunk.Error) > 0 && string(chunk.Error) != "null" {
-			return false, errors.New("model stream returned an error")
+			return false, &ModelError{Kind: "stream"}
 		}
 		for _, choice := range chunk.Choices {
 			if choice.Index != 0 {
@@ -272,7 +272,7 @@ func (p *ChatCompletionsProvider) Stream(ctx context.Context, input ModelRequest
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return Message{}, fmt.Errorf("read model stream: %w", err)
+		return Message{}, &ModelError{Kind: "transport", cause: err}
 	}
 	if ctx.Err() != nil {
 		return Message{}, context.Cause(ctx)
@@ -288,7 +288,7 @@ func (p *ChatCompletionsProvider) Stream(ctx context.Context, input ModelRequest
 		return Message{}, errors.New("model stream exceeds 4 MiB limit")
 	}
 	if !terminated {
-		return Message{}, errors.New("model stream ended without [DONE]")
+		return Message{}, &ModelError{Kind: "stream"}
 	}
 	response := Message{Role: "assistant", Content: text.String()}
 	if finish == "tool_calls" && len(pending) > 0 {
@@ -309,7 +309,13 @@ func (p *ChatCompletionsProvider) Stream(ctx context.Context, input ModelRequest
 		}
 		return response, nil
 	}
-	if finish != "stop" || len(pending) > 0 || strings.TrimSpace(response.Content) == "" {
+	if finish == "length" {
+		return Message{}, &ModelError{Kind: "output_limit"}
+	}
+	if finish == "stop" && len(pending) == 0 && strings.TrimSpace(response.Content) == "" {
+		return Message{}, &ModelError{Kind: "empty"}
+	}
+	if finish != "stop" || len(pending) > 0 {
 		return Message{}, fmt.Errorf("incomplete model response (finish reason %q)", finish)
 	}
 	return response, nil

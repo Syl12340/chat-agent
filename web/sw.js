@@ -1,4 +1,4 @@
-const CACHE = 'pocket-shell-v25';
+const CACHE = 'pocket-shell-v26';
 const SHELL = ['/', '/app.js', '/theme.js', '/tasks.js', '/companion.js', '/life.js', '/turns.js', '/activities.js', '/native.js', '/native-care.js', '/voice.js', '/device-auth.js', '/role-proposals.js', '/topics.js', '/chat-input.js', '/chat-ui.css', '/composer-preferences.js', '/markdown.js', '/math-render.js', '/richtext.css', '/vendor/katex/katex.mjs', '/vendor/katex/LICENSE.txt', '/ui/structures.js', '/desktop-workspace.js', '/desktop-workspace.css', '/ui/protocol.js', '/ui/state.js', '/ui/render.js', '/ui/quiz.js', '/ui/charts.js', '/ui/vectors.js', '/ui/ui.css', '/style.css', '/sw.js', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));

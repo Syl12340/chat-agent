@@ -51,7 +51,7 @@ export function createTurnsUI({ state, json, storage, onError, onHistory, onStat
     const turns = history?.turns || [], queued = turns.filter(item => item.status === 'queued');
     state.queuedCount = queued.length; state.queuePaused = Boolean(history?.queue_paused); state.submitUnknown = Boolean(pending && pending.phase !== 'submitting');
     ui['turn-queue'].hidden = !queued.length && !history?.active && !pending && !state.queuePaused;
-    ui['turn-queue-label'].textContent = state.queuePaused ? `已暂停${queued.length ? ` · ${queued.length} 条等待继续` : ''}` : queued.length ? `${queued.length} 条等待发送` : history?.active ? '正在回复，你可以继续输入' : pending ? '上一条提交需要确认' : '消息队列';
+    ui['turn-queue-label'].textContent = state.queuePaused ? queued.length ? `已暂停 · ${queued.length} 条等待继续` : '聊天已暂停，恢复后可发送新消息' : queued.length ? `${queued.length} 条等待发送` : history?.active ? '正在回复，你可以继续输入' : pending ? '上一条提交需要确认' : '消息队列';
     ui['turn-queue-list'].replaceChildren();
     for (const item of queued) {
       const row = document.createElement('div'); row.className = 'turn-queue-item'; row.dataset.requestId = item.id;
@@ -60,8 +60,9 @@ export function createTurnsUI({ state, json, storage, onError, onHistory, onStat
       button.addEventListener('click',() => queueAction(async sid => json(path(sid,`/turns/${encodeURIComponent(item.id)}`),{method:'DELETE'})));
       row.append(button); ui['turn-queue-list'].append(row);
     }
-    ui['turn-resume'].hidden = !state.queuePaused || !queued.length;
-    ui['turn-resume'].disabled = queueBusy || state.submitting || Boolean(history?.active);
+    ui['turn-resume'].hidden = !state.queuePaused;
+    ui['turn-resume'].textContent = queued.length ? '继续队列' : '恢复聊天';
+    ui['turn-resume'].disabled = queueBusy || state.submitting || Boolean(pending) || Boolean(history?.active);
     ui['turn-refresh'].disabled = queueBusy || !state.token;
     ui['turn-unknown'].hidden = !pending || pending.phase === 'submitting';
     if (pending) ui['turn-unknown-text'].textContent = `${pending.phase === 'rejected' ? '这条尚未提交':'这条可能已被接收，请查询或用同一标识确认'}：${answerLabel(pending.content) || pending.content}${pending.image_ids?.length ? `（${pending.image_ids.length} 张图片）`:''}`;

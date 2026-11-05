@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -328,14 +329,25 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 			status, message := "completed", ""
 			if err != nil || progressErr != nil {
 				status = "failed"
-				message = "生成未完成，请查看已保存记录；没有自动重试。"
-				if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+				failure := err
+				if progressErr != nil {
+					failure = progressErr
+				}
+				code, detail := generationFailure(failure)
+				if progressErr != nil {
+					code, detail = "progress_save", "生成进度保存失败，请查看已保存记录；没有自动重试。"
+				}
+				message = detail
+				if progressErr == nil && (errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled)) {
 					status = "canceled"
 					message = "已停止；排队消息保留，点击继续才会再次调用模型。"
 				}
 				if s.workCtx.Err() != nil {
 					status = "interrupted"
 					message = "服务曾中断；没有自动重试模型或工具。"
+				}
+				if status == "failed" {
+					log.Printf("chat turn failed: category=%s", code)
 				}
 				if len(text) > 64<<10 {
 					text = string([]rune(text)[:min(len([]rune(text)), 16000)])
