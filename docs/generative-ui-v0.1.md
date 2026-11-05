@@ -21,7 +21,7 @@
 
 多选、判断、流程图、表格、通用表单、音频波形和声谱图为后续组件。LaTeX 完整排版、Mermaid、React、ECharts、Vercel SDK 和 DSH 插件不进入首版依赖。
 
-后续排期已按新增需求更新：0.21 规划 Markdown/LaTeX、JSON 树、只读数据表/柱状图/流程图及 UI 优化，详见[后续实施范围](rendering-and-ui-plan.md)。这是待实施扩展，不改变本节的 0.20 四组件目录或已发布 Schema。
+0.21 已交付 Markdown/LaTeX、JSON 树、只读数据表/柱状图/流程图及 UI 优化，见[实施说明](rendering-and-ui-plan.md)和[发布记录](release-0.21.md)。当前 Schema 目录扩展为七类；本节保留 0.20 首批四组件说明。新类型只读，原答题响应和版本 1 的来源语义保持不变。
 
 ## 2. UI Protocol v1
 

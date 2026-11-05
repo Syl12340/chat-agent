@@ -1,30 +1,30 @@
 # chat-agent
 
-当前发布为 **0.20.0**；Android 更新包为 **0.20.0-debug（versionCode 17）**。2026-11-05 已部署到现有服务器及更新通道，保留原包名、签名和设备身份。[本次发布](docs/release-0.20.md)。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
+当前发布为 **0.21.0**；Android 更新包为 **0.21.0-debug（versionCode 18）**。2026-11-05 已部署到现有服务器及更新通道，保留原包名、签名和设备身份。[本次发布](docs/release-0.21.md)。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
 
 0.19 引入的最多三张 JPEG/PNG 图片消息、ECNU Max/Plus 选择、关闭/中/高/超高思考强度，以及聊天阅读与输入界面继续保留，后台接收等 0.18 功能也保留。八项关键新旧流程、构建、隔离浏览器和线上只读检查通过，未调用真实识图/思考生成或安装真机。新数据按需写 transcript/turns v2，旧二进制不能直接降级；Harness 3B/3C 仍未实施。[功能与格式说明](docs/chat-0.19.md)、[Harness 规划](docs/dsh-harness-migration-plan.md)。
 
-独立实现的轻量个人 AI 助手，当前具备 P0–P3 核心能力：运行时、PWA 聊天、角色/记忆、待办和提醒收件箱。Go 标准库 + 原生 HTML/CSS/JavaScript，**零第三方模块、无前端构建步骤**，网页资源嵌入单个可执行文件。
+独立实现的轻量个人 AI 助手，当前具备 P0–P3 核心能力：运行时、PWA 聊天、角色/记忆、待办和提醒收件箱。Go 标准库 + 原生 HTML/CSS/JavaScript，**Go 侧零第三方模块、无前端构建步骤**，网页资源嵌入单个可执行文件。前端数学渲染唯一外部依赖为本地固定 KaTeX 0.19.1，许可随包保留。
 
-0.20 已发布[Generative UI 四组件](docs/generative-ui-v0.1.md)与[电脑端网页工作台](docs/desktop-web-plan.md)，包含来源验证、只读答案反馈和同实例展开。[0.20 发布记录](docs/release-0.20.md)。继续保留现有技术栈。
+0.21 已合并交付原拟 0.20.1 参数记忆和 0.21 渲染/UI：按模型记住思考档位，Markdown 表格/嵌套列表、LaTeX/MathML、JSON 树、数据表/柱状图/流程图，以及同实例工作台和工具状态排版。普通网页与 Android 共享渲染，Android 新包通过原生存储解决随机代理端口导致的偏好丢失。[实施与边界](docs/rendering-and-ui-plan.md)。
 
-后续顺序为 **0.20.1 参数记忆与体验收口 → 0.21 Markdown/LaTeX、结构渲染与 UI → 0.22 陪伴接续 → 0.23/0.24 持久结算与恢复迁移**，均为待实施排期。见[当前规划](docs/feature-plan.md)及[渲染与 UI 实施范围](docs/rendering-and-ui-plan.md)。
+后续顺序为 **0.22 陪伴接续 → 0.23/0.24 持久结算与恢复迁移**，均为待实施排期，见[当前规划](docs/feature-plan.md)。
 
 **0.7.0 已交付**：睡前闲聊、一天复盘、共同兴趣和小目标陪伴。共同活动支持手动保存进展、跨会话继续、暂停与结束，只影响明确关联的会话。[使用说明](docs/activities-0.7.md)。原有[连续聊天、事件与关怀](docs/companion-0.6.md)、[陪伴偏好](docs/companion.md)继续保留。
 
 优先在现有 Android/网页改善连续消息、自然分段回复与话题接续；QQ、微信、B站等第三方平台接入保持低优先级。当前已上线能力、实际缺口和后续建议排期统一见[当前规划](docs/feature-plan.md)。
 
-支持手机页面、单用户鉴权、会话列表、流式回答、停止生成、历史恢复、工具过程展示、基础 Markdown、角色切换、记忆审核与上下文压缩。为保持零依赖，记忆使用版本化 JSON 与基础关键词检索，未引入原规格中的 SQLite/FTS5。
+支持手机页面、单用户鉴权、会话列表、流式回答、停止生成、历史恢复、工具过程展示、Markdown/数学/结构渲染、角色切换、记忆审核与上下文压缩。Go 存储保持标准库，记忆使用版本化 JSON 与基础关键词检索，未引入原规格中的 SQLite/FTS5。
 
 ## 快速体验
 
 需要 Go 1.26。Windows / PowerShell 7：
 
 ```powershell
-go build -buildvcs=false -o bin/chat-agent-0.20.0.exe ./cmd/server
+go build -buildvcs=false -o bin/chat-agent-0.21.0.exe ./cmd/server
 $env:POCKET_ACCESS_TOKEN = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 $env:POCKET_ACCESS_TOKEN  # 在自己的终端查看，随后输入网页登录框
-.\bin\chat-agent-0.20.0.exe -demo
+.\bin\chat-agent-0.21.0.exe -demo
 ```
 
 在浏览器打开 [本机页面](http://127.0.0.1:8080)，首次通过管理员维护入口批准设备指纹，之后由设备签名自动连接。点击“看看此刻的时间”即可体验完整工具循环。
@@ -47,7 +47,7 @@ Linux 构建：`go build -buildvcs=false -o bin/chat-agent ./cmd/server`。运�
 $env:POCKET_BASE_URL='https://your-api.example/v1'
 $env:POCKET_MODEL='your-model-id'
 # 在自己的终端安全设置 POCKET_API_KEY
-.\bin\chat-agent-0.20.0.exe
+.\bin\chat-agent-0.21.0.exe
 ```
 
 [.env.example](.env.example) 只是模板，程序不会自动加载 `.env`。
@@ -130,7 +130,7 @@ Android 当前可以填写 `pocket://47.117.40.74:9992`，通过固定服务器�
 $env:POCKET_SEARCH_URL='https://cn.bing.com/search'
 # 可选缩小网页抓取域名范围；留空允许经过校验的公开 HTTPS 站点。
 $env:POCKET_WEB_HOSTS='example.org,docs.example.org'
-.\bin\chat-agent-0.20.0.exe -enable-web
+.\bin\chat-agent-0.21.0.exe -enable-web
 ```
 
 抓取仅接受 HTTPS/443 和有效 DNS 域名，拒绝私有/保留地址、账号、IP 字面量和内网跳转，连接固定到已检查 IP，保持 TLS 校验，不使用环境代理。不会执行网页脚本；读取最多 256 KiB、正文返回最多 12 KiB，有明确超时和解析错误。结果始终是不可信参考，不授予写入权限。

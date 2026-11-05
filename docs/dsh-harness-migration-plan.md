@@ -13,7 +13,7 @@
 | 阶段 3A：事件格式与删除契约 | 设计已交付 | [harness-storage/1](harness-storage-contract.md) 明确权威日志、标识、回执、清理和迁移；未写入生产 runtime 事件格式 |
 | 阶段 3B/3C：持久结算与恢复迁移 | 未实施 | 以后续代码和故障流程结果验收，不能以 3A 文档代替恢复实现 |
 
-当前服务端 **0.20.0**（`20261105-ui-01`），Android **0.20.0-debug / versionCode 17**（`android-20261105-03`），见[发布说明](release-0.20.md)。Windows 产物为 `bin/chat-agent-0.20.0.exe`。按新增渲染/UI 需求，产品规划暂将 3B/3C 顺延为 0.23/0.24，均为待实施的建议版本；优先推进 0.20.1 参数记忆、0.21 富文本与结构渲染、0.22 陪伴接续，见[当前规划](feature-plan.md)。
+当前服务端 **0.21.0**（`20261105-rich-01`），Android **0.21.0-debug / versionCode 18**（`android-20261105-04`），见[发布说明](release-0.21.md)。Windows 产物为 `bin/chat-agent-0.21.0.exe`。按新增渲染/UI 需求，产品规划暂将 3B/3C 顺延为 0.23/0.24，均为待实施的建议版本；参数记忆与渲染/UI 已合并发布为 0.21，接下来优先推进 0.22 陪伴接续，见[当前规划](feature-plan.md)。
 
 实现细节见 [阶段 1–2 实施说明](harness-phases-1-2.md)。总体产品方向见 [功能规划](feature-plan.md)。
 
