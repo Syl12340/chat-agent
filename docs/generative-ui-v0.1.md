@@ -21,6 +21,8 @@
 
 多选、判断、流程图、表格、通用表单、音频波形和声谱图为后续组件。LaTeX 完整排版、Mermaid、React、ECharts、Vercel SDK 和 DSH 插件不进入首版依赖。
 
+后续排期已按新增需求更新：0.21 规划 Markdown/LaTeX、JSON 树、只读数据表/柱状图/流程图及 UI 优化，详见[后续实施范围](rendering-and-ui-plan.md)。这是待实施扩展，不改变本节的 0.20 四组件目录或已发布 Schema。
+
 ## 2. UI Protocol v1
 
 一个完整的顶层代码块只承载一个组件，使用整数 `schema_version: 1`，不同时接受材料中示意的 `version: "0.1" / blocks / actions` 另一套格式。规范 Schema 为 [chat-ui-v1.schema.json](schemas/chat-ui-v1.schema.json)。

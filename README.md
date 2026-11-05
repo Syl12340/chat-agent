@@ -8,7 +8,7 @@
 
 0.20 已发布[Generative UI 四组件](docs/generative-ui-v0.1.md)与[电脑端网页工作台](docs/desktop-web-plan.md)，包含来源验证、只读答案反馈和同实例展开。[0.20 发布记录](docs/release-0.20.md)。继续保留现有技术栈。
 
-后续顺序为 **0.20.1 体验收口 → 0.21 陪伴接续 → 0.22 持久结算 → 0.23 恢复迁移**，均为待实施排期，见[当前规划](docs/feature-plan.md)。
+后续顺序为 **0.20.1 参数记忆与体验收口 → 0.21 Markdown/LaTeX、结构渲染与 UI → 0.22 陪伴接续 → 0.23/0.24 持久结算与恢复迁移**，均为待实施排期。见[当前规划](docs/feature-plan.md)及[渲染与 UI 实施范围](docs/rendering-and-ui-plan.md)。
 
 **0.7.0 已交付**：睡前闲聊、一天复盘、共同兴趣和小目标陪伴。共同活动支持手动保存进展、跨会话继续、暂停与结束，只影响明确关联的会话。[使用说明](docs/activities-0.7.md)。原有[连续聊天、事件与关怀](docs/companion-0.6.md)、[陪伴偏好](docs/companion.md)继续保留。
 
