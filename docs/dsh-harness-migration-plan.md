@@ -13,7 +13,7 @@
 | 阶段 3A：事件格式与删除契约 | 设计已交付 | [harness-storage/1](harness-storage-contract.md) 明确权威日志、标识、回执、清理和迁移；未写入生产 v2 数据 |
 | 阶段 3B/3C：持久结算与恢复迁移 | 未实施 | 以后续代码和故障流程结果验收，不能以 3A 文档代替恢复实现 |
 
-当前服务端 **0.18.0**（`20261105-companion-01`），Android **0.18.0-debug / versionCode 15**（`android-20261105-01`），见[发布说明](release-0.18.md)。Windows 产物为 `bin/chat-agent-0.18.0.exe`。原 0.16/0.17 分阶段版本号建议未分别发布，阶段 3 的实际版本待确定。
+当前服务端 **0.19.0**（`20261105-chat-01`），Android **0.19.0-debug / versionCode 16**（`android-20261105-02`），见[发布说明](release-0.19.md)。Windows 产物为 `bin/chat-agent-0.19.0.exe`。原 0.16/0.17 分阶段版本号建议未分别发布，阶段 3 的实际版本待确定。
 
 实现细节见 [阶段 1–2 实施说明](harness-phases-1-2.md)。总体产品方向见 [功能规划](feature-plan.md)。
 

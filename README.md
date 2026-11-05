@@ -1,8 +1,8 @@
 # chat-agent
 
-当前发布为 **0.18.0**；Android 更新包为 **0.18.0-debug（versionCode 15）**。2026-11-05 已部署到现有服务器及更新通道，保留原包名、签名和设备身份。[本次发布](docs/release-0.18.md)。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
+当前发布为 **0.19.0**；Android 更新包为 **0.19.0-debug（versionCode 16）**。2026-11-05 已部署到现有服务器及更新通道，保留原包名、签名和设备身份。[本次发布](docs/release-0.19.md)。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
 
-本批调整陪伴表达、交付 Harness 3A 存储契约，并增加默认关闭的 Android 加密后台接收。后台接收关怀、共同话题和到期提醒，须显式开启常驻通知；不保证系统强停或省电时实时送达。七项关键 Go 流程、构建及线上只读检查通过，未调用真实搜索/模型或安装真机。3B/3C 恢复迁移仍未实施。[推送渠道](docs/push-channel.md)、[Harness 规划](docs/dsh-harness-migration-plan.md)。
+新增最多三张 JPEG/PNG 图片消息、ECNU Max/Plus 选择、关闭/中/高/超高思考强度，以及更简洁的聊天阅读与输入界面。后台接收等 0.18 功能保留。八项关键新旧流程、构建、隔离浏览器和线上只读检查通过，未调用真实识图/思考生成或安装真机。新数据按需写 transcript/turns v2，旧二进制不能直接降级；Harness 3B/3C 仍未实施。[功能与格式说明](docs/chat-0.19.md)、[Harness 规划](docs/dsh-harness-migration-plan.md)。
 
 独立实现的轻量个人 AI 助手，当前具备 P0–P3 核心能力：运行时、PWA 聊天、角色/记忆、待办和提醒收件箱。Go 标准库 + 原生 HTML/CSS/JavaScript，**零第三方模块、无前端构建步骤**，网页资源嵌入单个可执行文件。
 
@@ -17,10 +17,10 @@
 需要 Go 1.26。Windows / PowerShell 7：
 
 ```powershell
-go build -buildvcs=false -o bin/chat-agent-0.18.0.exe ./cmd/server
+go build -buildvcs=false -o bin/chat-agent-0.19.0.exe ./cmd/server
 $env:POCKET_ACCESS_TOKEN = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 $env:POCKET_ACCESS_TOKEN  # 在自己的终端查看，随后输入网页登录框
-.\bin\chat-agent-0.18.0.exe -demo
+.\bin\chat-agent-0.19.0.exe -demo
 ```
 
 在浏览器打开 [本机页面](http://127.0.0.1:8080)，首次通过管理员维护入口批准设备指纹，之后由设备签名自动连接。点击“看看此刻的时间”即可体验完整工具循环。
@@ -43,7 +43,7 @@ Linux 构建：`go build -buildvcs=false -o bin/chat-agent ./cmd/server`。运�
 $env:POCKET_BASE_URL='https://your-api.example/v1'
 $env:POCKET_MODEL='your-model-id'
 # 在自己的终端安全设置 POCKET_API_KEY
-.\bin\chat-agent-0.18.0.exe
+.\bin\chat-agent-0.19.0.exe
 ```
 
 [.env.example](.env.example) 只是模板，程序不会自动加载 `.env`。
@@ -126,7 +126,7 @@ Android 当前可以填写 `pocket://47.117.40.74:9992`，通过固定服务器�
 $env:POCKET_SEARCH_URL='https://cn.bing.com/search'
 # 可选缩小网页抓取域名范围；留空允许经过校验的公开 HTTPS 站点。
 $env:POCKET_WEB_HOSTS='example.org,docs.example.org'
-.\bin\chat-agent-0.18.0.exe -enable-web
+.\bin\chat-agent-0.19.0.exe -enable-web
 ```
 
 抓取仅接受 HTTPS/443 和有效 DNS 域名，拒绝私有/保留地址、账号、IP 字面量和内网跳转，连接固定到已检查 IP，保持 TLS 校验，不使用环境代理。不会执行网页脚本；读取最多 256 KiB、正文返回最多 12 KiB，有明确超时和解析错误。结果始终是不可信参考，不授予写入权限。

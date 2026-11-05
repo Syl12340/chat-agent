@@ -1,5 +1,7 @@
 # 单机部署（SSH 隧道）
 
+当前发布（2026-11-05）：服务端 **0.19.0** 为 `20261105-chat-01`，Android **0.19.0-debug / versionCode 16** 为 `android-20261105-02`。一致性备份 `pre-chat-20261105-01.tar.gz` 和旧版本保留，线上只读检查及 APK 下载哈希通过。注意新 transcript/turns v2 不能直接切回 0.18，见[发布与回退边界](../docs/release-0.19.md)。以下为历史记录与通用部署操作。
+
 当前发布（2026-11-05）：服务端 **0.18.0** 已切至 `20261105-companion-01`，Android 更新通道为 **0.18.0-debug / versionCode 15**（`android-20261105-01`）。一致性备份 `pre-companion-20261105-01.tar.gz` 已保留，线上只读检查及 APK 下载哈希通过。后台接收默认关闭，无配置/端口/角色文件变更，未安装手机。见[发布记录](../docs/release-0.18.md)。以下为历史发布及通用操作说明。
 
 当前发布（2026-11-04）：服务端 **0.17.0** / `20261104-topics-02`；Android **versionCode 14** / `android-20261104-02`。备份 `/opt/pocket-agent/backups/pre-topics-20261104-02.tar.gz`。话题默认关闭，线上只读与 APK 下载哈希检查通过；未调用真实模型。详见[0.17 发布记录](../docs/release-0.17.md)。以下旧版本段落为历史记录。
