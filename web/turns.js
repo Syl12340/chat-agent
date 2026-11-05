@@ -9,13 +9,14 @@ export function splitReply(text) {
   return groups;
 }
 export function replyBubbles(body, text, markdown, key) {
-  const pieces = splitReply(text);
+  // One continuous answer keeps headings, code and copying predictable.
+  const pieces = [text];
   body.replaceChildren(...pieces.map((piece,index) => {
     const bubble = document.createElement('div'); bubble.className = 'reply-bubble'; bubble.dataset.bubbleId = `${key}:bubble:${index}`;
     bubble.append(markdown(piece)); return bubble;
   }));
 }
-export function createTurnsUI({ state, json, storage, onError, onHistory, onState, onSettled, createSession, onDraftRestore }) {
+export function createTurnsUI({ state, json, storage, onError, onHistory, onState, onSettled, createSession, onDraftRestore, onAccepted }) {
   const $ = id => document.getElementById(id);
   const ui = Object.fromEntries(['turn-queue','turn-queue-label','turn-queue-list','turn-queue-error','turn-resume','turn-refresh','turn-unknown','turn-unknown-text','turn-retry','turn-restore-draft'].map(id => [id,$(id)]));
   const storageKey = 'pocket-turn-unconfirmed';
@@ -30,7 +31,18 @@ export function createTurnsUI({ state, json, storage, onError, onHistory, onStat
   function restorePending(sid) {
     try {
       const value = JSON.parse(storage.get(storageKey) || 'null');
-      if (value?.session === sid && /^[A-Za-z0-9_-]{1,128}$/.test(value.request_id) && typeof value.content === 'string' && new TextEncoder().encode(value.content).length <= 65536 && ['auto','listen','chat','solve'].includes(value.mode)) return {...value,phase:value.phase === 'rejected' ? 'rejected':'uncertain'};
+      if (value?.session !== sid || !/^[A-Za-z0-9_-]{1,128}$/.test(value.request_id) || typeof value.content !== 'string' || new TextEncoder().encode(value.content).length > 65536 || !['auto','listen','chat','solve'].includes(value.mode)) return null;
+      const item={session:sid,request_id:value.request_id,content:value.content,mode:value.mode,phase:value.phase === 'rejected' ? 'rejected':'uncertain'};
+      if (value.model !== undefined) {
+        if (typeof value.model !== 'string' || value.model.length > 128 || !['off','medium','high','ultra'].includes(value.thinking)) return null;
+        item.model=value.model; item.thinking=value.thinking;
+      }
+      if (value.image_ids !== undefined) {
+        if (!Array.isArray(value.image_ids) || value.image_ids.length>3 || !value.image_ids.every(id=>typeof id==='string' && /^[A-Za-z0-9_-]{1,128}$/.test(id)) || new Set(value.image_ids).size!==value.image_ids.length) return null;
+        item.image_ids=[...value.image_ids];
+      }
+      if (!item.content.trim() && !item.image_ids?.length) return null;
+      return item;
     } catch {}
     return null;
   }
@@ -43,7 +55,7 @@ export function createTurnsUI({ state, json, storage, onError, onHistory, onStat
     ui['turn-queue-list'].replaceChildren();
     for (const item of queued) {
       const row = document.createElement('div'); row.className = 'turn-queue-item'; row.dataset.requestId = item.id;
-      const label = document.createElement('span'); label.textContent = item.content; row.append(label);
+      const label = document.createElement('span'); label.textContent = item.content || `图片消息 · ${item.images?.length || 0} 张`; row.append(label);
       const button = document.createElement('button'); button.type = 'button'; button.textContent = '撤回'; button.disabled = queueBusy || state.submitting;
       button.addEventListener('click',() => queueAction(async sid => json(path(sid,`/turns/${encodeURIComponent(item.id)}`),{method:'DELETE'})));
       row.append(button); ui['turn-queue-list'].append(row);
@@ -52,7 +64,7 @@ export function createTurnsUI({ state, json, storage, onError, onHistory, onStat
     ui['turn-resume'].disabled = queueBusy || state.submitting || Boolean(history?.active);
     ui['turn-refresh'].disabled = queueBusy || !state.token;
     ui['turn-unknown'].hidden = !pending || pending.phase === 'submitting';
-    if (pending) ui['turn-unknown-text'].textContent = `${pending.phase === 'rejected' ? '这条尚未提交':'这条可能已被接收，请查询或用同一标识确认'}：${pending.content}`;
+    if (pending) ui['turn-unknown-text'].textContent = `${pending.phase === 'rejected' ? '这条尚未提交':'这条可能已被接收，请查询或用同一标识确认'}：${pending.content}${pending.image_ids?.length ? `（${pending.image_ids.length} 张图片）`:''}`;
     ui['turn-retry'].disabled = state.submitting || queueBusy || pending?.status === 409;
     ui['turn-retry'].textContent = pending?.phase === 'rejected' ? '重试提交':'用同一标识确认提交';
     ui['turn-restore-draft'].hidden = pending?.phase !== 'rejected';
@@ -67,7 +79,10 @@ export function createTurnsUI({ state, json, storage, onError, onHistory, onStat
   function apply(value) {
     const previousActive = Boolean(history?.active);
     history = {...value,turns:Array.isArray(value.turns) ? value.turns:[]};
-    if (pending && history.turns.some(item => item.id === pending.request_id && item.content === pending.content && item.mode === pending.mode)) { pending = null; savePending(); say(''); }
+    const matchesPending = item => item.id === pending.request_id && item.content === pending.content && item.mode === pending.mode &&
+      (pending.model===undefined || item.model===pending.model && item.thinking===pending.thinking) &&
+      (pending.image_ids===undefined || JSON.stringify((item.images || []).map(image=>image.id))===JSON.stringify(pending.image_ids));
+    if (pending && history.turns.some(matchesPending)) { const accepted=pending; pending = null; savePending(); say(''); onAccepted?.(accepted); }
     state.streaming = Boolean(history.active); state.external = false;
     const nextSignature = JSON.stringify([history.messages,history.turns,history.active,history.queue_paused,history.activity]);
     if (signature !== nextSignature) { signature = nextSignature; onHistory(history); }
@@ -106,7 +121,7 @@ export function createTurnsUI({ state, json, storage, onError, onHistory, onStat
   }
   function detach() { cancelRead(); generation++; queueBusy = false; state.stopping = false; session = null; history = null; pending = null; signature = ''; terminalSignature = ''; state.streaming = false; state.external = false; state.queuedCount = 0; state.queuePaused = false; state.submitUnknown = false; renderQueue(); }
   function clear() { submission++; state.submitting = false; queueBusy = false; storage.remove(storageKey); detach(); say(''); }
-  async function submit(content,mode = 'auto',retry = false) {
+  async function submit(content,mode = 'auto',retry = false,options = {}) {
     if (!state.token || state.submitting || (!retry && pending)) return false;
     const ticket = ++submission, initialGeneration = generation, initialRole = state.roleID, initialToken = state.token;
     state.submitting = true; renderQueue();
@@ -122,13 +137,18 @@ export function createTurnsUI({ state, json, storage, onError, onHistory, onStat
       if (!retry) {
         const bytes = new Uint8Array(16); crypto.getRandomValues(bytes);
         pending = {session:sid,request_id:Array.from(bytes,v=>v.toString(16).padStart(2,'0')).join(''),content,mode:mode || 'auto',phase:'submitting'};
+        if (options.model !== undefined) { pending.model=options.model; pending.thinking=options.thinking; }
+        if (options.image_ids !== undefined) pending.image_ids=[...options.image_ids];
       }
       if (!pending || pending.session !== sid) return false;
       const payload = {...pending}; pending.phase = 'submitting'; savePending(); say(''); renderQueue();
       try {
-        const accepted = await json(path(sid,'/turns'),{method:'POST',body:JSON.stringify({request_id:payload.request_id,content:payload.content,mode:payload.mode})});
+        const body={request_id:payload.request_id,content:payload.content,mode:payload.mode};
+        if (payload.model!==undefined) { body.model=payload.model; body.thinking=payload.thinking; }
+        if (payload.image_ids!==undefined) body.image_ids=payload.image_ids;
+        const accepted = await json(path(sid,'/turns'),{method:'POST',body:JSON.stringify(body)});
         if (!current(sid,stamp) || submission !== ticket) return true;
-        pending = null; savePending(); cancelRead();
+        pending = null; savePending(); cancelRead(); onAccepted?.(payload);
         const optimistic = history || {id:sid,messages:[],turns:[],role_id:state.roleID};
         const turns = [...(optimistic.turns || [])]; const old = turns.findIndex(item => item.id === accepted.id);
         if (old < 0) turns.push(accepted); else turns[old] = accepted;
@@ -140,7 +160,7 @@ export function createTurnsUI({ state, json, storage, onError, onHistory, onStat
         pending.phase = error.status && error.status < 500 ? 'rejected':'uncertain'; pending.status = error.status || null; savePending();
         say(error.message || '提交状态未知，没有自动重发。'); renderQueue(); cancelRead(); await refresh(); return false;
       }
-    } catch (error) { if (submission === ticket) { if (!pending && state.token === initialToken && state.roleID === initialRole) onDraftRestore(content,mode); report(error); } return false; }
+    } catch (error) { if (submission === ticket) { if (!pending && state.token === initialToken && state.roleID === initialRole) onDraftRestore(content,mode,options); report(error); } return false; }
     finally { if (submission === ticket) { state.submitting = false; renderQueue(); schedule(); } }
   }
   async function queueAction(work) {
@@ -160,9 +180,10 @@ export function createTurnsUI({ state, json, storage, onError, onHistory, onStat
   ui['turn-resume'].addEventListener('click',() => queueAction(sid => json(path(sid,'/turns/resume'),{method:'POST'})));
   ui['turn-refresh'].addEventListener('click',() => { cancelRead(); refresh().catch(report); });
   ui['turn-retry'].addEventListener('click',() => { if (pending && pending.phase !== 'submitting') submit(pending.content,pending.mode,true); });
-  ui['turn-restore-draft'].addEventListener('click',() => {
+  ui['turn-restore-draft'].addEventListener('click',async () => {
     if (!pending || pending.phase !== 'rejected') return;
-    if (onDraftRestore(pending.content,pending.mode) === false) return;
+    const original=pending;
+    if (await onDraftRestore(pending.content,pending.mode,pending) === false || pending!==original) return;
     pending = null; savePending(); say(''); renderQueue(); schedule();
   });
   document.addEventListener('visibilitychange',() => { if (document.visibilityState === 'visible') refresh().catch(report); else cancelRead(); });

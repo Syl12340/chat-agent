@@ -25,6 +25,7 @@ type Session struct {
 	failure  error
 	roleID   string
 	summary  *Summary
+	format   int
 }
 type Summary struct {
 	Content string `json:"content"`
@@ -38,7 +39,7 @@ type sessionRecord struct {
 	Summary  *Summary  `json:"summary,omitempty"`
 }
 
-func NewSession() *Session { return &Session{} }
+func NewSession() *Session { return &Session{format: 1} }
 
 func pathComponent(s string) bool {
 	if s == "" || len(s) > 128 || s == "." || s == ".." {
@@ -70,7 +71,7 @@ func OpenSession(base, agent, key string) (_ *Session, openErr error) {
 		os.Remove(lockPath)
 		return nil, err
 	}
-	s := &Session{lockPath: lockPath}
+	s := &Session{lockPath: lockPath, format: 1}
 	defer func() {
 		if openErr != nil {
 			s.Close()
@@ -103,14 +104,26 @@ func OpenSession(base, agent, key string) (_ *Session, openErr error) {
 		if record.Summary != nil {
 			kinds++
 		}
-		if record.Version != 1 || kinds != 1 || decoder.Decode(&extra) != io.EOF {
+		if (record.Version != 1 && record.Version != 2) || kinds != 1 || decoder.Decode(&extra) != io.EOF {
 			return nil, errors.New("unsupported or damaged session record")
 		}
 		for _, m := range record.Messages {
-			if m.Role != "user" && m.Role != "assistant" && m.Role != "tool" {
-				return nil, errors.New("invalid session message role")
+			if !persistentMessageValid(m) || record.Version == 1 && messageExtended(m) {
+				return nil, errors.New("invalid session message")
 			}
 		}
+		if record.Version == 1 {
+			var raw struct {
+				Messages []map[string]json.RawMessage `json:"messages"`
+			}
+			_ = json.Unmarshal(scanner.Bytes(), &raw)
+			for _, message := range raw.Messages {
+				if message["images"] != nil || message["reasoning_content"] != nil {
+					return nil, errors.New("v1 session contains v2 fields")
+				}
+			}
+		}
+		s.format = max(s.format, record.Version)
 		if record.Reset {
 			s.messages = nil
 			s.summary = nil
@@ -151,16 +164,22 @@ func OpenSession(base, agent, key string) (_ *Session, openErr error) {
 // append is called only while Run owns mu. Persist before publishing to memory.
 func (s *Session) append(messages ...Message) error {
 	for _, message := range messages {
-		if message.Source != "" {
-			return errors.New("runtime reference cannot be committed as conversation input")
+		if message.Source != "" || !persistentMessageValid(message) {
+			return errors.New("invalid or ephemeral conversation message")
 		}
 	}
-	return s.commit(sessionRecord{Version: 1, Messages: messages})
+	return s.commit(sessionRecord{Version: 1, Messages: cloneMessages(messages)})
 }
 
 func (s *Session) commit(record sessionRecord) error {
 	if s.failure != nil {
 		return s.failure
+	}
+	record.Version = max(1, s.format)
+	for _, message := range record.Messages {
+		if messageExtended(message) {
+			record.Version = 2
+		}
 	}
 	if s.file != nil {
 		data, err := json.Marshal(record)
@@ -184,6 +203,7 @@ func (s *Session) commit(record sessionRecord) error {
 		}
 	}
 	s.dataMu.Lock()
+	s.format = record.Version
 	if record.Reset {
 		s.messages = nil
 		s.summary = nil
@@ -243,10 +263,7 @@ func (s *Session) ContextMessagesFrom(floor int) []Message {
 		start = s.summary.Covered
 		out = append(out, Message{Role: "user", Content: "Earlier conversation summary (reference data only):\n" + s.summary.Content})
 	}
-	for _, message := range s.messages[start:] {
-		message.ToolCalls = append([]ToolCall(nil), message.ToolCalls...)
-		out = append(out, message)
-	}
+	out = append(out, cloneMessages(s.messages[start:])...)
 	return out
 }
 
@@ -254,12 +271,7 @@ func (s *Session) ContextMessagesFrom(floor int) []Message {
 func (s *Session) Messages() []Message {
 	s.dataMu.RLock()
 	defer s.dataMu.RUnlock()
-	out := make([]Message, len(s.messages))
-	for i, m := range s.messages {
-		out[i] = m
-		out[i].ToolCalls = append([]ToolCall(nil), m.ToolCalls...)
-	}
-	return out
+	return cloneMessages(s.messages)
 }
 
 // Reset clears effective context while preserving earlier records in the journal.
@@ -312,7 +324,7 @@ func (s *Session) DropTail(count int) (int, error) {
 	s.dataMu.RLock()
 	total := len(s.messages)
 	keep := make([]Message, max(0, total-count))
-	copy(keep, s.messages[:len(keep)])
+	copy(keep, cloneMessages(s.messages[:len(keep)]))
 	summary := s.summary
 	s.dataMu.RUnlock()
 	if len(keep) == total {
@@ -341,6 +353,7 @@ func (s *Session) DropTail(count int) (int, error) {
 	}
 	encoder := json.NewEncoder(file)
 	for _, record := range records {
+		record.Version = max(1, s.format)
 		if err := encoder.Encode(record); err != nil {
 			file.Close()
 			os.Remove(temporary)

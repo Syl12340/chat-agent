@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"pocket-agent/internal/media"
 	"pocket-agent/internal/storage"
 )
 
@@ -31,18 +32,21 @@ type ToolEvent struct {
 	Error     string `json:"error,omitempty"`
 }
 type Turn struct {
-	ID         string      `json:"id"`
-	Sequence   int         `json:"sequence"`
-	Content    string      `json:"content"`
-	Mode       string      `json:"mode"`
-	Status     string      `json:"status"`
-	BatchID    string      `json:"batch_id,omitempty"`
-	StartIndex int         `json:"start_index"`
-	EndIndex   int         `json:"end_index"`
-	Text       string      `json:"text,omitempty"`
-	Tools      []ToolEvent `json:"tools,omitempty"`
-	Error      string      `json:"error,omitempty"`
-	CreatedAt  time.Time   `json:"created_at"`
+	ID         string        `json:"id"`
+	Sequence   int           `json:"sequence"`
+	Content    string        `json:"content"`
+	Mode       string        `json:"mode"`
+	Status     string        `json:"status"`
+	BatchID    string        `json:"batch_id,omitempty"`
+	StartIndex int           `json:"start_index"`
+	EndIndex   int           `json:"end_index"`
+	Text       string        `json:"text,omitempty"`
+	Tools      []ToolEvent   `json:"tools,omitempty"`
+	Error      string        `json:"error,omitempty"`
+	CreatedAt  time.Time     `json:"created_at"`
+	Model      string        `json:"model,omitempty"`
+	Thinking   string        `json:"thinking,omitempty"`
+	Images     []media.Image `json:"images,omitempty"`
 }
 type record struct {
 	Turn
@@ -84,6 +88,7 @@ func clone(st *state) *state {
 	out.Items = append([]record(nil), st.Items...)
 	for i := range out.Items {
 		out.Items[i].Tools = append([]ToolEvent(nil), out.Items[i].Tools...)
+		out.Items[i].Images = append([]media.Image(nil), out.Items[i].Images...)
 	}
 	return &out
 }
@@ -139,8 +144,19 @@ func (s *Store) load(id string) (*state, error) {
 	if err = d.Decode(&st); err != nil {
 		return nil, err
 	}
-	if d.Decode(&extra) != io.EOF || st.Version != 1 || st.SessionID != id || len(st.Items) > 2048 {
+	if d.Decode(&extra) != io.EOF || (st.Version != 1 && st.Version != 2) || st.SessionID != id || len(st.Items) > 2048 {
 		return nil, errors.New("invalid turn ledger")
+	}
+	if st.Version == 1 {
+		var raw struct {
+			Items []map[string]json.RawMessage `json:"items"`
+		}
+		_ = json.Unmarshal(b, &raw)
+		for _, item := range raw.Items {
+			if item["model"] != nil || item["thinking"] != nil || item["images"] != nil {
+				return nil, errors.New("v1 ledger contains v2 fields")
+			}
+		}
 	}
 	changed := false
 	seen := map[string]bool{}
@@ -148,6 +164,9 @@ func (s *Store) load(id string) (*state, error) {
 		t := &st.Items[i]
 		if !storage.ValidID(t.ID) || seen[t.ID] || t.Sequence != i+1 || len(t.Digest) != 64 || t.StartIndex < 0 || t.EndIndex < 0 || len(t.Content) > 64<<10 || len(t.Text) > 64<<10 {
 			return nil, errors.New("invalid turn record")
+		}
+		if !validOptions(t.Model, t.Thinking, t.Images) {
+			return nil, errors.New("invalid turn options")
 		}
 		seen[t.ID] = true
 		switch t.Status {
@@ -178,23 +197,26 @@ func digest(content, mode string) string {
 	return hex.EncodeToString(b[:])
 }
 func (s *Store) Enqueue(id, rid, content, mode string) (Turn, bool, error) {
+	return s.EnqueueWithOptions(id, rid, content, mode, "", "", nil)
+}
+func (s *Store) EnqueueWithOptions(id, rid, content, mode, model, thinking string, images []media.Image) (Turn, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !storage.ValidID(rid) || strings.TrimSpace(content) == "" || len(content) > 64<<10 {
+	if !storage.ValidID(rid) || strings.TrimSpace(content) == "" && len(images) == 0 || len(content) > 64<<10 || !validOptions(model, thinking, images) {
 		return Turn{}, false, ErrConflict
 	}
 	st, err := s.load(id)
 	if err != nil {
 		return Turn{}, false, err
 	}
-	hash := digest(content, mode)
+	hash := optionsDigest(content, mode, model, thinking, images)
 	pending := 0
 	for _, r := range st.Items {
 		if r.ID == rid {
 			if r.Digest != hash {
 				return Turn{}, false, ErrConflict
 			}
-			return r.Turn, true, nil
+			return cloneTurn(r.Turn), true, nil
 		}
 		if r.Status == "queued" {
 			pending++
@@ -204,7 +226,10 @@ func (s *Store) Enqueue(id, rid, content, mode string) (Turn, bool, error) {
 		return Turn{}, false, ErrLimit
 	}
 	next := clone(st)
-	turn := Turn{ID: rid, Sequence: len(next.Items) + 1, Content: content, Mode: mode, Status: "queued", CreatedAt: time.Now().UTC()}
+	turn := Turn{ID: rid, Sequence: len(next.Items) + 1, Content: content, Mode: mode, Status: "queued", CreatedAt: time.Now().UTC(), Model: model, Thinking: thinking, Images: append([]media.Image(nil), images...)}
+	if model != "" || thinking != "" || len(images) > 0 {
+		next.Version = 2
+	}
 	next.Items = append(next.Items, record{Turn: turn, Digest: hash})
 	// Retain request digests for the entire bounded ledger; compact only payloads.
 	for i := 0; i < len(next.Items)-32; i++ {
@@ -217,7 +242,7 @@ func (s *Store) Enqueue(id, rid, content, mode string) (Turn, bool, error) {
 	if err = s.save(next); err != nil {
 		return Turn{}, false, err
 	}
-	return turn, false, nil
+	return cloneTurn(turn), false, nil
 }
 func (s *Store) List(id string) ([]Turn, bool, error) {
 	s.mu.Lock()
@@ -229,8 +254,7 @@ func (s *Store) List(id string) ([]Turn, bool, error) {
 	out := []Turn{}
 	start := max(0, len(st.Items)-32)
 	for _, r := range st.Items[start:] {
-		t := r.Turn
-		t.Tools = append([]ToolEvent(nil), t.Tools...)
+		t := cloneTurn(r.Turn)
 		out = append(out, t)
 	}
 	return out, st.Paused, nil
@@ -263,6 +287,7 @@ func (s *Store) Pause(id string, paused bool) error {
 	next.Paused = paused
 	return s.save(next)
 }
+
 // Get returns one recorded turn without mutating the ledger.
 func (s *Store) Get(id, rid string) (Turn, error) {
 	s.mu.Lock()
@@ -273,7 +298,7 @@ func (s *Store) Get(id, rid string) (Turn, error) {
 	}
 	for _, r := range st.Items {
 		if r.ID == rid {
-			return r.Turn, nil
+			return cloneTurn(r.Turn), nil
 		}
 	}
 	return Turn{}, ErrNotFound
@@ -305,6 +330,9 @@ func (s *Store) Remove(id, rid string) error {
 		return ErrNotFound
 	}
 	next.Items = kept
+	for i := range next.Items {
+		next.Items[i].Sequence = i + 1
+	}
 	return s.save(next)
 }
 
@@ -355,14 +383,14 @@ func (s *Store) Begin(id string, start int, merge func(Turn) bool) ([]Turn, erro
 	}
 	next := clone(st)
 	out := []Turn{}
-	size := 0
+	size, imageCount := 0, 0
 	mode := ""
 	for i := range next.Items {
 		r := &next.Items[i]
 		if r.Status != "queued" {
 			continue
 		}
-		if len(out) > 0 && (len(out) >= 4 || size+len(r.Content) > 64<<10 || r.Mode != mode || !merge(r.Turn) || !merge(out[0])) {
+		if len(out) > 0 && (len(out) >= 4 || size+len(r.Content) > 64<<10 || r.Mode != mode || r.Model != out[0].Model || r.Thinking != out[0].Thinking || imageCount+len(r.Images) > 3 || !merge(cloneTurn(r.Turn)) || !merge(cloneTurn(out[0]))) {
 			break
 		}
 		if len(out) == 0 {
@@ -374,8 +402,9 @@ func (s *Store) Begin(id string, start int, merge func(Turn) bool) ([]Turn, erro
 		if len(out) > 0 {
 			r.BatchID = out[0].ID
 		}
-		out = append(out, r.Turn)
+		out = append(out, cloneTurn(r.Turn))
 		size += len(r.Content)
+		imageCount += len(r.Images)
 	}
 	if len(out) == 0 {
 		return nil, nil

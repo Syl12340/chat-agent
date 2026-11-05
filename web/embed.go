@@ -5,7 +5,7 @@ import (
 	"net/http"
 )
 
-//go:embed index.html app.js theme.js tasks.js companion.js life.js turns.js activities.js native.js native-care.js voice.js device-auth.js role-proposals.js topics.js style.css sw.js manifest.webmanifest icon.svg icon-192.png icon-512.png
+//go:embed index.html app.js theme.js tasks.js companion.js life.js turns.js activities.js native.js native-care.js voice.js device-auth.js role-proposals.js topics.js chat-input.js chat-ui.css style.css sw.js manifest.webmanifest icon.svg icon-192.png icon-512.png
 var assets embed.FS
 
 func Handler() http.Handler {
@@ -17,6 +17,8 @@ func Handler() http.Handler {
 	allowed["/device-auth.js"] = true
 	allowed["/role-proposals.js"] = true
 	allowed["/topics.js"] = true
+	allowed["/chat-input.js"] = true
+	allowed["/chat-ui.css"] = true
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !allowed[r.URL.Path] {
 			http.NotFound(w, r)

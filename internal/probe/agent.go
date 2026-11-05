@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"pocket-agent/internal/media"
 )
 
 const AgentID = "pocket"
@@ -32,6 +34,8 @@ type Config struct {
 	Provider                                ModelProvider
 	ContextBytes, KeepRecentTurns           int
 	HistoryFloor                            int
+	Thinking, ReasoningEffort               string
+	ResolveImage                            func(context.Context, media.Image) (string, error)
 }
 
 func DefaultConfig() Config {
@@ -54,11 +58,13 @@ type ToolCall struct {
 }
 type Message struct {
 	// Source is host-only provenance for ephemeral request context.
-	Source     string     `json:"-"`
-	Role       string     `json:"role"`
-	Content    string     `json:"content"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string     `json:"tool_call_id,omitempty"`
+	Source           string        `json:"-"`
+	Role             string        `json:"role"`
+	Content          string        `json:"content"`
+	ToolCalls        []ToolCall    `json:"tool_calls,omitempty"`
+	ToolCallID       string        `json:"tool_call_id,omitempty"`
+	Images           []media.Image `json:"images,omitempty"`
+	ReasoningContent string        `json:"reasoning_content,omitempty"`
 }
 type EventType string
 
@@ -70,6 +76,7 @@ const (
 	EventError           EventType = "error"
 	EventCompactionStart EventType = "compaction_start"
 	EventCompactionDone  EventType = "compaction_done"
+	EventThinking        EventType = "thinking"
 )
 
 type ToolResult struct {
@@ -116,6 +123,12 @@ func New(c Config, sess *Session) (*Agent, error) {
 	if c.TokenParameter != "max_tokens" && c.TokenParameter != "max_completion_tokens" {
 		return nil, errors.New("token parameter must be max_tokens or max_completion_tokens")
 	}
+	if c.Thinking != "" && c.Thinking != "enabled" && c.Thinking != "disabled" {
+		return nil, errors.New("invalid thinking setting")
+	}
+	if c.ReasoningEffort != "" && (c.Thinking != "enabled" || !validEffort(c.ReasoningEffort)) {
+		return nil, errors.New("invalid reasoning effort")
+	}
 	registry, err := NewToolRegistry(append([]Tool{clock()}, c.Tools...))
 	if err != nil {
 		return nil, err
@@ -151,14 +164,18 @@ func RunMessages(ctx context.Context, a *Agent, timeout time.Duration, inputs []
 	if timeout <= 0 || len(inputs) == 0 || len(inputs) > 8 {
 		return errors.New("invalid user message batch")
 	}
-	size := 0
+	size, imageCount := 0, 0
 	for _, input := range inputs {
-		if input.Role != "user" || input.Source != "" || strings.TrimSpace(input.Content) == "" || len(input.ToolCalls) > 0 || input.ToolCallID != "" {
+		if input.Role != "user" || input.Source != "" || strings.TrimSpace(input.Content) == "" && len(input.Images) == 0 || len(input.ToolCalls) > 0 || input.ToolCallID != "" || input.ReasoningContent != "" {
 			return errors.New("invalid user message")
 		}
+		if err := validateImages(input.Images); err != nil {
+			return err
+		}
+		imageCount += len(input.Images)
 		size += len(input.Content)
 	}
-	if size > 64<<10 {
+	if size > 64<<10 || imageCount > 3 {
 		return errors.New("prompt exceeds 64 KiB limit")
 	}
 	if !a.session.mu.TryLock() {

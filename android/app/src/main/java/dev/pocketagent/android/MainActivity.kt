@@ -40,6 +40,7 @@ import android.webkit.WebSettings
 import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.ValueCallback
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -73,6 +74,10 @@ class MainActivity : Activity() {
     private var speechReply: SpeechReply? = null
     private var speechInFlight = false
     private var pendingExport: ByteArray? = null
+    private data class ImageSelection(val callback: ValueCallback<Array<Uri>>, val marker: String, val origin: String)
+    private var imageSelection: ImageSelection? = null
+    private val selectedImageUris = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    @Volatile private var imageContentOrigin = ""
     private val io = Executors.newSingleThreadExecutor()
     private val prefs by lazy { getSharedPreferences("pocket-shell", MODE_PRIVATE) }
     private val vault by lazy { CredentialVault(this) }
@@ -166,12 +171,14 @@ class MainActivity : Activity() {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.allowFileAccess = false
-            settings.allowContentAccess = false
+            // Needed for user-picked image files; requests are restricted to
+            // the exact content URIs approved below, never arbitrary providers.
+            settings.allowContentAccess = true
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             settings.safeBrowsingEnabled = true
             settings.javaScriptCanOpenWindowsAutomatically = false
             settings.setSupportMultipleWindows(true)
-            settings.userAgentString += " PocketAgentAndroid/0.1"
+            settings.userAgentString += " PocketAgentAndroid/${BuildConfig.VERSION_NAME}"
         }
         CookieManager.getInstance().setAcceptCookie(false)
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, false)
@@ -185,6 +192,7 @@ class MainActivity : Activity() {
             }
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                 if (server?.contains(request.url.toString()) == true) return null
+                if (request.url.scheme == "content" && selectedImageUris.contains(request.url.toString()) && imageContentOrigin == server?.origin) return null
                 return WebResourceResponse("text/plain", "UTF-8", 403, "Blocked", emptyMap(), ByteArrayInputStream(ByteArray(0)))
             }
             override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
@@ -212,6 +220,17 @@ class MainActivity : Activity() {
             }
         }
         web.webChromeClient = object : WebChromeClient() {
+            override fun onShowFileChooser(view: WebView, callback: ValueCallback<Array<Uri>>, parameters: FileChooserParams): Boolean {
+                if (!activityVisible || server?.contains(view.url) != true) { callback.onReceiveValue(null); return true }
+                imageSelection?.callback?.onReceiveValue(null)
+                imageSelection = ImageSelection(callback, exportMarker, configuredServer?.origin ?: "")
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+                    .setType("image/*").putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/jpeg", "image/png"))
+                    .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                try { startActivityForResult(intent, IMAGE_PICKER) }
+                catch (_: Exception) { imageSelection = null; callback.onReceiveValue(null); toast("系统图片选择器不可用。") }
+                return true
+            }
             override fun onProgressChanged(view: WebView, value: Int) { progress.progress = value; if (value == 100) progress.visibility = View.GONE }
             override fun onPermissionRequest(request: PermissionRequest) { request.deny() }
             override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
@@ -301,7 +320,10 @@ class MainActivity : Activity() {
             pending.port.postMessage(WebMessage(JSONObject().put("id", pending.id).put("ok", true).put("available", true).put("canceled", true).toString()))
         }
     }
-    private fun closePort() { cancelSpeechReply(); exportPort?.close(); exportPort = null; exportMarker = "" }
+    private fun closePort() {
+        cancelSpeechReply(); imageSelection?.callback?.onReceiveValue(null); imageSelection = null; selectedImageUris.clear(); imageContentOrigin = ""
+        exportPort?.close(); exportPort = null; exportMarker = ""
+    }
 
     private fun speechIntent() = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
         .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -431,6 +453,20 @@ class MainActivity : Activity() {
     @Deprecated("Platform result callback retained to avoid an AndroidX dependency")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == IMAGE_PICKER) {
+            val pending = imageSelection; imageSelection = null
+            if (pending == null) return
+            val binding = pending.marker == exportMarker && pending.origin == configuredServer?.origin && server?.contains(web.url) == true
+            val uris = if (resultCode == RESULT_OK && binding) {
+                val clips = data?.clipData
+                if (clips != null) (0 until minOf(clips.itemCount, 4)).map { clips.getItemAt(it).uri } else listOfNotNull(data?.data)
+            } else emptyList()
+            val allowed = uris.size in 1..3 && uris.all { uri -> uri.scheme == "content" && runCatching { contentResolver.getType(uri)?.lowercase() in listOf("image/jpeg", "image/png") }.getOrDefault(false) }
+            if (allowed) { selectedImageUris.clear(); imageContentOrigin = server?.origin ?: ""; selectedImageUris.addAll(uris.map { it.toString() }) }
+            else if (uris.isNotEmpty()) toast("每次最多选择三张 JPEG 或 PNG 图片。")
+            pending.callback.onReceiveValue(if (allowed) uris.toTypedArray() else null)
+            return
+        }
         if (requestCode == SPEECH_INPUT) {
             speechInFlight = false
             val pending = speechReply; speechReply = null
@@ -542,5 +578,5 @@ class MainActivity : Activity() {
     }
     override fun onDestroy() { closePort(); gateway?.close(); pendingExport = null; content.removeView(web); web.destroy(); io.shutdown(); super.onDestroy() }
     private fun toast(message: String) { Toast.makeText(this, message, Toast.LENGTH_SHORT).show() }
-    companion object { private const val SAVE_DOCUMENT = 20; private const val INSTALL_PERMISSION = 21; private const val CARE_PERMISSION = 22; private const val SPEECH_INPUT = 23; private const val MAX_EXPORT = 4 * 1024 * 1024 }
+    companion object { private const val SAVE_DOCUMENT = 20; private const val INSTALL_PERMISSION = 21; private const val CARE_PERMISSION = 22; private const val SPEECH_INPUT = 23; private const val IMAGE_PICKER = 24; private const val MAX_EXPORT = 4 * 1024 * 1024 }
 }

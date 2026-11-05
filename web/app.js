@@ -9,6 +9,7 @@ import { createActivitiesUI } from '/activities.js';
 import { createNativeCare } from '/native-care.js';
 import { createVoiceUI } from '/voice.js';
 import { createDeviceAuth } from '/device-auth.js';
+import { createChatInput } from '/chat-input.js';
 const $ = id => document.getElementById(id);
 const ui = Object.fromEntries(['sidebar','drawer-scrim','menu','new-chat','sessions','session-count','logout','chat-title','connection-label','demo-badge','conversation','welcome','messages','prompt','composer','send','stop','notice','model-label','login-overlay','login-form','access-token','login-button','login-error','settings','settings-dialog','close-settings','connection-info','reset-chat','delete-session','offline-banner','install'].map(id => [id, $(id)]));
 for (const id of ['role-picker','memory-open','memory-count','role-open','memory-dialog','memory-close','memory-role-name','memory-list','memory-form','memory-content','memory-status','memory-save','memory-cancel-edit','memory-form-label','memory-export','memory-message','role-dialog','role-close','role-id-label','role-title','role-form','role-file','role-content','role-save','role-skills','role-message','compact-context','compact-message','summary-details','summary-content']) ui[id] = $(id);
@@ -47,6 +48,7 @@ function forgetToken() {
   if (nativeShell) window.PocketAndroidAuth?.forget().catch(() => notice('清除本机登录信息失败，请重试退出登录。'));
 }
 const state = { token: storage.get('pocket-token') || '', current: null, sessions: [], config: null, loading: false, streaming: false, external: false, stopping: false, controller: null, follow: true };
+let chatInput = null;
 Object.assign(state, { roles: [], roleID: 'companion', memories: [], memoryFilter: 'pending', memoryEditing: null, roleDocument: null, summary: null, compacting: false });
 const deviceAuth = createDeviceAuth({state,onToken:token=>connect(token,'device'),onError:handleError,adminRequest:json});
 const taskUI = createTaskUI({ state, request, json, roleName, drawer, onError: handleError });
@@ -56,8 +58,9 @@ const topicsUI=createTopicsUI({state,json,drawer,onError:handleError});
 const nativeCare = createNativeCare({state});
 const voiceUI = createVoiceUI({ state, request, notice, restoreDraft, onError: handleError });
 const lifeUI = createLifeUI({ state, json, drawer, onError: handleError, onOpenSession: id => selectSession(id), onCareReady: (role,items)=>nativeCare.deliver(role,items) });
-const turnUI = createTurnsUI({ state, json, storage, onError: handleError, onHistory: applyTurnHistory, onState: updateUI, onSettled: refreshAfterTurn, createSession: createRemoteSession, onDraftRestore: restoreDraft });
+const turnUI = createTurnsUI({ state, json, storage, onError: handleError, onHistory: applyTurnHistory, onState: updateUI, onSettled: refreshAfterTurn, createSession: createRemoteSession, onDraftRestore: restoreTurnDraft, onAccepted: payload=>chatInput?.accepted(payload) });
 const activitiesUI = createActivitiesUI({ state, json, drawer, onError: handleError, onContinue: openActivityChat, onChanged: () => turnUI.refresh() });
+chatInput = createChatInput({state,request,json,createSession:createRemoteSession,notice,onChange:updateUI,onImageLoad:()=>scrollBottom()});
 // A manual connection owns authentication immediately, even while native restore awaits.
 let authEpoch = 0, connectionWork = Promise.resolve(), connectionAbort = null, renewalWork = null;
 const staleAuth = () => new DOMException('认证请求已过期', 'AbortError');
@@ -79,11 +82,11 @@ function updateUI() {
   const locked = !state.token || !ui['login-overlay'].hidden || state.loading;
   ui.prompt.disabled = locked || state.compacting;
   ui.send.hidden = false;
-  ui.send.disabled = locked || state.compacting || state.submitting || state.submitUnknown || !ui.prompt.value.trim();
+  ui.send.disabled = locked || state.compacting || state.submitting || state.submitUnknown || state.imageBusy || !chatInput?.ready() || (!ui.prompt.value.trim() && !state.draftImageCount);
   ui.send.setAttribute('aria-label', state.submitting ? '正在提交消息' : busy ? '发送到消息队列' : '发送消息');
   ui.stop.hidden = !(busy || state.queuedCount);
   ui.stop.disabled = state.stopping || !state.current;
-  const navigationLocked = locked || busy || state.submitting || state.submitUnknown;
+  const navigationLocked = locked || busy || state.submitting || state.submitUnknown || state.imageBusy;
   ui['new-chat'].disabled = navigationLocked;
   ui['reset-chat'].disabled = navigationLocked || Boolean(state.queuedCount) || !state.current;
   ui['delete-session'].disabled = navigationLocked || Boolean(state.queuedCount) || !state.current;
@@ -100,6 +103,7 @@ function updateUI() {
   topicsUI.lock();
   activitiesUI.lock();
   voiceUI.lock();
+  chatInput?.lock();
 }
 
 async function renewDeviceSession() {
@@ -163,6 +167,7 @@ function logout() {
   nativeCare.clear();
   activitiesUI.clear();
   turnUI.clear(); sessionSelection++;
+  chatInput.clear();
   state.controller?.abort();
   forgetToken();
   storage.remove('pocket-session');
@@ -201,6 +206,7 @@ function connect(token, authKind = 'owner') {
       ui['login-overlay'].hidden = true;
       ui['demo-badge'].hidden = !state.config.demo;
       ui['model-label'].textContent = state.config.model;
+      await step(chatInput.refreshOptions());
       await step(loadRoles());
       await step(refreshSessions());
       const remembered = storage.get('pocket-session');
@@ -279,6 +285,7 @@ async function deleteSession(item) {
   const wasCurrent = state.current === item.id;
   state.sessions = state.sessions.filter(s => s.id !== item.id);
   if (wasCurrent) {
+    chatInput.discard();
     state.current = null;
     ui.messages.replaceChildren(); ui.welcome.hidden = false;
     ui['chat-title'].textContent = '新的开始';
@@ -309,14 +316,31 @@ function inline(text, parent) {
   }
   parent.append(document.createTextNode(text.slice(position)));
 }
+async function copyText(text, button) {
+  try {
+    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+    else {
+      const input=document.createElement('textarea'); input.className='sr-only'; input.value=text; document.body.append(input); input.select();
+      const copied=document.execCommand('copy'); input.remove(); if (!copied) throw new Error('clipboard unavailable');
+    }
+    const label=button.textContent; button.textContent='已复制'; setTimeout(()=>{if(button.isConnected)button.textContent=label;},1500);
+  } catch { notice('暂时无法复制，请长按或选中文字复制。'); }
+}
 function markdown(text) {
   const fragment = document.createDocumentFragment();
   const lines = text.replace(/\r\n/g, '\n').split('\n');
-  let paragraph = [], list = null, fence = false, code = [];
+  let paragraph = [], list = null, fence = false, code = [], language = '';
   const flush = () => { if (paragraph.length) { const p = document.createElement('p'); inline(paragraph.join('\n'), p); fragment.append(p); paragraph = []; } };
-  const flushCode = () => { const pre = document.createElement('pre'), node = document.createElement('code'); node.textContent = code.join('\n'); pre.append(node); fragment.append(pre); code = []; };
+  const flushCode = () => {
+    const block=document.createElement('div'); block.className='code-block';
+    const toolbar=document.createElement('div'); toolbar.className='code-toolbar';
+    const label=document.createElement('span'); label.textContent=language || '代码';
+    const button=document.createElement('button'); button.type='button'; button.className='code-copy'; button.textContent='复制代码';
+    const source=code.join('\n'); button.addEventListener('click',()=>copyText(source,button)); toolbar.append(label,button);
+    const pre=document.createElement('pre'), node=document.createElement('code'); node.textContent=source; pre.append(node); block.append(toolbar,pre); fragment.append(block); code=[]; language='';
+  };
   for (const line of lines) {
-    if (/^\s*```/.test(line)) { flush(); list = null; if (fence) flushCode(); fence = !fence; continue; }
+    if (/^\s*```/.test(line)) { flush(); list = null; if (fence) flushCode(); else language=line.replace(/^\s*```/,'').trim().slice(0,32); fence = !fence; continue; }
     if (fence) { code.push(line); continue; }
     if (!line.trim()) { flush(); list = null; continue; }
     const heading = line.match(/^(#{1,4})\s+(.+)$/), bullet = line.match(/^\s*([-+*]|\d+\.)\s+(.+)$/), quote = line.match(/^>\s?(.*)$/);
@@ -330,7 +354,7 @@ function markdown(text) {
   flush(); return fragment;
 }
 
-function card(role, text = '', key = '') {
+function card(role, text = '', key = '', images = []) {
   ui.welcome.hidden = true;
   const article = document.createElement('article'); article.className = `message ${role}`; article.dataset.role = role;
   if (key) article.dataset.messageId = key;
@@ -340,8 +364,16 @@ function card(role, text = '', key = '') {
   const logs = document.createElement('div'); logs.className = 'tool-logs';
   const body = document.createElement('div'); body.className = 'message-body';
   const status = document.createElement('div'); status.className = 'message-status';
-  content.append(label, logs, body, status); article.append(avatar, content); ui.messages.append(article);
+  const attachments=document.createElement('div'); attachments.className='message-attachments';
+  chatInput.renderImages(attachments,images);
+  const actions=document.createElement('div'); actions.className='message-actions';
+  const copy=document.createElement('button'); copy.type='button'; copy.className='message-copy'; copy.textContent='复制回答'; copy.setAttribute('aria-label','复制这条回答');
+  content.append(label, logs, attachments, body, status); if(role==='assistant'){actions.append(copy);content.append(actions);}
+  article.append(avatar, content); ui.messages.append(article);
   const result = { node: article, body, status, logs, tools: new Map(), text: '', setText(value) { this.text = value; if (role === 'user') body.textContent = value; else replyBubbles(body, value, markdown, key || `${state.current}:reply`); } };
+  copy.addEventListener('click',()=>copyText(result.text,copy));
+  copy.disabled=!text;
+  const original=result.setText; result.setText=function(value){original.call(this,value);copy.disabled=!value;};
   result.setText(text); return result;
 }
 
@@ -392,9 +424,10 @@ function toolLog(message, data, pending = false) {
   log.output.textContent = pending ? '等待工具返回结果…' : data.error || data.output || '执行完成';
 }
 function renderHistory(messages, turns = []) {
+  chatInput.beforeHistoryRender();
   const top = ui.conversation.scrollTop;
   ui.messages.replaceChildren(); ui.welcome.hidden = messages.length > 0;
-  const relevant = turns.filter(t => t.content || t.text || t.error);
+  const relevant = turns.filter(t => t.content || t.text || t.error || t.images?.length);
   const roots = relevant.filter(t => t.batch_id === t.id && t.status !== 'withdrawn');
   const members = new Map();
   for (const t of relevant) if (t.batch_id) { if (!members.has(t.batch_id)) members.set(t.batch_id,[]); members.get(t.batch_id).push(t); }
@@ -412,7 +445,7 @@ function renderHistory(messages, turns = []) {
     if (inserted.has(root.id)) return; inserted.add(root.id);
     const end = root.status === 'running' ? messages.length : root.end_index;
     for (const [offset,t] of (members.get(root.id) || []).entries()) {
-      if (root.start_index + offset >= end) { const user = card('user',t.content,`${state.current}:user:${t.id}`); user.status.textContent = root.status === 'running' ? '已接收':'这次未完成'; }
+      if (root.start_index + offset >= end) { const user = card('user',t.content,`${state.current}:user:${t.id}`,t.images || []); user.status.textContent = root.status === 'running' ? '已接收':'这次未完成'; }
     }
     const committed = messages.slice(root.start_index,end).filter(m => m.role === 'assistant').map(m => m.content || '').join('');
     const remainder = root.text?.startsWith(committed) ? root.text.slice(committed.length) : root.text || '';
@@ -421,19 +454,23 @@ function renderHistory(messages, turns = []) {
     if (remainder) current.setText([current.text,remainder].filter(Boolean).join('\n\n'));
     for (const tool of root.tools || []) if (!calls.has(`${root.id}:${tool.id}`)) { toolLog(current,tool,!tool.output && !tool.error); calls.set(`${root.id}:${tool.id}`,{card:current,name:tool.name}); }
     current.node.classList.add(root.status === 'running' ? 'pending':'unfinished');
-    current.status.textContent = root.status === 'running' ? (root.text ? '正在回复…':'正在想怎么接着聊…') : root.error || '这段回复未完成，没有自动重试。';
+    current.status.textContent = root.status === 'running' ? (root.text ? '正在回复…':root.thinking && root.thinking!=='off' ? '正在思考或等待模型回应…':'正在等待模型回应…') : root.error || '这段回复未完成，没有自动重试。';
     current = null; currentStart = -1;
   };
   for (let index=0;index<messages.length;index++) {
     for (const root of roots) if (['failed','canceled','interrupted'].includes(root.status) && root.end_index === index) incomplete(root);
     const message = messages[index], root = owner(index), key = root ? `${state.current}:turn:${root.id}`:`${state.current}:message:${index}`;
-    if (message.role === 'user') { legacyUser = index; card('user',message.content,userKeys.get(index) || `${state.current}:message:${index}`); current = null; currentStart = -1; }
+    if (message.role === 'user') { legacyUser = index; card('user',message.content,userKeys.get(index) || `${state.current}:message:${index}`,message.images || []); current = null; currentStart = -1; }
     else if (message.role === 'assistant') {
       if (!current) { current = card('assistant',message.content,key); currentStart = index; }
       else if (message.content) current.setText([current.text,message.content].filter(Boolean).join('\n\n'));
       for (const call of message.tool_calls || []) { toolLog(current,{id:call.id,name:call.function.name},true); calls.set(`${root?.id || `legacy-${legacyUser}`}:${call.id}`,{card:current,name:call.function.name}); }
       if (!message.tool_calls?.length) {
-        if (!root || root.status === 'completed') voiceUI.attach(current);
+        if (!root || root.status === 'completed') {
+          voiceUI.attach(current);
+          const voice=current.node.querySelector('.voice-read');
+          if(voice)current.node.querySelector('.message-actions')?.append(voice);
+        }
         current = null; currentStart = -1;
       }
     } else if (message.role === 'tool') {
@@ -443,11 +480,18 @@ function renderHistory(messages, turns = []) {
   }
   for (const root of roots) if (root.status === 'running' || ['failed','canceled','interrupted'].includes(root.status) && root.end_index >= messages.length) incomplete(root);
   for (const t of relevant.filter(t => t.status === 'queued').sort((a,b) => a.sequence - b.sequence)) {
-    const pending = card('user',t.content,`${state.current}:user:${t.id}`); pending.node.classList.add('queued'); pending.status.textContent = '待发送';
+    const pending = card('user',t.content,`${state.current}:user:${t.id}`,t.images || []); pending.node.classList.add('queued'); pending.status.textContent = '待发送';
   }
   if (!messages.length && !relevant.length) ui.conversation.scrollTop = 0;
   else if (!state.follow) ui.conversation.scrollTop = top;
   else scrollBottom(true);
+  for (const root of roots) if(root.model) {
+    for(const node of ui.messages.querySelectorAll(`[data-message-id="${CSS.escape(`${state.current}:turn:${root.id}`)}"] .message-actions`)) {
+      const label=document.createElement('span'); label.className='message-model';
+      label.textContent=root.model+({medium:' · 思考 中',high:' · 思考 高',ultra:' · 思考 超高'}[root.thinking] || ''); node.append(label);
+    }
+  }
+  updateLatest(!state.follow);
   // Only the newest completed turn can be purged: removing an older one would
   // leave later turns pointing at message indexes that no longer exist.
   const newest = [...roots].filter(t => t.status === 'completed').pop();
@@ -469,11 +513,21 @@ async function purgeTurn(turn) {
   await refreshSessions();
   await selectSession(state.current);
 }
-function scrollBottom(force = false) { if (force || state.follow) ui.conversation.scrollTop = ui.conversation.scrollHeight; }
+let unreadBelow = false;
+function updateLatest(changed = false) {
+  if (changed && !state.follow) unreadBelow = true;
+  if (state.follow) unreadBelow = false;
+  const button=$('scroll-latest');
+  button.hidden=state.follow || !ui.messages.childElementCount;
+  button.classList.toggle('has-new',unreadBelow);
+  $('scroll-latest-label').textContent=unreadBelow?'查看新回复':'回到最新消息';
+}
+function scrollBottom(force = false) { if (force || state.follow) { ui.conversation.scrollTop = ui.conversation.scrollHeight; if(force)state.follow=true; updateLatest(); } }
 function applyTurnHistory(history) {
   if (!state.token || history.id !== state.current) return;
   if (state.roleID !== (history.role_id || 'companion')) { roleProposalsUI.clear(); topicsUI.clear(); state.memories = []; ui['memory-count'].hidden = true; }
   state.roleID = history.role_id || 'companion'; state.summary = history.summary; ui['role-picker'].value = state.roleID; showSummary();
+  chatInput.syncScope();
   activitiesUI.context(history.activity || null);
   renderHistory(history.messages || [],history.turns || []);
 }
@@ -482,8 +536,9 @@ async function refreshAfterTurn() {
   await refreshSessions(); await refreshMemoryCount(); await taskUI.refresh(); await lifeUI.refresh(); await activitiesUI.refresh();
 }
 async function selectSession(id) {
-  if (state.submitting || state.compacting) return;
+  if (state.submitting || state.compacting || state.imageBusy) return;
   voiceUI.clear();
+  chatInput.discard(); state.follow=true;
   const selected = ++sessionSelection;
   turnUI.detach(); state.loading = true; updateUI(); notice();
   try {
@@ -491,7 +546,7 @@ async function selectSession(id) {
     if (selected !== sessionSelection || !state.token) return;
     state.current = id; storage.set('pocket-session',id); turnUI.watch(id,history);
     renderSessions(); drawer(false);
-    if (history.messages?.length || history.turns?.some(turn => turn.content || turn.text)) scrollBottom(true);
+    if (history.messages?.length || history.turns?.some(turn => turn.content || turn.text || turn.images?.length)) scrollBottom(true);
     else ui.conversation.scrollTop = 0;
     taskUI.refresh().catch(handleError); lifeUI.refresh().catch(handleError); activitiesUI.refresh().catch(handleError);
   } finally { if (selected === sessionSelection) { state.loading = false; updateUI(); } }
@@ -504,8 +559,9 @@ async function createRemoteSession() {
   state.sessions.unshift(item); renderSessions(); return item;
 }
 async function newChat() {
-  if (state.streaming || state.external || state.loading || state.compacting || state.submitting || state.submitUnknown) return;
+  if (state.streaming || state.external || state.loading || state.compacting || state.submitting || state.submitUnknown || state.imageBusy) return;
   voiceUI.clear();
+  chatInput.discard(); state.follow=true;
   const selected = ++sessionSelection;
   state.loading = true; turnUI.detach(); updateUI(); notice();
   try {
@@ -519,7 +575,7 @@ async function newChat() {
 
 async function openActivityChat(activity) {
   if (!state.token || state.loading || state.streaming || state.external || state.compacting || state.submitting || state.submitUnknown || state.queuedCount) throw new Error('请先停止生成并处理当前队列，再开始活动聊天。');
-  if (ui.prompt.value.trim()) throw new Error('输入框里还有草稿，请先发送或清空，再开始活动聊天。');
+  if (ui.prompt.value.trim() || chatInput.hasUnsentImages()) throw new Error('输入框里还有草稿，请先发送或清空，再开始活动聊天。');
   if (activity.role_id !== state.roleID || activity.status !== 'active') throw new Error('请在当前角色下恢复活动，再接着聊。');
   voiceUI.clear();
   const selected = ++sessionSelection, auth = state.token, role = state.roleID;
@@ -542,14 +598,24 @@ function restoreDraft(text) {
   ui.prompt.value = existing.trim() ? `${text}\n\n${existing}` : text;
   notice(existing.trim() ? '未提交的内容已放在输入框前面，可以编辑后再发送。' : '内容已放回输入框，可以编辑后再发送。'); ui.prompt.style.height = `${Math.min(ui.prompt.scrollHeight,160)}px`; updateUI(); ui.prompt.focus(); return true;
 }
+async function restoreTurnDraft(text,mode,options={}) {
+  if(state.imageBusy)return false;
+  try { await chatInput.restoreUploaded(options); restoreDraft(text); return true; }
+  catch(error){ handleError(error); return false; }
+}
 async function sendMessage(event) {
   event?.preventDefault();
   const text = ui.prompt.value.trim();
-  if (!text || !state.token || state.loading || state.compacting || state.submitting || state.submitUnknown) return;
+  if ((!text && !chatInput.hasImages()) || !state.token || state.loading || state.compacting || state.submitting || state.submitUnknown || state.imageBusy) return;
   if (new TextEncoder().encode(text).length > 65536) { notice('消息过长，请缩短到 64 KiB 以内。'); return; }
   voiceUI.stop();
-  ui.prompt.value = ''; ui.prompt.style.height = 'auto'; state.follow = true; notice(); updateUI();
-  await turnUI.submit(text,'auto'); updateUI(); ui.prompt.focus();
+  try {
+    const options=await chatInput.prepare();
+    if (ui.prompt.value.trim()===text) {ui.prompt.value='';ui.prompt.style.height='auto';}
+    state.follow=true;notice();updateUI();
+    await turnUI.submit(text,'auto',false,options);
+  } catch(error){handleError(error);}
+  updateUI();ui.prompt.focus();
 }
 async function stopMessage() { await turnUI.stop(); }
 
@@ -562,7 +628,9 @@ ui.composer.addEventListener('submit', sendMessage);
 ui.stop.addEventListener('click', stopMessage);
 ui.prompt.addEventListener('input', () => { ui.prompt.style.height = 'auto'; ui.prompt.style.height = `${Math.min(ui.prompt.scrollHeight, 160)}px`; updateUI(); });
 ui.prompt.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && !matchMedia('(pointer: coarse)').matches) { event.preventDefault(); sendMessage(); } });
-ui.conversation.addEventListener('scroll', () => { state.follow = ui.conversation.scrollHeight - ui.conversation.scrollTop - ui.conversation.clientHeight < 100; }, { passive: true });
+ui.conversation.addEventListener('scroll', () => { state.follow = ui.conversation.scrollHeight - ui.conversation.scrollTop - ui.conversation.clientHeight < 100; updateLatest(); }, { passive: true });
+$('scroll-latest').addEventListener('click',()=>scrollBottom(true));
+if(window.ResizeObserver)new ResizeObserver(entries=>{document.querySelector('.main-panel').style.setProperty('--composer-height',`${Math.ceil(entries[0].target.getBoundingClientRect().height)}px`);}).observe(document.querySelector('.composer-area'));
 document.querySelectorAll('[data-prompt]').forEach(button => button.addEventListener('click', () => { if (!state.streaming && !state.external && !state.loading) { ui.prompt.value = button.dataset.prompt; sendMessage(); } }));
 document.addEventListener('keydown', event => { if (event.key === 'Escape') drawer(false); if (event.key.toLowerCase() === 'n' && !event.ctrlKey && !event.metaKey && !event.altKey && !['INPUT', 'TEXTAREA', 'BUTTON'].includes(document.activeElement.tagName) && ui['login-overlay'].hidden && !document.querySelector('dialog[open]')) newChat(); });
 ui['delete-session'].addEventListener('click', () => {

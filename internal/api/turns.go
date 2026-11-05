@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"pocket-agent/internal/companion"
+	"pocket-agent/internal/media"
 	"pocket-agent/internal/probe"
 	"pocket-agent/internal/turns"
 )
@@ -29,22 +30,56 @@ func turnFailure(w http.ResponseWriter, err error) {
 	}
 }
 func (s *Server) enqueueTurn(w http.ResponseWriter, r *http.Request) {
+	s.mediaMu.Lock()
+	defer s.mediaMu.Unlock()
 	var input struct {
-		RequestID string `json:"request_id"`
-		Content   string `json:"content"`
-		Mode      string `json:"mode"`
+		RequestID string   `json:"request_id"`
+		Content   string   `json:"content"`
+		Mode      string   `json:"mode"`
+		Model     string   `json:"model"`
+		Thinking  string   `json:"thinking"`
+		ImageIDs  []string `json:"image_ids"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 128<<10)
 	d := json.NewDecoder(r.Body)
 	d.DisallowUnknownFields()
 	var extra any
-	if d.Decode(&input) != nil || d.Decode(&extra) != io.EOF || !validID(input.RequestID) || strings.TrimSpace(input.Content) == "" || len(input.Content) > 64<<10 || !companion.ValidMode(input.Mode) {
+	if d.Decode(&input) != nil || d.Decode(&extra) != io.EOF || !validID(input.RequestID) || (strings.TrimSpace(input.Content) == "" && len(input.ImageIDs) == 0) || len(input.Content) > 64<<10 || !companion.ValidMode(input.Mode) || len(input.ImageIDs) > 3 {
 		fail(w, 400, "消息标识、内容或交流方式无效")
 		return
 	}
 	sess, ok := s.get(w, r)
 	if !ok {
 		return
+	}
+	choice, err := s.selectChat(input.Model, input.Thinking)
+	if err != nil {
+		fail(w, 400, err.Error())
+		return
+	}
+	if len(input.ImageIDs) > 0 && !choice.Vision {
+		fail(w, 400, "所选模型不支持图片，请选择可看图的模型")
+		return
+	}
+	images := []media.Image{}
+	seen := map[string]bool{}
+	for _, imageID := range input.ImageIDs {
+		if seen[imageID] {
+			fail(w, 400, "同一张图片不能在一条消息中重复提交")
+			return
+		}
+		seen[imageID] = true
+		image, _, err := s.images.Get(sess.RoleID(), r.PathValue("id"), imageID)
+		if err != nil {
+			imageFailure(w, err)
+			return
+		}
+		images = append(images, image)
+	}
+	// Legacy clients retry their original v1 identity. Explicit selectors or
+	// images opt this submission into the new versioned queue envelope.
+	if input.Model != "" || input.Thinking != "" || len(images) > 0 {
+		input.Model, input.Thinking = choice.Model, choice.Thinking
 	}
 	id := r.PathValue("id")
 	if input.Mode == "" {
@@ -74,7 +109,7 @@ func (s *Server) enqueueTurn(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, t := range existing {
-			if t.ID == input.RequestID && t.Content == input.Content && t.Mode == input.Mode {
+			if t.ID == input.RequestID && t.Content == input.Content && t.Mode == input.Mode && t.Model == input.Model && t.Thinking == input.Thinking && sameImages(t.Images, images) {
 				writeJSON(w, 200, t)
 				return
 			}
@@ -82,7 +117,7 @@ func (s *Server) enqueueTurn(w http.ResponseWriter, r *http.Request) {
 		fail(w, 429, "同时生成的会话过多，请稍后发送")
 		return
 	}
-	turn, duplicate, err := s.turns.Enqueue(id, input.RequestID, input.Content, input.Mode)
+	turn, duplicate, err := s.turns.EnqueueWithOptions(id, input.RequestID, input.Content, input.Mode, input.Model, input.Thinking, images)
 	if err != nil {
 		turnFailure(w, err)
 		return
@@ -208,15 +243,27 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 			inputs := []probe.Message{}
 			query := []string{}
 			for _, t := range batch {
-				inputs = append(inputs, probe.Message{Role: "user", Content: t.Content})
+				inputs = append(inputs, probe.Message{Role: "user", Content: t.Content, Images: t.Images})
 				query = append(query, t.Content)
 			}
-			agent, err := s.agentForTurn(sess, query, id)
+			choice, selectionErr := s.selectChat(batch[0].Model, batch[0].Thinking)
+			agent, err := s.agentForTurn(sess, query, id, func(c *probe.Config) {
+				c.Model = choice.Model
+				c.Thinking = choice.ProviderThinking
+				c.ReasoningEffort = choice.Effort
+				c.Timeout = s.chatTimeout(choice)
+				if choice.Thinking != "off" {
+					c.MaxOutputTokens = s.config.ThinkingMaxOutput
+				}
+			})
+			if selectionErr != nil {
+				err = selectionErr
+			}
 			text := ""
 			events := []turns.ToolEvent{}
 			progressErr := error(nil)
 			if err == nil {
-				err = probe.RunMessages(ctx, agent, s.config.Agent.Timeout, inputs, func(ev probe.Event) {
+				err = probe.RunMessages(ctx, agent, s.chatTimeout(choice), inputs, func(ev probe.Event) {
 					switch ev.Type {
 					case probe.EventTextDelta:
 						text += ev.Text

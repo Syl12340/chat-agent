@@ -1,12 +1,12 @@
 # Harness 3A：持久运行与删除契约
 
-2026-11-05，契约版本 `harness-storage/1`。这是阶段 3A 的设计交付；当前程序仍写会话 v1、turns v1，没有在本批实施以下 v2 写入器、迁移器或恢复器。3B/3C 实现前以本文为基线，发生变更须同时更新契约和迁移说明。
+2026-11-05，契约版本 `harness-storage/1`。这是阶段 3A 的设计交付；0.19 的现有 transcript/turns 兼容 v1 并按需写多模态 v2；它们与本文规划的 runtime 事件 v2 布局不同。尚未实施本文的事件写入器、迁移器或恢复器。3B/3C 实现前以本文为基线，发生变更须同时更新契约和迁移说明。
 
 设计借鉴 DeepSeek Harness（MIT，固定参考 `8bd073392eef6f54e921a093b95076248eb08cbb`）对 turn/step、请求快照和持久事件的区分，Go 侧独立实现；许可见 [THIRD_PARTY_NOTICES](../THIRD_PARTY_NOTICES.md)。本契约不引入 Cordis、数据库依赖或新的模型调用。
 
 ## 1. 现状与本次明确的决定
 
-当前 `probe.RunMessages` 先保存真实用户输入；工具执行完毕后才保存完整 assistant/tool batch。业务写入成功后会话保存仍可能失败。`turns.Progress` 约一秒保存进度、重启将 running 改为 interrupted，但台账文本不是业务成功凭据。`Session` 只接受严格 v1，末尾缺换行时拒绝继续追加。`storage.Replace` 同目录替换且同步文件，尚不承诺目录断电持久性。
+当前 `probe.RunMessages` 先保存真实用户输入；工具执行完毕后才保存完整 assistant/tool batch。业务写入成功后会话保存仍可能失败。`turns.Progress` 约一秒保存进度、重启将 running 改为 interrupted，但台账文本不是业务成功凭据。`Session` 严格读取 transcript v1/v2；0.19 的 v2 只增加图片引用及工具思考协议，末尾缺换行仍拒绝继续追加。`storage.Replace` 同目录替换且同步文件，尚不承诺目录断电持久性。
 
 因此 v2 采用**每会话一份权威事件日志**；完整聊天历史与 turns 是其投影，业务结果仍以业务存储中的回执为准。请求正文放在同一代目录中的有界快照文件，不另建可独立复活会话的全局聊天日志。不能在 v1 JSONL 里直接加入事件字段，也不能让 v1/v2 同时成为写入权威。
 
@@ -28,7 +28,7 @@
 
 ## 3. 权威存储及边界
 
-以下路径是待实现 v2 布局，`<data>` 为现有 DataDir；旧 `<data>/pocket/<session>.jsonl` 与 `<data>/turns/<session>.json` 只在未迁移状态继续由 v1 使用。
+以下路径是待实现 v2 布局，`<data>` 为现有 DataDir；旧 `<data>/pocket/<session>.jsonl` 与 `<data>/turns/<session>.json` 在未迁移状态由现有 transcript/ledger v1/v2 使用，不能因版本数字相同而当成本节事件格式。
 
 ```text
 <data>/runtime/<session>/manifest.json
@@ -106,6 +106,12 @@ snapshot 必须保存 `ModelRequest` 的实际 model/system/messages/tools/MaxOu
 
 预算必须在派发前预留，磁盘仍可能外部耗尽；写入成功但落结算失败仍按回执/unknown 规则处理，不能声称全局事务。主模型之外的摘要/关怀/话题请求采用相同 snapshot/attempt 原则时需各有宿主来源；本次不把已有 topic budget 回执冒充全 Harness 回执。
 
+### 图片依赖（0.19 后补充）
+
+当前图片已独立保存在会话绑定的 images store，DataURL 只在请求内存中。未来请求快照用不可变图片引用、MIME、尺寸和 SHA-256 关联原始规范化二进制，不复制 base64；重建必须同时拥有快照及哈希匹配的完整图片，只有 ID/hash 不算可重建。快照 512 KiB 预算不含共享图片字节，图片另受媒体配额约束。依赖图片被删除后明确 snapshot_unavailable，不伪造完整快照。
+
+删除和迁移须覆盖这些图片依赖。整会话清理所有本会话原图及上传草稿；删最新合并轮只清仅由该轮使用的原图，保留其他有效消息仍引用的图片。清理请求快照不得顺便删除仍被聊天使用的图片。旧 transcript v2 的图片引用/工具 reasoning 与台账选择参数须显式导入，不能按旧 v1 规则静默丢掉。raw reasoning 继续只作协议状态，不进入用户展示或授权来源。
+
 ## 6. 业务回执与不确定结果
 
 写工具按 `receipt_capability` 显式声明 `atomic` 或 `none`，不能因为工具可写就假定原子去重。atomic 的业务 store 在同一锁、同一次持久替换中同时写业务修改和回执：`role_id, operation_id, arguments_sha256, operation_kind, committed_at, entity_ids, resulting_revisions, outcome_digest`。回执不保存原聊天、证据原句、完整参数或模型提示；必要的当前业务内容仍属于各自 store。再次查询同 operation 且摘要一致返回原结果引用；实体已被后续修改/删除时说明原提交事实，不重新创建或宣称当前值相同。
@@ -136,7 +142,7 @@ snapshot 必须保存 `ModelRequest` 的实际 model/system/messages/tools/MaxOu
 
 `deletions.json` 只保留必要 ID，不存正文/hash 内容，不自动过期；最多 100000 项，满额时先拒绝新数据创建并要求维护归档，不能静默抛弃登记。format-index 的已迁移/已删除会话 ID 同样最多 100000 项且不自动过期。恢复旧备份必须同时携带**当前删除登记与格式登记**，先在隔离副本应用登记、清理全部对应代/快照/旧 v1，再校验发布；若当前登记丢失或无法确认完整，禁止自动合并/上线旧会话，要求明确的离线恢复处置。防复活不等于物理销毁历史备份。
 
-## 8. v1 → v2 迁移及回退
+## 8. 现有 transcript/ledger → runtime 事件 v2 的迁移及回退
 
 3C 的显式维护命令在停止服务、持有独占存储锁后执行；不在启动时偷偷转换。
 

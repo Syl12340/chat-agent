@@ -56,7 +56,8 @@ class WireGateway(private val target: ServerAddress, private val publicKey: Byte
             val lengths = headers.filter { it.first == "content-length" }
             require(lengths.size <= 1)
             val size = if(lengths.isEmpty()) 0 else lengths[0].second.toInt()
-            require(size in 0..128*1024)
+            val imageUpload = request[0] == "POST" && request[1].substringBefore('?').matches(Regex("/api/sessions/[A-Za-z0-9_-]{1,128}/images"))
+            require(size in 0..if (imageUpload) 4*1024*1024 else 128*1024)
             val body = ByteArray(size); var offset=0
             while(offset<size) { val n=input.read(body,offset,size-offset);if(n<0)throw IOException("Incomplete local body");offset+=n }
             val forward = buildString {
@@ -117,7 +118,7 @@ class WireGateway(private val target: ServerAddress, private val publicKey: Byte
     override fun close() { listener.close(); sockets.forEach { runCatching { it.close() } }; workers.shutdownNow() }
     companion object {
         private const val MAX_STATIC_RESPONSE = 1024*1024
-        private val STATIC_ASSETS = setOf("/","/index.html","/app.js","/tasks.js","/companion.js","/life.js","/turns.js","/activities.js","/native.js","/native-care.js","/voice.js","/device-auth.js","/role-proposals.js","/topics.js","/theme.js","/style.css","/sw.js","/manifest.webmanifest","/icon.svg","/icon-192.png","/icon-512.png")
+        private val STATIC_ASSETS = setOf("/","/index.html","/app.js","/tasks.js","/companion.js","/life.js","/turns.js","/activities.js","/native.js","/native-care.js","/voice.js","/device-auth.js","/role-proposals.js","/topics.js","/theme.js","/chat-input.js","/chat-ui.css","/style.css","/sw.js","/manifest.webmanifest","/icon.svg","/icon-192.png","/icon-512.png")
     internal fun validateStaticResponse(bytes: ByteArray) {
         val headerEnd = bytes.indices.firstOrNull { it+3<bytes.size && bytes[it]==13.toByte() && bytes[it+1]==10.toByte() && bytes[it+2]==13.toByte() && bytes[it+3]==10.toByte() }
             ?: throw IOException("Incomplete static headers")

@@ -12,6 +12,8 @@ import (
 // the chat journal, its lock and the turn ledger. Role-scoped memory, events and
 // activities are intentionally kept — they belong to the role, not the session.
 func (s *Server) deleteSession(w http.ResponseWriter, r *http.Request) {
+	s.mediaMu.Lock()
+	defer s.mediaMu.Unlock()
 	id := r.PathValue("id")
 	if !validID(id) {
 		fail(w, 400, "会话编号无效")
@@ -41,6 +43,10 @@ func (s *Server) deleteSession(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "会话已删除，但待处理记录未能清理")
 		return
 	}
+	if err := s.images.DeleteSession(id); err != nil {
+		fail(w, 500, "会话已删除，但图片未能完全清理，请再次删除以重试清理")
+		return
+	}
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -49,6 +55,8 @@ func (s *Server) deleteSession(w http.ResponseWriter, r *http.Request) {
 // purged, because earlier turns would leave later indexes pointing at messages
 // that no longer exist.
 func (s *Server) purgeTurn(w http.ResponseWriter, r *http.Request, sess *probe.Session) {
+	s.mediaMu.Lock()
+	defer s.mediaMu.Unlock()
 	id, rid := r.PathValue("id"), r.PathValue("request")
 	s.mu.Lock()
 	running := s.runs[id] != nil
@@ -67,6 +75,12 @@ func (s *Server) purgeTurn(w http.ResponseWriter, r *http.Request, sess *probe.S
 		fail(w, 409, "只能删除最近的一条记录")
 		return
 	}
+	removedImages := map[string]bool{}
+	for _, message := range sess.Messages()[turn.StartIndex:] {
+		for _, image := range message.Images {
+			removedImages[image.ID] = true
+		}
+	}
 	dropped, err := sess.DropTail(total - turn.StartIndex)
 	if err != nil {
 		if errors.Is(err, probe.ErrSessionBusy) {
@@ -76,9 +90,24 @@ func (s *Server) purgeTurn(w http.ResponseWriter, r *http.Request, sess *probe.S
 		fail(w, 503, "无法删除这条记录")
 		return
 	}
-	if err := s.turns.Remove(id, rid); err != nil && !errors.Is(err, turns.ErrNotFound) {
+	if err := s.turns.RemoveBatch(id, rid); err != nil && !errors.Is(err, turns.ErrNotFound) {
 		fail(w, 500, "聊天记录已删除，但队列记录未能清理")
 		return
+	}
+	keep, err := s.referencedImages(sess, id)
+	if err != nil {
+		fail(w, 500, "聊天记录已删除，但无法核对图片引用")
+		return
+	}
+	// Preserve other uploaded, unsent drafts: delete only this turn's removed
+	// references, after checking the complete retained journal and queue.
+	for imageID := range removedImages {
+		if !keep[imageID] {
+			if err = s.images.Delete(sess.RoleID(), id, imageID); err != nil {
+				fail(w, 500, "聊天记录已删除，但图片清理未完成")
+				return
+			}
+		}
 	}
 	writeJSON(w, 200, map[string]int{"removed_messages": dropped})
 }

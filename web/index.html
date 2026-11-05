@@ -12,6 +12,7 @@
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon-192.png">
   <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/chat-ui.css">
   <script src="/theme.js"></script>
   <script src="/app.js" type="module"></script>
 </head>
@@ -22,7 +23,7 @@
       <a class="brand" href="/" aria-label="chat-agent 首页"><img src="/icon.svg" alt="" width="38" height="38"><span>chat-agent<span class="brand-sub">你的随身助手</span></span></a>
       <label class="role-picker-label" for="role-picker">和谁聊聊</label><select id="role-picker" class="role-picker" disabled><option value="companion">小伴</option></select>
       <button id="new-chat" class="new-chat"><span aria-hidden="true">＋</span> 开始新会话 <kbd>N</kbd></button>
-      <div class="knowledge-actions"><button id="memory-open" disabled>记忆管理 <span id="memory-count" hidden></span></button><button id="tasks-open" disabled>待办提醒 <span id="tasks-count" hidden></span></button><button id="role-open" disabled>角色设置</button><button id="role-proposals-open" aria-controls="role-proposals-dialog" disabled>角色变化建议</button><button id="companion-open" disabled>陪伴偏好</button><button id="activities-open" disabled>共同活动</button><button id="topics-open" aria-controls="topics-dialog" disabled>共同话题</button><button id="life-open" disabled>事件记忆</button><button id="care-open" disabled>关怀收件箱 <span id="care-count" hidden></span></button></div>
+      <details class="utility-menu"><summary>陪伴与工具</summary><div class="knowledge-actions"><button id="memory-open" disabled>记忆管理 <span id="memory-count" hidden></span></button><button id="tasks-open" disabled>待办提醒 <span id="tasks-count" hidden></span></button><button id="role-open" disabled>角色设置</button><button id="role-proposals-open" aria-controls="role-proposals-dialog" disabled>角色变化建议</button><button id="companion-open" disabled>陪伴偏好</button><button id="activities-open" disabled>共同活动</button><button id="topics-open" aria-controls="topics-dialog" disabled>共同话题</button><button id="life-open" disabled>事件记忆</button><button id="care-open" disabled>关怀收件箱 <span id="care-count" hidden></span></button></div></details>
       <div class="list-heading">最近会话 <span id="session-count">0</span></div>
       <nav id="sessions" class="session-list" aria-label="历史会话"><p class="list-empty">还没有会话，聊点什么吧。</p></nav>
       <div class="sidebar-note"><span class="note-dot"></span><div>一点想法，随时放进口袋。<small>对话保存在你的服务器上</small></div></div>
@@ -32,7 +33,7 @@
     <main class="main-panel">
       <header class="topbar">
         <button id="menu" class="icon-button mobile-menu" aria-label="打开会话列表" aria-controls="sidebar" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
-        <div class="conversation-heading"><span id="chat-title">新的开始</span><small><span class="status-dot"></span><span id="connection-label">等待连接</span></small></div>
+        <div class="conversation-heading"><label class="model-select-label"><span class="sr-only">对话模型</span><select id="model-picker" class="model-picker" aria-label="选择对话模型" disabled><option>chat-agent</option></select></label><span id="chat-title">新的开始</span><small><span class="status-dot"></span><span id="connection-label">等待连接</span></small></div>
         <div class="topbar-actions"><span id="demo-badge" class="demo-badge" hidden>本地演示</span><button id="settings" class="icon-button" aria-label="连接信息"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v1"/></svg></button><button id="reset-chat" class="icon-button" aria-label="重置当前会话" title="重置当前会话" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1 7M4 4v6h6"/></svg></button><button id="delete-session" class="icon-button" aria-label="删除这个会话" title="删除这个会话" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg></button></div>
       </header>
 
@@ -55,6 +56,7 @@
         <div id="messages" class="messages" role="log" aria-label="对话记录"></div>
       </section>
 
+      <button id="scroll-latest" class="scroll-latest" type="button" aria-label="回到最新消息" hidden><strong aria-hidden="true">↓</strong><span id="scroll-latest-label">回到最新消息</span></button>
       <div class="composer-area">
         <div id="notice" class="notice" role="status" hidden></div>
 <div id="turn-queue" class="turn-queue" role="region" aria-label="消息发送状态" hidden>
@@ -66,14 +68,19 @@
 
         <div id="voice-player" class="voice-player" hidden><span id="voice-status" role="status"></span><audio id="voice-audio" controls preload="none"></audio><button id="voice-stop" type="button">停止朗读</button></div>
         <form id="composer" class="composer">
+          <div id="image-drafts" class="image-drafts" aria-label="待发送图片" hidden></div>
+          <input id="image-files" type="file" accept="image/jpeg,image/png" multiple hidden>
           <label class="sr-only" for="prompt">给 chat-agent 发消息</label>
-          <textarea id="prompt" name="message" rows="1" placeholder="有什么想说的，放进来吧…" maxlength="64000" required disabled></textarea>
-          <div class="composer-bottom"><span class="composer-label"><span class="status-dot"></span><span id="model-label">chat-agent</span></span><button id="voice-input" class="voice-input" type="button" title="系统识别可能联网；文字确认后才发送" hidden>语音输入</button><button id="send" class="send-button" type="submit" aria-label="发送消息" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button><button id="stop" class="stop-button" type="button" aria-label="停止生成" hidden><span></span>停止生成</button></div>
+          <textarea id="prompt" name="message" rows="1" placeholder="发送消息，或添加图片…" maxlength="64000" disabled></textarea>
+          <div class="composer-bottom"><button id="image-add" class="image-add" type="button" aria-label="添加图片" title="添加 JPEG 或 PNG 图片" disabled>＋</button><label class="thinking-control"><span class="sr-only">思考强度</span><select id="thinking-picker" class="thinking-picker" aria-label="选择思考强度" title="更高强度可能增加等待时间与用量" disabled><option value="off">关闭思考</option></select></label><span class="composer-spacer"></span><span class="composer-label"><span class="status-dot"></span><span id="model-label">chat-agent</span></span><button id="voice-input" class="voice-input" type="button" title="系统识别可能联网；文字确认后才发送" hidden>语音输入</button><button id="send" class="send-button" type="submit" aria-label="发送消息" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button><button id="stop" class="stop-button" type="button" aria-label="停止生成" hidden><span></span>停止生成</button></div>
+          <p id="image-hint" class="image-hint" role="status" hidden></p>
         </form>
         <p class="composer-hint"><span>Enter 发送 · Shift + Enter 换行</span><span>AI 的回答可能存在偏差，请核实重要信息</span></p>
       </div>
     </main>
   </div>
+
+  <dialog id="image-viewer" class="image-viewer" aria-label="图片预览"><button id="image-viewer-close" type="button" aria-label="关闭图片预览">×</button><img id="image-viewer-image" alt="放大的对话图片"></dialog>
 
   <div id="login-overlay" class="login-overlay" role="dialog" aria-modal="true" aria-labelledby="login-title">
     <form id="login-form" class="login-card" aria-labelledby="login-title">

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -88,7 +89,18 @@ func run() error {
 	}
 	c.BaseURL, c.APIKey, c.Model = os.Getenv("POCKET_BASE_URL"), os.Getenv("POCKET_API_KEY"), os.Getenv("POCKET_MODEL")
 	c.UtilityModel = utilityModel(c.Model)
-	app, err := api.New(api.Config{Agent: c, Speech: api.SpeechConfig{Model: os.Getenv("POCKET_TTS_MODEL"), Voice: os.Getenv("POCKET_TTS_VOICE")}, DataDir: *data, RolesDir: *rolesDir, TimeZone: *timeZone, Web: webtools.Config{Enabled: *webEnabled, AllowedHosts: strings.Split(os.Getenv("POCKET_WEB_HOSTS"), ","), SearchURL: searchEngine(*webEnabled)}, AccessToken: os.Getenv("POCKET_ACCESS_TOKEN"), AndroidReleaseDir: os.Getenv("POCKET_ANDROID_RELEASE_DIR"), Semantic: semantic.Config{BaseURL: os.Getenv("POCKET_BASE_URL"), APIKey: os.Getenv("POCKET_API_KEY"), Model: os.Getenv("POCKET_RERANK_MODEL")}})
+	chatModels, err := api.ParseChatModels(os.Getenv("POCKET_CHAT_MODELS"))
+	if err != nil {
+		return err
+	}
+	thinkingMax := 4096
+	if value := os.Getenv("POCKET_THINKING_MAX_OUTPUT"); value != "" {
+		thinkingMax, err = strconv.Atoi(value)
+		if err != nil {
+			return errors.New("invalid POCKET_THINKING_MAX_OUTPUT")
+		}
+	}
+	app, err := api.New(api.Config{Agent: c, ChatModels: chatModels, ThinkingMaxOutput: thinkingMax, Speech: api.SpeechConfig{Model: os.Getenv("POCKET_TTS_MODEL"), Voice: os.Getenv("POCKET_TTS_VOICE")}, DataDir: *data, RolesDir: *rolesDir, TimeZone: *timeZone, Web: webtools.Config{Enabled: *webEnabled, AllowedHosts: strings.Split(os.Getenv("POCKET_WEB_HOSTS"), ","), SearchURL: searchEngine(*webEnabled)}, AccessToken: os.Getenv("POCKET_ACCESS_TOKEN"), AndroidReleaseDir: os.Getenv("POCKET_ANDROID_RELEASE_DIR"), Semantic: semantic.Config{BaseURL: os.Getenv("POCKET_BASE_URL"), APIKey: os.Getenv("POCKET_API_KEY"), Model: os.Getenv("POCKET_RERANK_MODEL")}})
 	if err != nil {
 		return err
 	}

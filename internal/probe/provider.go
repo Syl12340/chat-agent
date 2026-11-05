@@ -10,6 +10,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"pocket-agent/internal/media"
 	"sort"
 	"strings"
 )
@@ -17,12 +18,13 @@ import (
 // ModelRequest is a prepared step snapshot. No credentials or execution
 // callbacks cross this seam. Providers must not mutate or retry the request.
 type ModelRequest struct {
-	Model           string
-	System          string
-	Messages        []Message
-	Tools           []ToolSchema
-	MaxOutputTokens int
-	TokenParameter  string
+	Model                     string
+	System                    string
+	Messages                  []Message
+	Tools                     []ToolSchema
+	MaxOutputTokens           int
+	TokenParameter            string
+	Thinking, ReasoningEffort string
 }
 
 type ModelProvider interface {
@@ -40,8 +42,30 @@ func (a *Agent) stream(ctx context.Context, assembly PromptAssembly, emit func(E
 	if a.config.Demo {
 		return a.demoStream(ctx, assembly.Tools, emit)
 	}
+	messages := cloneMessages(assembly.Messages)
+	remaining := 3
+	for i := len(messages) - 1; i >= 0; i-- {
+		images := messages[i].Images
+		if len(images) > remaining {
+			messages[i].Images = images[len(images)-remaining:]
+			messages[i].Content += "\n[Some earlier images are not included in this request. Use existing visible descriptions only; ask the user to resend an earlier image if it must be viewed again.]"
+		}
+		remaining -= len(messages[i].Images)
+	}
+	for i := range messages {
+		for j := range messages[i].Images {
+			if a.config.ResolveImage == nil {
+				return Message{}, errors.New("image loading is unavailable")
+			}
+			url, err := a.config.ResolveImage(ctx, messages[i].Images[j])
+			if err != nil {
+				return Message{}, errors.New("image attachment is unavailable")
+			}
+			messages[i].Images[j].DataURL = url
+		}
+	}
 	return a.provider.Stream(ctx, ModelRequest{Model: a.config.Model, System: assembly.System,
-		Messages: cloneMessages(assembly.Messages), Tools: assembly.Tools.Schemas(),
+		Messages: messages, Tools: assembly.Tools.Schemas(), Thinking: a.config.Thinking, ReasoningEffort: a.config.ReasoningEffort,
 		MaxOutputTokens: a.config.MaxOutputTokens, TokenParameter: a.config.TokenParameter}, emit)
 }
 
@@ -49,6 +73,7 @@ func cloneMessages(messages []Message) []Message {
 	out := append([]Message(nil), messages...)
 	for i := range out {
 		out[i].ToolCalls = append([]ToolCall(nil), out[i].ToolCalls...)
+		out[i].Images = append([]media.Image(nil), out[i].Images...)
 	}
 	return out
 }
@@ -73,10 +98,44 @@ func (p *ChatCompletionsProvider) Stream(ctx context.Context, input ModelRequest
 	if strings.TrimSpace(model) == "" {
 		return Message{}, errors.New("model name is required")
 	}
-	messages = append([]Message{{Role: "system", Content: system}}, messages...)
+	wireMessages := make([]map[string]any, 0, len(messages)+1)
+	wireMessages = append(wireMessages, map[string]any{"role": "system", "content": system})
+	for _, message := range messages {
+		var content any = message.Content
+		if len(message.Images) > 0 {
+			parts := []any{}
+			if message.Content != "" {
+				parts = append(parts, map[string]any{"type": "text", "text": message.Content})
+			}
+			for _, image := range message.Images {
+				if !strings.HasPrefix(image.DataURL, "data:"+image.MIMEType+";base64,") || len(image.DataURL) > 6<<20 {
+					return Message{}, errors.New("image attachment was not prepared")
+				}
+				parts = append(parts, map[string]any{"type": "image_url", "image_url": map[string]string{"url": image.DataURL}})
+			}
+			content = parts
+		}
+		wire := map[string]any{"role": message.Role, "content": content}
+		if len(message.ToolCalls) > 0 {
+			wire["tool_calls"] = message.ToolCalls
+		}
+		if message.ToolCallID != "" {
+			wire["tool_call_id"] = message.ToolCallID
+		}
+		if len(message.ToolCalls) > 0 && message.ReasoningContent != "" {
+			wire["reasoning_content"] = message.ReasoningContent
+		}
+		wireMessages = append(wireMessages, wire)
+	}
 	body := map[string]any{
-		"model": model, "messages": messages, "stream": true,
+		"model": model, "messages": wireMessages, "stream": true,
 		input.TokenParameter: input.MaxOutputTokens,
+	}
+	if input.Thinking != "" {
+		body["thinking"] = map[string]string{"type": input.Thinking}
+	}
+	if input.ReasoningEffort != "" {
+		body["reasoning_effort"] = input.ReasoningEffort
 	}
 	if len(input.Tools) > 0 {
 		tools := make([]any, 0, len(input.Tools))
@@ -113,6 +172,8 @@ func (p *ChatCompletionsProvider) Stream(ctx context.Context, input ModelRequest
 	scanner := bufio.NewScanner(limited)
 	scanner.Buffer(make([]byte, 4096), 1<<20)
 	var text strings.Builder
+	var reasoning strings.Builder
+	thinkingSent := false
 	pending := map[int]*ToolCall{}
 	finish := ""
 	terminated := false
@@ -132,8 +193,9 @@ func (p *ChatCompletionsProvider) Stream(ctx context.Context, input ModelRequest
 				Index  int    `json:"index"`
 				Finish string `json:"finish_reason"`
 				Delta  struct {
-					Content string `json:"content"`
-					Calls   []struct {
+					Content   string `json:"content"`
+					Reasoning string `json:"reasoning_content"`
+					Calls     []struct {
 						Index    int          `json:"index"`
 						ID       string       `json:"id"`
 						Type     string       `json:"type"`
@@ -152,8 +214,18 @@ func (p *ChatCompletionsProvider) Stream(ctx context.Context, input ModelRequest
 			if choice.Index != 0 {
 				return false, errors.New("multiple model choices are unsupported")
 			}
-			if finish != "" && (choice.Delta.Content != "" || len(choice.Delta.Calls) > 0) {
+			if finish != "" && (choice.Delta.Content != "" || choice.Delta.Reasoning != "" || len(choice.Delta.Calls) > 0) {
 				return false, errors.New("model data after finish reason")
+			}
+			if choice.Delta.Reasoning != "" {
+				if reasoning.Len()+len(choice.Delta.Reasoning) > 256<<10 {
+					return false, errors.New("reasoning exceeds limit")
+				}
+				reasoning.WriteString(choice.Delta.Reasoning)
+				if !thinkingSent {
+					emit(Event{Type: EventThinking})
+					thinkingSent = true
+				}
 			}
 			if choice.Delta.Content != "" {
 				text.WriteString(choice.Delta.Content)
@@ -220,6 +292,7 @@ func (p *ChatCompletionsProvider) Stream(ctx context.Context, input ModelRequest
 	}
 	response := Message{Role: "assistant", Content: text.String()}
 	if finish == "tool_calls" && len(pending) > 0 {
+		response.ReasoningContent = reasoning.String()
 		indices := make([]int, 0, len(pending))
 		for index := range pending {
 			indices = append(indices, index)

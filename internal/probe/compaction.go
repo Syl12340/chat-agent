@@ -36,6 +36,15 @@ func (a *Agent) compactLocked(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	messages := a.session.Messages()
+	// Summaries use visible conversation text, never hidden reasoning or image
+	// bytes. Previously generated visible image descriptions remain available.
+	for i := range messages {
+		messages[i].ReasoningContent = ""
+		if len(messages[i].Images) > 0 && strings.TrimSpace(messages[i].Content) == "" {
+			messages[i].Content = "[Image attachment; use only any description in subsequent visible replies.]"
+		}
+		messages[i].Images = nil
+	}
 	keep := a.config.KeepRecentTurns
 	if keep < 1 {
 		keep = 4

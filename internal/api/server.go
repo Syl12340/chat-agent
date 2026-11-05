@@ -22,6 +22,7 @@ import (
 
 	"pocket-agent/internal/companion"
 	"pocket-agent/internal/deviceauth"
+	"pocket-agent/internal/media"
 	"pocket-agent/internal/memory"
 	"pocket-agent/internal/probe"
 	"pocket-agent/internal/roles"
@@ -43,6 +44,8 @@ type Config struct {
 	AndroidReleaseDir string
 	Speech            SpeechConfig
 	Semantic          semantic.Config
+	ChatModels        []ChatModel
+	ThinkingMaxOutput int
 }
 
 type runState struct {
@@ -81,9 +84,24 @@ type Server struct {
 	topicSweepMu    sync.Mutex
 	push            *pushStore
 	pushSlots       chan struct{}
+	images          *media.Store
+	mediaMu         sync.Mutex
 }
 
 func New(c Config) (*Server, error) {
+	if c.ThinkingMaxOutput == 0 {
+		c.ThinkingMaxOutput = 4096
+	}
+	if c.ThinkingMaxOutput < 128 || c.ThinkingMaxOutput > 16384 {
+		return nil, errors.New("thinking output budget must be between 128 and 16384")
+	}
+	defaultModel := c.Agent.Model
+	if defaultModel == "" {
+		defaultModel = "demo"
+	}
+	if !validChatModels(c.ChatModels, defaultModel) {
+		return nil, errors.New("invalid chat model allowlist")
+	}
 	if len(c.AccessToken) < 32 {
 		return nil, errors.New("POCKET_ACCESS_TOKEN must contain at least 32 characters")
 	}
@@ -187,11 +205,18 @@ func New(c Config) (*Server, error) {
 		webClient.Close()
 		return nil, errors.Join(err, topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
 	}
+	images, err := media.Open(filepath.Join(path, "images"))
+	if err != nil {
+		workCancel()
+		webClient.Close()
+		return nil, errors.Join(err, push.close(), topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
+	}
 	s := &Server{devices: deviceStore, activities: activityStore, life: lifeStore, turns: turnStore, workCtx: workCtx, workCancel: workCancel, careSlots: make(chan struct{}, 1), config: c, tokenHash: sha256.Sum256([]byte(c.AccessToken)), sessions: map[string]*probe.Session{}, runs: map[string]*runState{}, roles: roleManager, memory: mem, companion: companionStore, tasks: taskStore, web: webClient, location: location}
 	s.speechSlots = make(chan struct{}, 1)
 	s.topics = topicStore
 	s.topicSource = webClient
 	s.push = push
+	s.images = images
 	s.pushSlots = make(chan struct{}, 4)
 	s.startScheduler()
 	s.startTopicScheduler()
@@ -203,6 +228,10 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
 	mux.HandleFunc("GET /api/status", s.status)
+	mux.HandleFunc("GET /api/chat/options", s.chatOptions)
+	mux.HandleFunc("POST /api/sessions/{id}/images", s.uploadImage)
+	mux.HandleFunc("GET /api/sessions/{id}/images/{image}", s.readImage)
+	mux.HandleFunc("DELETE /api/sessions/{id}/images/{image}", s.deleteImage)
 	mux.HandleFunc("GET /api/push/settings", s.getPushSettings)
 	mux.HandleFunc("PATCH /api/push/settings", s.updatePushSettings)
 	mux.HandleFunc("GET /api/push/inbox", s.pushInbox)
@@ -273,7 +302,7 @@ func (s *Server) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
 		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api" {
 			w.Header().Set("Cache-Control", "no-store")
 			if origin := r.Header.Get("Origin"); origin != "" {
@@ -301,7 +330,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		model = "chat-agent Demo"
 	}
 	identity := currentAuth(r)
-	writeJSON(w, 200, map[string]any{"name": "chat-agent", "version": "0.18.0", "auth_method": identity.Method, "device_id": identity.Device.ID, "device_admin": identity.Method == "owner" || identity.Device.Admin, "speech_enabled": s.speechEnabled(), "speech_max_chars": 1200, "model": model, "demo": s.config.Agent.Demo, "max_output": s.config.Agent.MaxOutputTokens, "timeout_seconds": s.config.Agent.Timeout.Seconds(), "time_zone": s.location.String(), "web_fetch": s.web.FetchEnabled(), "web_search": s.web.SearchEnabled(), "reminder_delivery": "inbox", "scheduler_ok": s.schedulerOK.Load()})
+	writeJSON(w, 200, map[string]any{"name": "chat-agent", "version": "0.19.0", "auth_method": identity.Method, "device_id": identity.Device.ID, "device_admin": identity.Method == "owner" || identity.Device.Admin, "speech_enabled": s.speechEnabled(), "speech_max_chars": 1200, "model": model, "demo": s.config.Agent.Demo, "max_output": s.config.Agent.MaxOutputTokens, "timeout_seconds": s.config.Agent.Timeout.Seconds(), "time_zone": s.location.String(), "web_fetch": s.web.FetchEnabled(), "web_search": s.web.SearchEnabled(), "reminder_delivery": "inbox", "scheduler_ok": s.schedulerOK.Load()})
 }
 
 func validID(id string) bool {
@@ -364,6 +393,9 @@ type sessionInfo struct {
 func title(messages []probe.Message) string {
 	for _, m := range messages {
 		if m.Role == "user" {
+			if strings.TrimSpace(m.Content) == "" && len(m.Images) > 0 {
+				return "图片对话"
+			}
 			r := []rune(strings.Join(strings.Fields(m.Content), " "))
 			if len(r) > 32 {
 				return string(r[:32]) + "…"
@@ -483,7 +515,7 @@ func (s *Server) history(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, "活动暂时不可用，请稍后重试")
 		return
 	}
-	writeJSON(w, 200, map[string]any{"id": r.PathValue("id"), "messages": sess.Messages(), "active": active, "role_id": sess.RoleID(), "summary": sess.Summary(), "turns": items, "queue_paused": paused, "activity": activity})
+	writeJSON(w, 200, map[string]any{"id": r.PathValue("id"), "messages": visibleMessages(sess.Messages()), "active": active, "role_id": sess.RoleID(), "summary": sess.Summary(), "turns": items, "queue_paused": paused, "activity": activity})
 }
 
 func (s *Server) message(w http.ResponseWriter, r *http.Request) {
@@ -691,6 +723,7 @@ func (s *Server) Close(ctx context.Context) error {
 	err = errors.Join(err, s.devices.Close())
 	err = errors.Join(err, s.topics.Close())
 	err = errors.Join(err, s.push.close())
+	err = errors.Join(err, s.images.Close())
 	s.web.Close()
 	return err
 }
