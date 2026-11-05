@@ -120,6 +120,8 @@ func (a *Agent) demoStream(ctx context.Context, tools *ToolSet, emit func(Event)
 		} else {
 			text += "你完成了填空。真实对话中，模型会结合题目给出解释与反馈。"
 		}
+	} else if strings.TrimSpace(last.Content) == "富文本演示" {
+		text = richTextDemo()
 	} else if strings.TrimSpace(last.Content) == "互动演示" {
 		text = "这是四种互动组件的本地演示。答题需要点击提交；曲线滑块仅在本机计算。\n\n" +
 			"```chat-ui\n" + `{"schema_version":1,"id":"demo-choice","type":"quiz.single_choice","props":{"title":"试一试","question":"哪个数更大？","options":[{"id":"A","label":"1"},{"id":"B","label":"2"}]}}` + "\n```\n\n" +

@@ -1,5 +1,6 @@
 // Image drafts stay on this device until Send. Server image references, never
 // credentials or base64, are retained by the durable submission queue.
+import {composerIdentity,createComposerPreferences,validatePreference} from '/composer-preferences.js';
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const LEVELS = {off:'关闭思考',medium:'思考 · 中',high:'思考 · 高',ultra:'思考 · 超高'};
 const abort = () => new DOMException('会话已变化','AbortError');
@@ -67,6 +68,8 @@ export function createChatInput({state,request,json,createSession,notice,onChang
   const strip = $('image-drafts'), hint = $('image-hint'), preview = $('image-viewer'), large = $('image-viewer-image');
   let epoch = 0, drafts = [], options = null, loading = false, selecting = false, uploads = null, model = '', level = 'off';
   let historyScope = '', boundRole = state.roleID, boundSession = state.current;
+  let preferences=null, preferenceScope='', preferenceLoad=0, fallbackNotice='';
+  const nativeShell=/PocketAgentAndroid\//.test(navigator.userAgent);
   const cache = new Map();
   const pendingImages = new WeakMap();
   const nativeVersion=navigator.userAgent.match(/PocketAgentAndroid\/(\d+)\.(\d+)/);
@@ -78,8 +81,25 @@ export function createChatInput({state,request,json,createSession,notice,onChang
       if (details) loadHistoryImage(entry.target,details);
     }
   },{root:$('conversation'),rootMargin:'200px'}) : null;
-  function readPreference() { try { return JSON.parse(localStorage.getItem('chat-agent-composer') || '{}'); } catch { return {}; } }
-  function savePreference() { try { localStorage.setItem('chat-agent-composer',JSON.stringify({model,thinking:level})); } catch {} }
+  function browserStorage(){try{return localStorage;}catch{return null;}}
+  async function loadPreferences(stamp) {
+    const scope=composerIdentity(state.config,state.authKind), ticket=++preferenceLoad;
+    let native=null, initial=null;
+    if(nativeShell && scope) {
+      if(!window.PocketAndroidPreferences)await new Promise(resolve=>{
+        const done=()=>{clearTimeout(timer);window.removeEventListener('pocket-native-ready',done);resolve();};
+        const timer=setTimeout(done,2500);window.addEventListener('pocket-native-ready',done);
+      });
+      valid(stamp);
+      native=window.PocketAndroidPreferences;
+      if(native)try{initial=validatePreference(await native.load(scope));}catch{notice('本机偏好暂时无法读取，本次仍可选择模型和思考档位。');}
+      else notice('本机偏好桥未就绪，当前设置可能无法跨应用重启保留。');
+    }
+    valid(stamp);if(ticket!==preferenceLoad)throw abort();
+    preferenceScope=scope;
+    preferences=createComposerPreferences({storage:browserStorage(),origin:location.origin,scope,initial,
+      onSave:native ? value=>native.save(scope,value).catch(()=>notice('本机偏好暂未保存，当前聊天不受影响。')) : undefined});
+  }
   function selectedModel() { return options?.models.find(item => item.id === model); }
   function valid(stamp) { if (stamp !== epoch || !state.token) throw abort(); }
   function syncScope() {
@@ -144,20 +164,27 @@ export function createChatInput({state,request,json,createSession,notice,onChang
     } catch (error) { if (error.name !== 'AbortError') notice(error.message || '图片暂时无法读取，请重试。'); }
     finally { if (stamp === epoch) { selecting = false; state.imageBusy = false; files.value = ''; renderDrafts(); } }
   }
-  function renderOptions() {
+  function renderOptions(override) {
+    const resolved=preferences?.resolve(options,override) || {model:options.default_model,thinking:options.default_thinking || 'off',fallback:''};
+    model=resolved.model;level=resolved.thinking;
     picker.replaceChildren();
     for (const item of options.models) { const option = document.createElement('option'); option.value=item.id; option.textContent=item.label || item.id; picker.append(option); }
     if (!selectedModel()) model = options.default_model;
     if (!selectedModel()) model = options.models[0]?.id || '';
     picker.value = model;
     const available = selectedModel()?.thinking || ['off'];
-    if (!available.includes(level)) level = 'off';
+    if (!available.includes(level)) level = available.includes('off') ? 'off':available[0] || 'off';
     thinking.replaceChildren();
     for (const item of ['off','medium','high','ultra'].filter(item => available.includes(item))) {
       const option=document.createElement('option'); option.value=item; option.textContent=LEVELS[item]; thinking.append(option);
     }
     thinking.value = level; $('model-label').textContent = selectedModel()?.label || model || 'chat-agent';
-    savePreference(); lock();
+    picker.title=`对话模型 · ${selectedModel()?.label || model}`;
+    thinking.title=resolved.fallback==='thinking' ? '已使用可用思考档位；原偏好仍保留' : `此模型会记住你手选的档位 · ${LEVELS[level]}`;
+    thinking.setAttribute('aria-label',`思考强度：${LEVELS[level]}，按模型记忆`);
+    const warning=resolved.fallback ? `${resolved.fallback}:${model}:${level}` : '';
+    if(warning && warning!==fallbackNotice)notice(resolved.fallback==='model' ? '上次的模型暂不可用，已切换可用模型；原偏好仍保留。' : '上次的思考档位暂不可用，已使用可用档位；原偏好仍保留。');
+    fallbackNotice=warning;lock();
   }
   async function refreshOptions() {
     if (!state.token || loading) return;
@@ -165,8 +192,9 @@ export function createChatInput({state,request,json,createSession,notice,onChang
     try {
       const value = await json('/api/chat/options'); valid(stamp);
       if (!Array.isArray(value.models) || !value.models.length || value.models.length > 64) throw new Error('暂无可用的对话模型。');
-      options = {default_model:value.default_model,models:value.models.filter(item => typeof item.id === 'string' && Array.isArray(item.thinking))};
-      const saved = readPreference(); model = saved.model || options.default_model; level = saved.thinking || 'off';
+      options = {default_model:value.default_model,default_thinking:value.default_thinking,models:value.models.filter(item => typeof item.id === 'string' && Array.isArray(item.thinking) && item.thinking.some(v=>Object.hasOwn(LEVELS,v)))};
+      if(!options.models.length)throw new Error('暂无可用的对话模型。');
+      await loadPreferences(stamp);
       renderOptions();
     } catch (error) { if (error.name !== 'AbortError') notice(error.message || '模型列表暂时不可用，请刷新连接。'); }
     finally { loading = false; lock(); onChange(); }
@@ -208,7 +236,7 @@ export function createChatInput({state,request,json,createSession,notice,onChang
   async function restoreUploaded(selection = {}) {
     const ids=selection.image_ids || [];
     if (drafts.length && JSON.stringify(drafts.map(draft=>draft.remote?.id))!==JSON.stringify(ids)) throw new Error('输入区还有其他图片，请先移除，再恢复这条消息。');
-    if (options?.models.some(item=>item.id===selection.model)) { model=selection.model; level=selection.thinking || 'off'; renderOptions(); }
+    if (options?.models.some(item=>item.id===selection.model)) renderOptions({model:selection.model,thinking:selection.thinking || 'off'});
     if (!ids.length || drafts.length) return;
     const stamp=epoch, session=state.current;
     const recovered=[];
@@ -290,13 +318,13 @@ export function createChatInput({state,request,json,createSession,notice,onChang
   composer.addEventListener('dragover',event=>{ if (!add.disabled && event.dataTransfer?.types.includes('Files')) { event.preventDefault(); composer.classList.add('image-dragover'); } });
   composer.addEventListener('dragleave',event=>{ if (!composer.contains(event.relatedTarget)) composer.classList.remove('image-dragover'); });
   composer.addEventListener('drop',event=>{ composer.classList.remove('image-dragover'); if (event.dataTransfer?.files.length) { event.preventDefault(); choose(event.dataTransfer.files); } });
-  picker.addEventListener('change',()=>{ model=picker.value; renderOptions(); onChange(); });
-  thinking.addEventListener('change',()=>{ level=thinking.value; savePreference(); onChange(); });
+  picker.addEventListener('change',()=>{ if(picker.disabled)return;preferences?.rememberModel(picker.value);renderOptions({model:picker.value});onChange(); });
+  thinking.addEventListener('change',()=>{ if(thinking.disabled)return;level=thinking.value;preferences?.rememberThinking(model,level);renderOptions({model,thinking:level});onChange(); });
   $('image-viewer-close').addEventListener('click',()=>preview.close());
   preview.addEventListener('close',()=>large.removeAttribute('src'));
   preview.addEventListener('click',event=>{if(event.target===preview)preview.close();});
   return {refreshOptions,lock,prepare,accepted,restoreUploaded,renderImages,syncScope,beforeHistoryRender:()=>observer?.disconnect(),ready:()=>Boolean(options && selectedModel()),hasImages:()=>Boolean(drafts.length),selection:()=>({model,thinking:level,image_ids:[]}),
-    clear(){ clearDrafts(false); clearCache(); options=null; model=''; level='off'; boundRole=state.roleID; boundSession=null; picker.replaceChildren(); thinking.replaceChildren(); lock(); },
+    clear(){ preferenceLoad++;preferences=null;preferenceScope='';fallbackNotice='';clearDrafts(false); clearCache(); options=null; model=''; level='off'; boundRole=state.roleID; boundSession=null; picker.replaceChildren(); thinking.replaceChildren(); lock(); },
     discard(){ clearDrafts(); clearCache(); boundRole=state.roleID; boundSession=state.current; },
     hasUnsentImages:()=>Boolean(drafts.length)};
 }

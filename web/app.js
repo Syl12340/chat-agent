@@ -12,6 +12,7 @@ import { createDeviceAuth } from '/device-auth.js';
 import { createChatInput } from '/chat-input.js';
 import { createUIRenderer } from '/ui/render.js';
 import { createDesktopWorkspace } from '/desktop-workspace.js';
+import { createMarkdownRenderer } from '/markdown.js';
 const $ = id => document.getElementById(id);
 const ui = Object.fromEntries(['sidebar','drawer-scrim','menu','new-chat','sessions','session-count','logout','chat-title','connection-label','demo-badge','conversation','welcome','messages','prompt','composer','send','stop','notice','model-label','login-overlay','login-form','access-token','login-button','login-error','settings','settings-dialog','close-settings','connection-info','reset-chat','delete-session','offline-banner','install'].map(id => [id, $(id)]));
 for (const id of ['role-picker','memory-open','memory-count','role-open','memory-dialog','memory-close','memory-role-name','memory-list','memory-form','memory-content','memory-status','memory-save','memory-cancel-edit','memory-form-label','memory-export','memory-message','role-dialog','role-close','role-id-label','role-title','role-form','role-file','role-content','role-save','role-skills','role-message','compact-context','compact-message','summary-details','summary-content']) ui[id] = $(id);
@@ -53,6 +54,8 @@ const state = { token: storage.get('pocket-token') || '', current: null, session
 let chatInput = null;
 let interactiveUI = null, historyRevision = 0, uiFloor = 0, uiSourceMessages = [];
 const workspace = createDesktopWorkspace();
+const richText = createMarkdownRenderer({copyText,notice});
+const richMessages = new Map();
 Object.assign(state, { roles: [], roleID: 'companion', memories: [], memoryFilter: 'pending', memoryEditing: null, roleDocument: null, summary: null, compacting: false });
 const deviceAuth = createDeviceAuth({state,onToken:token=>connect(token,'device'),onError:handleError,adminRequest:json});
 const taskUI = createTaskUI({ state, request, json, roleName, drawer, onError: handleError });
@@ -134,7 +137,7 @@ async function submitUIAnswer({content,context}) {
   return {request_id:pending?.request_id || accepted?.id,status:pending?.phase || accepted?.status || 'rejected'};
 }
 function clearInteractiveUI() {
-  historyRevision++; workspace.reset(); interactiveUI?.syncScope('', ''); uiFloor=0; uiSourceMessages=[];
+  historyRevision++; workspace.reset(); interactiveUI?.syncScope('', ''); richMessages.clear(); uiFloor=0; uiSourceMessages=[];
 }
 function answerTurns(turns) {
   // The queue trims old payloads but retains their committed message ranges.
@@ -335,29 +338,6 @@ async function deleteSession(item) {
   renderSessions();
 }
 
-// Build Markdown from DOM nodes. Model text never enters innerHTML.
-function inline(text, parent) {
-  const pattern = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\*[^*\n]+\*|\[[^\]\n]+\]\([^\s)]+\))/g;
-  let position = 0;
-  for (const match of text.matchAll(pattern)) {
-    parent.append(document.createTextNode(text.slice(position, match.index)));
-    const value = match[0];
-    let node;
-    if (value.startsWith('`')) { node = document.createElement('code'); node.textContent = value.slice(1, -1); }
-    else if (value.startsWith('**')) { node = document.createElement('strong'); node.textContent = value.slice(2, -2); }
-    else if (value.startsWith('*')) { node = document.createElement('em'); node.textContent = value.slice(1, -1); }
-    else {
-      const split = value.indexOf('](');
-      try {
-        const url = new URL(value.slice(split + 2, -1), location.href);
-        if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('invalid URL');
-        node = document.createElement('a'); node.href = url.href; node.target = '_blank'; node.rel = 'noopener noreferrer'; node.textContent = value.slice(1, split);
-      } catch { node = document.createTextNode(value); }
-    }
-    parent.append(node); position = match.index + value.length;
-  }
-  parent.append(document.createTextNode(text.slice(position)));
-}
 async function copyText(text, button) {
   try {
     if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
@@ -367,33 +347,6 @@ async function copyText(text, button) {
     }
     const label=button.textContent; button.textContent='已复制'; setTimeout(()=>{if(button.isConnected)button.textContent=label;},1500);
   } catch { notice('暂时无法复制，请长按或选中文字复制。'); }
-}
-function markdown(text) {
-  const fragment = document.createDocumentFragment();
-  const lines = text.replace(/\r\n/g, '\n').split('\n');
-  let paragraph = [], list = null, fence = false, code = [], language = '';
-  const flush = () => { if (paragraph.length) { const p = document.createElement('p'); inline(paragraph.join('\n'), p); fragment.append(p); paragraph = []; } };
-  const flushCode = () => {
-    const block=document.createElement('div'); block.className='code-block';
-    const toolbar=document.createElement('div'); toolbar.className='code-toolbar';
-    const label=document.createElement('span'); label.textContent=language || '代码';
-    const button=document.createElement('button'); button.type='button'; button.className='code-copy'; button.textContent='复制代码';
-    const source=code.join('\n'); button.addEventListener('click',()=>copyText(source,button)); toolbar.append(label,button);
-    const pre=document.createElement('pre'), node=document.createElement('code'); node.textContent=source; pre.append(node); block.append(toolbar,pre); fragment.append(block); code=[]; language='';
-  };
-  for (const line of lines) {
-    if (/^\s*```/.test(line)) { flush(); list = null; if (fence) flushCode(); else language=line.replace(/^\s*```/,'').trim().slice(0,32); fence = !fence; continue; }
-    if (fence) { code.push(line); continue; }
-    if (!line.trim()) { flush(); list = null; continue; }
-    const heading = line.match(/^(#{1,4})\s+(.+)$/), bullet = line.match(/^\s*([-+*]|\d+\.)\s+(.+)$/), quote = line.match(/^>\s?(.*)$/);
-    if (heading) { flush(); list = null; const h = document.createElement(`h${heading[1].length}`); inline(heading[2], h); fragment.append(h); }
-    else if (bullet) { flush(); const tag = /\d/.test(bullet[1]) ? 'OL' : 'UL'; if (!list || list.tagName !== tag) { list = document.createElement(tag.toLowerCase()); fragment.append(list); } const li = document.createElement('li'); inline(bullet[2], li); list.append(li); }
-    else if (quote) { flush(); list = null; const q = document.createElement('blockquote'); inline(quote[1], q); fragment.append(q); }
-    else if (/^\s*(-{3,}|\*{3,})\s*$/.test(line)) { flush(); list = null; fragment.append(document.createElement('hr')); }
-    else { list = null; paragraph.push(line); }
-  }
-  if (fence) flushCode();
-  flush(); return fragment;
 }
 
 function card(role, text = '', key = '', images = [], context = null) {
@@ -417,7 +370,25 @@ function card(role, text = '', key = '', images = [], context = null) {
       this.text=[this.text,value].filter(Boolean).join('\n\n');
       copy.disabled=!this.text;
       const bubble=document.createElement('div'); bubble.className='reply-bubble';
-      bubble.append(interactiveUI.renderMessage(value,source,markdown)); body.append(bubble);
+      const budget=richText.createBudget();
+      let cached=null, ordinal=0;
+      if(source.messageIndex>=0){
+        const cacheKey=JSON.stringify([source.role,source.session,source.messageIndex]);
+        cached=richMessages.get(cacheKey);
+        if(cached?.raw!==value){cached={raw:value,index:source.messageIndex,pieces:[]};richMessages.set(cacheKey,cached);}
+        while(richMessages.size>96){
+          const free=[...richMessages].find(([k,c])=>k!==cacheKey && !c.pieces.some(p=>p.node.contains(document.activeElement)));
+          if(!free)break;richMessages.delete(free[0]);
+        }
+      }
+      bubble.append(interactiveUI.renderMessage(value,source,part=>{
+        const slot=ordinal++, old=cached?.pieces[slot];
+        if(old){budget.count+=old.count;budget.bytes+=old.bytes;return old.node;}
+        const node=document.createElement('div');node.className='rich-text-segment';
+        const before={...budget};node.append(richText.render(part,{budget}));
+        if(cached)cached.pieces[slot]={node,count:budget.count-before.count,bytes:budget.bytes-before.bytes};
+        return node;
+      })); body.append(bubble);
     },
     setText(value,source=context) {
       this.text=''; body.replaceChildren();
@@ -492,6 +463,7 @@ function toolLog(message, data, pending = false) {
 function renderHistory(messages, turns = [], hashes = new Map()) {
   chatInput.beforeHistoryRender();
   const focus=interactiveUI.captureFocus();
+  const richFocus=document.activeElement?.closest?.('.rich-text-segment') ? document.activeElement : null;
   const top = ui.conversation.scrollTop;
   ui.messages.replaceChildren(); ui.welcome.hidden = messages.length > 0;
   const relevant = turns.filter(t => t.content || t.text || t.error || t.images?.length);
@@ -553,6 +525,7 @@ function renderHistory(messages, turns = [], hashes = new Map()) {
   workspace.reconcile();
   interactiveUI.reconcileResponses(answerTurns(turns),turnUI.pendingSnapshot().pending);
   interactiveUI.update(); interactiveUI.restoreFocus(focus);
+  if(richFocus?.isConnected && document.activeElement===document.body)richFocus.focus({preventScroll:true});
   if (!messages.length && !relevant.length) ui.conversation.scrollTop = 0;
   else if (!state.follow) ui.conversation.scrollTop = top;
   else scrollBottom(true);
@@ -613,6 +586,7 @@ async function applyTurnHistory(history) {
   } catch { notice('当前浏览器无法校验互动来源，组件保持只读。'); }
   if (revision!==historyRevision || epoch!==authEpoch || session!==state.current) return;
   uiSourceMessages=history.messages || [];
+  for(const [key,entry] of richMessages)if(uiSourceMessages[entry.index]?.role!=='assistant' || uiSourceMessages[entry.index].content!==entry.raw)richMessages.delete(key);
   interactiveUI.retainSources([...hashes].map(([message_index,sha256])=>({message_index,sha256})));
   renderHistory(history.messages || [],history.turns || [],hashes);
 }

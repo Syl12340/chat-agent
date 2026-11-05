@@ -20,7 +20,10 @@
         "quiz.single_choice",
         "quiz.fill_blank",
         "chart.line",
-        "diagram.vector"
+        "diagram.vector",
+        "table.data",
+        "chart.bar",
+        "diagram.flow"
       ]
     },
     "props": {
@@ -106,6 +109,63 @@
         "properties": {
           "props": {
             "$ref": "#/$defs/vectors"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "table.data"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "props": {
+            "$ref": "#/$defs/table"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "chart.bar"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "props": {
+            "$ref": "#/$defs/bar"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "diagram.flow"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "props": {
+            "$ref": "#/$defs/flow"
           }
         }
       }
@@ -428,6 +488,212 @@
       "required": [
         "vectors"
       ]
+    },
+    "table": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 24,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              }
+            },
+            "required": [
+              "id",
+              "label"
+            ]
+          }
+        },
+        "rows": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 12,
+            "items": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "minLength": 0,
+                  "maxLength": 256
+                },
+                {
+                  "type": "number",
+                  "minimum": -1000000,
+                  "maximum": 1000000
+                }
+              ]
+            }
+          }
+        }
+      },
+      "required": [
+        "columns",
+        "rows"
+      ],
+      "$comment": "Runtime additionally enforces unique column IDs, equal row width and <=1200 cells."
+    },
+    "bar": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "x_label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "y_label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "categories": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "uniqueItems": true
+        },
+        "series": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "values": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 32,
+                "items": {
+                  "type": "number",
+                  "minimum": -1000000,
+                  "maximum": 1000000
+                }
+              }
+            },
+            "required": [
+              "values"
+            ]
+          }
+        }
+      },
+      "required": [
+        "categories",
+        "series"
+      ],
+      "$comment": "Runtime additionally requires values length to equal categories length."
+    },
+    "flow": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "nodes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 24,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              }
+            },
+            "required": [
+              "id",
+              "label"
+            ]
+          }
+        },
+        "edges": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "from": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 24,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "to": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 24,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              }
+            },
+            "required": [
+              "from",
+              "to"
+            ]
+          }
+        }
+      },
+      "required": [
+        "nodes",
+        "edges"
+      ],
+      "$comment": "Runtime additionally enforces unique node IDs and existing edge endpoints."
     }
   },
   "examples": [
@@ -518,6 +784,94 @@
               "x": -1,
               "y": 2
             }
+          }
+        ]
+      }
+    },
+    {
+      "schema_version": 1,
+      "id": "table-1",
+      "type": "table.data",
+      "props": {
+        "title": "本地示例",
+        "columns": [
+          {
+            "id": "name",
+            "label": "项目"
+          },
+          {
+            "id": "value",
+            "label": "值"
+          }
+        ],
+        "rows": [
+          [
+            "A",
+            2
+          ],
+          [
+            "B",
+            3
+          ]
+        ]
+      }
+    },
+    {
+      "schema_version": 1,
+      "id": "bars-1",
+      "type": "chart.bar",
+      "props": {
+        "title": "对比",
+        "categories": [
+          "A",
+          "B",
+          "C"
+        ],
+        "series": [
+          {
+            "name": "示例值",
+            "values": [
+              2,
+              -1,
+              4
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schema_version": 1,
+      "id": "flow-1",
+      "type": "diagram.flow",
+      "props": {
+        "title": "一个小流程",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "开始"
+          },
+          {
+            "id": "b",
+            "label": "试一小步"
+          },
+          {
+            "id": "c",
+            "label": "回顾"
+          }
+        ],
+        "edges": [
+          {
+            "from": "a",
+            "to": "b"
+          },
+          {
+            "from": "b",
+            "to": "c"
+          },
+          {
+            "from": "c",
+            "to": "b",
+            "label": "调整"
           }
         ]
       }

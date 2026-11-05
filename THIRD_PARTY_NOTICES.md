@@ -26,3 +26,14 @@ The adaptations live in `internal/probe/prompt.go`, `registry.go`, `assembly.go`
 plugins, tool implementations, or its full system prompt. chat-agent's own
 role isolation, review workflow, authorization constraints and bounded execution
 remain authoritative. No compatibility with the DSH plugin API is claimed.
+
+## KaTeX 0.19.1
+
+Source: https://github.com/KaTeX/KaTeX/releases/tag/v0.19.1
+
+The pinned browser module is bundled in `web/vendor/katex/katex.mjs` for local
+mathematical rendering, using native MathML. It is not an Agent runtime.
+The MIT copyright and permission notice are retained in
+[licenses/KaTeX-MIT.txt](licenses/KaTeX-MIT.txt) and in the embedded
+`web/vendor/katex/LICENSE.txt`. Package integrity and module hash are recorded in
+[the vendor readme](web/vendor/katex/README.md).

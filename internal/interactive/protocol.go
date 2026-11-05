@@ -289,6 +289,106 @@ func ParseComponent(raw string) (*Component, error) {
 		default:
 			return bad()
 		}
+	case "table.data":
+		p, ok = object(m["props"], "columns rows", "title")
+		if !ok || !optionalText(p, "title", 80) {
+			return bad()
+		}
+		columns, yes := array(p["columns"], 1, 12)
+		rows, validRows := array(p["rows"], 1, 100)
+		if !yes || !validRows || len(columns)*len(rows) > 1200 {
+			return bad()
+		}
+		seen := map[string]bool{}
+		for _, v := range columns {
+			column, valid := object(v, "id label", "")
+			if !valid || !id(column["id"], 24) || !text(column["label"], 1, 80) {
+				return bad()
+			}
+			key := column["id"].(string)
+			if seen[key] {
+				return bad()
+			}
+			seen[key] = true
+		}
+		for _, v := range rows {
+			row, valid := array(v, len(columns), len(columns))
+			if !valid {
+				return bad()
+			}
+			for _, cell := range row {
+				if !text(cell, 0, 256) && !number(cell, -1e6, 1e6) {
+					return bad()
+				}
+			}
+		}
+	case "chart.bar":
+		p, ok = object(m["props"], "categories series", "title x_label y_label")
+		if !ok || !optionalText(p, "title", 80) || !optionalText(p, "x_label", 80) || !optionalText(p, "y_label", 80) {
+			return bad()
+		}
+		categories, validCategories := array(p["categories"], 1, 32)
+		series, validSeries := array(p["series"], 1, 3)
+		if !validCategories || !validSeries {
+			return bad()
+		}
+		seen := map[string]bool{}
+		for _, v := range categories {
+			if !text(v, 1, 80) {
+				return bad()
+			}
+			key := v.(string)
+			if seen[key] {
+				return bad()
+			}
+			seen[key] = true
+		}
+		for _, v := range series {
+			item, valid := object(v, "values", "name")
+			if !valid || !optionalText(item, "name", 80) {
+				return bad()
+			}
+			values, valid := array(item["values"], len(categories), len(categories))
+			if !valid {
+				return bad()
+			}
+			for _, value := range values {
+				if !number(value, -1e6, 1e6) {
+					return bad()
+				}
+			}
+		}
+	case "diagram.flow":
+		p, ok = object(m["props"], "nodes edges", "title")
+		if !ok || !optionalText(p, "title", 80) {
+			return bad()
+		}
+		nodes, validNodes := array(p["nodes"], 1, 32)
+		edges, validEdges := array(p["edges"], 0, 64)
+		if !validNodes || !validEdges {
+			return bad()
+		}
+		seen := map[string]bool{}
+		for _, v := range nodes {
+			item, valid := object(v, "id label", "")
+			if !valid || !id(item["id"], 24) || !text(item["label"], 1, 120) {
+				return bad()
+			}
+			key := item["id"].(string)
+			if seen[key] {
+				return bad()
+			}
+			seen[key] = true
+		}
+		for _, v := range edges {
+			item, valid := object(v, "from to", "label")
+			if !valid || !id(item["from"], 24) || !id(item["to"], 24) || !optionalText(item, "label", 80) {
+				return bad()
+			}
+			if !seen[item["from"].(string)] || !seen[item["to"].(string)] {
+				return bad()
+			}
+		}
 	case "diagram.vector":
 		p, ok = object(m["props"], "vectors", "title x_label y_label")
 		if !ok || !optionalText(p, "title", 80) || !optionalText(p, "x_label", 80) || !optionalText(p, "y_label", 80) {

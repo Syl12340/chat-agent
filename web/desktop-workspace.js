@@ -49,6 +49,8 @@ export function createDesktopWorkspace({ onClose = () => {} } = {}) {
     const active = document.activeElement;
     const inside = saved.node.contains(active);
     delete saved.node.dataset.uiExpanded;
+    const expandedButton=saved.node.querySelector('.chat-ui-expand');
+    if(expandedButton){expandedButton.textContent='展开';expandedButton.setAttribute('aria-expanded','false');}
     if (saved.placeholder.isConnected) saved.placeholder.replaceWith(saved.node);
     else saved.node.remove();
     panel.hidden = true;
@@ -64,7 +66,7 @@ export function createDesktopWorkspace({ onClose = () => {} } = {}) {
   function expand(node, { title = '互动内容', key = '' } = {}) {
     if (!(node instanceof HTMLElement) || !node.isConnected || !panel || !body) return false;
     if (current?.node === node) {
-      focus(closeButton);
+      close();
       return true;
     }
     close({ restoreFocus: false });
@@ -74,6 +76,8 @@ export function createDesktopWorkspace({ onClose = () => {} } = {}) {
     node.replaceWith(placeholder);
     current = { node, placeholder, key, returnFocus };
     node.dataset.uiExpanded = 'true';
+    const expandedButton=node.querySelector('.chat-ui-expand');
+    if(expandedButton){expandedButton.textContent='收回';expandedButton.setAttribute('aria-expanded','true');}
     heading.textContent = String(title).slice(0, 160);
     body.replaceChildren(node);
     panel.hidden = false;

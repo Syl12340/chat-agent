@@ -82,6 +82,7 @@ class MainActivity : Activity() {
     private val prefs by lazy { getSharedPreferences("pocket-shell", MODE_PRIVATE) }
     private val vault by lazy { CredentialVault(this) }
     private val deviceIdentity by lazy { DeviceIdentity(this) }
+    private val composerPreferences by lazy { ComposerPreferences(this) }
     private val careNotifications by lazy { CareNotifications.get(this) }
     private var activityVisible = false
     private var carePermissionOrigin: String? = null
@@ -379,6 +380,18 @@ class MainActivity : Activity() {
                             try { startActivityForResult(speechIntent(), SPEECH_INPUT); return }
                             catch (_: Exception) { speechReply = null; speechInFlight = false; reply.put("available", false) }
                         } else if (type == "voice_recognize" && speechInFlight) reply.put("busy", true)
+                        port.postMessage(WebMessage(reply.toString())); return
+                    }
+                    if (type == "preferences_load" || type == "preferences_save") {
+                        val reply = JSONObject().put("id", payload.optString("id"))
+                        try {
+                            require(data.toByteArray(Charsets.UTF_8).size <= 28672)
+                            val scope = payload.getString("scope")
+                            require(scope == "owner" || scope == "device:" + deviceIdentity.identity(remoteOrigin).getString("device_id"))
+                            if (type == "preferences_save") composerPreferences.save(remoteOrigin, scope, payload.getJSONObject("value"))
+                            else reply.put("value", composerPreferences.load(remoteOrigin, scope) ?: JSONObject.NULL)
+                            reply.put("ok", true)
+                        } catch (_: Exception) { reply.put("ok", false) }
                         port.postMessage(WebMessage(reply.toString())); return
                     }
                     if (type in listOf("auth_restore", "auth_save", "auth_forget")) {

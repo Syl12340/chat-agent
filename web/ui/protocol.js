@@ -82,6 +82,34 @@ export function validateDefinition(value) {
           if (s.controls.some(k => !['amplitude', 'frequency', 'phase'].includes(k))) fail('不支持的滑块');
         }
       } else fail('不支持的数据源');
+    } else if (value.type === 'table.data') {
+      object(p, ['columns', 'rows'], ['title']); optionalText(p, 'title', 80);
+      array(p.columns, 1, 12); array(p.rows, 1, 100);
+      for (const column of p.columns) { object(column, ['id', 'label']); id(column.id); string(column.label, 80); }
+      unique(p.columns);
+      if (p.columns.length * p.rows.length > 1200) fail('单元格数量超限');
+      for (const row of p.rows) {
+        array(row, p.columns.length, p.columns.length);
+        for (const cell of row) { if (typeof cell === 'string') string(cell, 256, 0); else number(cell, -1e6, 1e6); }
+      }
+    } else if (value.type === 'chart.bar') {
+      object(p, ['categories', 'series'], ['title', 'x_label', 'y_label']);
+      for (const key of ['title', 'x_label', 'y_label']) optionalText(p, key, 80);
+      array(p.categories, 1, 32); p.categories.forEach(v => string(v, 80)); unique(p.categories, v => v);
+      array(p.series, 1, 3);
+      for (const series of p.series) {
+        object(series, ['values'], ['name']); optionalText(series, 'name', 80);
+        array(series.values, p.categories.length, p.categories.length); series.values.forEach(v => number(v, -1e6, 1e6));
+      }
+    } else if (value.type === 'diagram.flow') {
+      object(p, ['nodes', 'edges'], ['title']); optionalText(p, 'title', 80);
+      array(p.nodes, 1, 32); array(p.edges, 0, 64);
+      for (const node of p.nodes) { object(node, ['id', 'label']); id(node.id); string(node.label, 120); }
+      unique(p.nodes); const ids = new Set(p.nodes.map(n => n.id));
+      for (const edge of p.edges) {
+        object(edge, ['from', 'to'], ['label']); id(edge.from); id(edge.to); optionalText(edge, 'label', 80);
+        if (!ids.has(edge.from) || !ids.has(edge.to)) fail('连线引用的节点不存在');
+      }
     } else if (value.type === 'diagram.vector') {
       object(p, ['vectors'], ['title', 'x_label', 'y_label']);
       for (const key of ['title', 'x_label', 'y_label']) optionalText(p, key, 80);

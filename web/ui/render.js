@@ -3,8 +3,9 @@ import {createUIState} from './state.js';
 import {renderQuiz} from './quiz.js';
 import {renderChart} from './charts.js';
 import {renderVectors} from './vectors.js';
+import {renderTable, renderBars, renderFlow} from './structures.js';
 
-const names = {'quiz.single_choice': '单选练习', 'quiz.fill_blank': '简短填空', 'chart.line': '折线图', 'diagram.vector': '二维矢量'};
+const names = {'quiz.single_choice': '单选练习', 'quiz.fill_blank': '简短填空', 'chart.line': '折线图', 'diagram.vector': '二维矢量', 'table.data': '数据表', 'chart.bar': '柱状图', 'diagram.flow': '流程与关系'};
 let serial = 0;
 function element(tag, cls, text) {
   const node = document.createElement(tag); if (cls) node.className = cls;
@@ -77,8 +78,9 @@ export function createUIRenderer({onSubmit, onExpand, onPlace, canSubmit = () =>
       refresh(state);
     };
     const options = {submit, allowed: () => permission(state), changed, interactive: () => sourceAllowed(state) === true};
-    state.view = definition.type.startsWith('quiz.') ? renderQuiz(definition, state, options)
-      : definition.type === 'chart.line' ? renderChart(definition, state, options) : renderVectors(definition, state, options);
+    const registry = {'quiz.single_choice':renderQuiz, 'quiz.fill_blank':renderQuiz, 'chart.line':renderChart,
+      'diagram.vector':renderVectors, 'table.data':renderTable, 'chart.bar':renderBars, 'diagram.flow':renderFlow};
+    state.view = registry[definition.type](definition, state, options);
     node.append(state.view.node);
     state.dispose = () => { state.alive = false; state.view.dispose?.(); node.classList.add('chat-ui-readonly'); node.querySelectorAll('button,input').forEach(el => { el.disabled = true; }); };
     return state;

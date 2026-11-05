@@ -80,7 +80,7 @@ const interactivePolicy = `
 ## Optional interactive presentation (chat-ui v1)
 Use natural text by default. When a small exercise, curve or vector would help,
 you may put one JSON declaration in a top-level fenced code block labelled chat-ui.
-Only these four component types exist. No HTML, SVG source, script, formula, URL,
+Only these seven component types exist. No HTML, SVG source, script, custom formula properties, URL,
 extra properties or custom actions. At most 4 blocks/message, each <=8 KiB and
 total <=32 KiB; unique ASCII [A-Za-z0-9_-] IDs (<=64, nested IDs <=24).
 Each declaration has exactly schema_version:1, id, type, props. Add a brief
@@ -98,6 +98,23 @@ standalone explanation outside the block so older clients can still read it.
   Local sliders never call a model. Samples are model data, not verified measurements.
 - diagram.vector props: optional title/x_label/y_label, vectors (1-16 unique
   {id,label?,from:{x:0,y:0},to:{x:2,y:1}}, label<=80, finite |coordinates|<=1000000).
+- table.data props: optional title<=80, columns (1-12 unique {id,label},label<=80),
+  rows (1-100 arrays, each exactly as wide as columns). Cells are strings<=256
+  or finite numbers within +/-1000000, no HTML/actions; max1200 cells.
+- chart.bar props: optional title/x_label/y_label<=80, categories (1-32 unique
+  nonempty strings<=80), series (1-3 {name?,values:[number]}). Each values array
+  matches categories length; finite numbers within +/-1000000, name<=80.
+- diagram.flow props: optional title<=80, nodes (1-32 unique {id,label<=120}),
+  edges (0-64 {from,to,label?<=80}) referring to existing node IDs. Host lays out
+  a finite graph including cycles; no click handlers, Mermaid, HTML or SVG source.
+For ordinary rich text use Markdown headings, nested lists, tables, strikethrough
+and read-only task lists. Use \( ... \) for inline math, \[ ... \] or $$ ... $$
+for display math; prefer fractions, matrices and common KaTeX-supported notation.
+Do not put formulas inside code spans if you want math layout. Code is literal.
+At most16 formulas/message, each<=4KiB and total<=32KiB. No TeX documents,
+external resources, macros shared across formulas or rendering tool is available.
+Closed json code blocks can be viewed as bounded read-only trees. Structured
+tables/graphs are for explanation, not actions or proof of verified data.
 Example:
 ` + "```chat-ui\n" + `{"schema_version":1,"id":"check-1","type":"quiz.single_choice","props":{"question":"Which is larger?","options":[{"id":"A","label":"1"},{"id":"B","label":"2"}]}}` + "\n```\n" + `
 A user chat_ui_response envelope is a host-validated, read-only answer to a

@@ -32,6 +32,9 @@ func TestProtocolBoundaries(t *testing.T) {
 		strings.Replace(valid, `"props": {`, `"props": {"__proto__":{},`, 1),
 		strings.Repeat(" ", MaxBlockBytes) + valid,
 		`{"schema_version":1,"id":"x","type":"chart.line","props":{"source":{"kind":"sine","amplitude":1e309,"frequency":1,"duration":1}}}`,
+		`{"schema_version":1,"id":"x","type":"table.data","props":{"columns":[{"id":"a","label":"A"}],"rows":[[1,2]]}}`,
+		`{"schema_version":1,"id":"x","type":"chart.bar","props":{"categories":["A","B"],"series":[{"values":[1]}]}}`,
+		`{"schema_version":1,"id":"x","type":"diagram.flow","props":{"nodes":[{"id":"a","label":"A"}],"edges":[{"from":"a","to":"missing"}]}}`,
 	} {
 		if _, err = ParseComponent(raw); err == nil {
 			t.Fatalf("invalid declaration accepted: %.100s", raw)

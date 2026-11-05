@@ -5,7 +5,7 @@ import (
 	"net/http"
 )
 
-//go:embed index.html app.js theme.js tasks.js companion.js life.js turns.js activities.js native.js native-care.js voice.js device-auth.js role-proposals.js topics.js chat-input.js chat-ui.css desktop-workspace.js desktop-workspace.css ui/*.js ui/ui.css style.css sw.js manifest.webmanifest icon.svg icon-192.png icon-512.png
+//go:embed index.html app.js theme.js tasks.js companion.js life.js turns.js activities.js native.js native-care.js voice.js device-auth.js role-proposals.js topics.js chat-input.js composer-preferences.js markdown.js math-render.js richtext.css vendor/katex/katex.mjs vendor/katex/LICENSE.txt chat-ui.css desktop-workspace.js desktop-workspace.css ui/*.js ui/ui.css style.css sw.js manifest.webmanifest icon.svg icon-192.png icon-512.png
 var assets embed.FS
 
 func Handler() http.Handler {
@@ -19,6 +19,9 @@ func Handler() http.Handler {
 	allowed["/topics.js"] = true
 	allowed["/chat-input.js"] = true
 	allowed["/chat-ui.css"] = true
+	for _, path := range []string{"/composer-preferences.js", "/markdown.js", "/math-render.js", "/richtext.css", "/vendor/katex/katex.mjs", "/vendor/katex/LICENSE.txt", "/ui/structures.js"} {
+		allowed[path] = true
+	}
 	for _, path := range []string{"/desktop-workspace.js", "/desktop-workspace.css", "/ui/protocol.js", "/ui/state.js", "/ui/render.js", "/ui/quiz.js", "/ui/charts.js", "/ui/vectors.js", "/ui/ui.css"} {
 		allowed[path] = true
 	}
@@ -32,6 +35,9 @@ func Handler() http.Handler {
 			return
 		}
 		w.Header().Set("Cache-Control", "no-cache")
+		if r.URL.Path == "/vendor/katex/katex.mjs" {
+			w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		}
 		if r.URL.Path == "/manifest.webmanifest" {
 			w.Header().Set("Content-Type", "application/manifest+json")
 		}

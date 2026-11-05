@@ -1,0 +1,22 @@
+/* Content styles belong to trusted renderers; raw HTML stays literal text. */
+.message-body{overflow-wrap:anywhere;min-width:0}
+.message-body h1,.message-body h2,.message-body h3,.message-body h4,.message-body h5,.message-body h6{line-height:1.45;letter-spacing:-.02em;margin:1.4em 0 .65em;font-weight:600}
+.message-body h1{font-size:1.7em}.message-body h2{font-size:1.4em}.message-body h3{font-size:1.18em}
+.message-body p{line-height:1.85;white-space:pre-wrap;margin:.6em 0 1em}
+.message-body p:first-child{margin-top:0}.message-body p:last-child{margin-bottom:0}
+.message-body ul,.message-body ol{padding-inline-start:1.7em;line-height:1.8;margin:.7em 0}
+.message-body li{padding-inline-start:.25em;margin:.35em 0}.message-body .md-list-content>p{margin:.1em 0}.message-body .md-list-content>ul,.message-body .md-list-content>ol{margin:.25em 0}
+.message-body .md-task{list-style:none;display:flex;gap:.65em;align-items:flex-start;margin-left:-1.4em}.md-task>input{width:16px;height:16px;margin-top:.45em;flex:none;opacity:1}.md-list-content{min-width:0;flex:1}
+.message-body blockquote{border-inline-start:3px solid var(--outline-variant);margin:1em 0;padding:.2em 0 .2em 1em;color:var(--on-surface-variant)}
+.message-body hr{border:0;border-top:1px solid var(--outline-variant);margin:1.5em 0}
+.message-body del{color:var(--on-surface-variant)}
+.md-table-scroll{max-width:100%;overflow-x:auto;border:1px solid var(--outline-variant);border-radius:10px;margin:1em 0;overscroll-behavior-inline:contain}
+.md-table-scroll table{border-collapse:collapse;min-width:100%;font-size:.9em;line-height:1.7}
+.md-table-scroll th,.md-table-scroll td{padding:9px 13px;border-bottom:1px solid var(--outline-variant);vertical-align:top;min-width:85px;max-width:320px;overflow-wrap:anywhere}
+.md-table-scroll th{background:var(--surface-low);font-weight:600}.md-table-scroll tr:last-child td{border-bottom:0}
+.md-table-scroll [data-align=left]{text-align:left}.md-table-scroll [data-align=center]{text-align:center}.md-table-scroll [data-align=right]{text-align:right}
+.rich-code{margin:1em 0;max-width:100%;min-width:0;overflow:hidden}.rich-code .code-toolbar{gap:12px;align-items:center}.rich-code .code-toolbar>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rich-code-actions{display:flex;gap:4px;flex:none}.rich-code .code-copy{min-height:30px;padding:4px 8px;white-space:nowrap}
+.rich-code-body{min-width:0}.rich-code pre{margin:0;max-height:420px;overflow:auto;tab-size:2}.rich-code pre code{white-space:pre}
+.json-branch,.json-leaf{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;line-height:1.8;overflow-wrap:anywhere}.json-branch{padding:3px 0}.rich-code-body>.json-branch{padding:12px 14px;max-height:420px;overflow:auto}.json-branch summary{cursor:pointer}.json-children{padding-left:18px;border-left:1px solid var(--outline-variant);margin-left:5px}.json-key{color:var(--on-surface)}.json-string{color:var(--primary)}.json-value{color:var(--on-surface-variant)}
+.math-inline{display:inline-block;max-width:100%;vertical-align:middle;overflow-x:auto;overflow-y:hidden;padding:2px 0}.math-inline math{font-size:1.08em}.math-block{display:block;max-width:100%;min-width:0;margin:1.2em 0;padding:16px 14px 10px;border:1px solid var(--outline-variant);border-radius:12px;background:var(--surface-low);overflow-x:auto}.math-block math{display:block;font-size:1.14em;margin:4px 0 14px;max-width:100%;overflow-x:auto;overflow-y:hidden}.math-block figcaption{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:10px;color:var(--on-surface-variant);border-top:1px solid var(--outline-variant);padding-top:8px}.math-block .code-copy{min-height:30px;padding:4px 8px}.math-fallback code{white-space:pre-wrap;overflow-wrap:anywhere}.math-unfinished{white-space:pre-wrap;max-width:100%;overflow-wrap:anywhere;font-size:.9em}
+@media(max-width:760px){.message-body h1{font-size:1.5em}.message-body h2{font-size:1.3em}.message-body p{line-height:1.8}.md-table-scroll th,.md-table-scroll td{padding:8px 10px}.rich-code .code-toolbar{padding:7px 9px;gap:5px}.rich-code .code-copy{font-size:10px;padding:4px 6px}.math-block{padding:13px 10px 8px}.math-block math{font-size:1.05em}}

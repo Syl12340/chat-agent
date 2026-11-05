@@ -31,6 +31,10 @@
       save: token => request('auth_save', { token }),
       forget: () => request('auth_forget')
     }) });
+    Object.defineProperty(window, 'PocketAndroidPreferences', { configurable: true, value: Object.freeze({
+      load: scope => request('preferences_load', {scope}).then(reply => reply.value || null),
+      save: (scope,value) => request('preferences_save', {scope,value}).then(() => undefined)
+    }) });
     Object.defineProperty(window, 'PocketAndroidDevice', { configurable: true, value: Object.freeze({
       identity: () => request('device_identity', {}, 30000).then(({ device_id, public_key, name, suspended }) => ({ device_id, public_key, name, suspended })),
       sign(payloadBase64) {
