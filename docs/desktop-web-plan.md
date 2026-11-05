@@ -24,7 +24,9 @@
 
 现有服务器有 `127.0.0.1:9991` 的 HTTP 入口和面向 Android 的 PocketWire `9992` 入口。普通浏览器不能直接说自定义 TCP 协议，也不能把 pocket:// 当网页打开。暂时没有域名/证书时，电脑沿用用户已选定的 SSH 隧道。
 
-在有现成 SSH 访问权限的电脑 PowerShell/终端运行：
+已有项目隧道脚本 `deploy/Open-Tunnel.ps1`（默认本机 19991），可继续使用原端口与浏览器 origin，避免重新创建设备身份。它是前台 SSH 转发助手，不会自动打开浏览器或创建后台任务。运行后打开 http://127.0.0.1:19991。
+
+首次连接也可在有现成 SSH 访问权限的电脑 PowerShell/终端运行以下等效命令（示例端口 18080）：
 
 ```powershell
 ssh -N -T -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -L 127.0.0.1:18080:127.0.0.1:9991 root@47.117.40.74
