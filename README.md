@@ -2,13 +2,13 @@
 
 当前发布为 **0.21.2**；Android 更新包为 **0.21.2-debug（versionCode 20）**。支持思考正文实时/历史折叠显示，聊天默认不设置输出 token 上限，沿用模型服务默认值。原包名、签名和设备身份保留。[本次记录](docs/release-0.21.2.md)。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
 
-0.19 引入的最多三张 JPEG/PNG 图片消息、ECNU Max/Plus 选择、关闭/中/高/超高思考强度，以及聊天阅读与输入界面继续保留，后台接收等 0.18 功能也保留。八项关键新旧流程、构建、隔离浏览器和线上只读检查通过，未调用真实识图/思考生成或安装真机。新数据按需写 transcript v2、turns v2/v3（思考进度），旧二进制不能直接降级；Harness 3B/3C 仍未实施。[功能与格式说明](docs/chat-0.19.md)、[Harness 规划](docs/dsh-harness-migration-plan.md)。
+0.19 引入的最多三张 JPEG/PNG 图片消息、ECNU Max/Plus 选择、关闭/中/高/超高思考强度，以及聊天阅读与输入界面继续保留，后台接收等 0.18 功能也保留。0.19 的八项关键流程、构建、隔离浏览器和线上只读检查已通过；0.21.2 的检查与浏览器/真机缺口以本次发布记录为准。新数据按需写 transcript v2、turns v2/v3（思考进度），旧二进制不能直接降级；Harness 3B/3C 仍未实施。[功能与格式说明](docs/chat-0.19.md)、[Harness 规划](docs/dsh-harness-migration-plan.md)。
 
 独立实现的轻量个人 AI 助手，当前具备 P0–P3 核心能力：运行时、PWA 聊天、角色/记忆、待办和提醒收件箱。Go 标准库 + 原生 HTML/CSS/JavaScript，**Go 侧零第三方模块、无前端构建步骤**，网页资源嵌入单个可执行文件。前端数学渲染唯一外部依赖为本地固定 KaTeX 0.19.1，许可随包保留。
 
 0.21 已合并交付原拟 0.20.1 参数记忆和 0.21 渲染/UI：按模型记住思考档位，Markdown 表格/嵌套列表、LaTeX/MathML、JSON 树、数据表/柱状图/流程图，以及同实例工作台和工具状态排版。普通网页与 Android 共享渲染，Android 新包通过原生存储解决随机代理端口导致的偏好丢失。[实施与边界](docs/rendering-and-ui-plan.md)。
 
-后续顺序为 **0.22 陪伴接续 → 0.23/0.24 持久结算与恢复迁移**，均为待实施排期，见[当前规划](docs/feature-plan.md)。
+后续顺序为 **0.22 陪伴接续 → 0.23/0.24 持久结算与恢复迁移**，随后优先统一主动陪伴，再按需要扩展持久 Generative UI，均为待实施建议。见[当前规划](docs/feature-plan.md)及[项目现状与架构路线](docs/architecture-roadmap-2026-11.md)。
 
 **0.7.0 已交付**：睡前闲聊、一天复盘、共同兴趣和小目标陪伴。共同活动支持手动保存进展、跨会话继续、暂停与结束，只影响明确关联的会话。[使用说明](docs/activities-0.7.md)。原有[连续聊天、事件与关怀](docs/companion-0.6.md)、[陪伴偏好](docs/companion.md)继续保留。
 
@@ -24,7 +24,7 @@
 go build -buildvcs=false -o bin/chat-agent-0.21.2.exe ./cmd/server
 $env:POCKET_ACCESS_TOKEN = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 $env:POCKET_ACCESS_TOKEN  # 在自己的终端查看，随后输入网页登录框
-.\bin\chat-agent-0.21.1.exe -demo
+.\bin\chat-agent-0.21.2.exe -demo
 ```
 
 在浏览器打开 [本机页面](http://127.0.0.1:8080)，首次通过管理员维护入口批准设备指纹，之后由设备签名自动连接。点击“看看此刻的时间”即可体验完整工具循环。
