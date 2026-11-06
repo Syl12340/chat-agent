@@ -18,6 +18,60 @@ type multimodalTransport func(*http.Request) (*http.Response, error)
 
 func (f multimodalTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
+type projectionFixture struct {
+	request ModelRequest
+}
+
+func (p *projectionFixture) Stream(_ context.Context, request ModelRequest, _ func(Event)) (Message, error) {
+	p.request = request
+	return Message{Role: "assistant", Content: "接着聊。", ReasoningContent: "new-display-reasoning"}, nil
+}
+
+func TestModelProjectionSeparatesDisplayAndToolReasoning(t *testing.T) {
+	sess := NewSession()
+	toolCall := ToolCall{ID: "prior-clock", Type: "function", Function: FunctionCall{Name: "get_current_time", Arguments: `{}`}}
+	if err := sess.append(
+		Message{Role: "user", Content: "看看时间。"},
+		Message{Role: "assistant", ToolCalls: []ToolCall{toolCall}, ReasoningContent: "required-tool-protocol"},
+		Message{Role: "tool", Content: "2026-11-06T00:00:00Z", ToolCallID: toolCall.ID},
+		Message{Role: "assistant", Content: "看到了。", ReasoningContent: strings.Repeat("display-only-", 2048)},
+	); err != nil {
+		t.Fatal(err)
+	}
+	provider := &projectionFixture{}
+	c := DefaultConfig()
+	c.Model = "fixture"
+	c.Provider = provider
+	c.ContextBytes = 2 << 10
+	a, err := New(c, sess)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compactions := 0
+	if err = Run(context.Background(), a, time.Second, "继续。", func(event Event) {
+		if event.Type == EventCompactionStart {
+			compactions++
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if compactions != 0 {
+		t.Fatal("display-only reasoning forced context compaction")
+	}
+	toolReasoning, leakedDisplay := false, false
+	for _, message := range provider.request.Messages {
+		toolReasoning = toolReasoning || len(message.ToolCalls) > 0 && message.ReasoningContent == "required-tool-protocol"
+		leakedDisplay = leakedDisplay || len(message.ToolCalls) == 0 && message.ReasoningContent != ""
+	}
+	if !toolReasoning || leakedDisplay {
+		t.Fatal("provider projection lost tool protocol or leaked display reasoning")
+	}
+	messages := sess.Messages()
+	if messages[3].ReasoningContent == "" || messages[len(messages)-1].ReasoningContent != "new-display-reasoning" {
+		t.Fatal("display reasoning was not retained in conversation history")
+	}
+}
+
 func TestMultimodalThinkingLifecycle(t *testing.T) {
 	dir := t.TempDir()
 	sess, err := OpenSession(dir, AgentID, "images")

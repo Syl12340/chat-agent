@@ -5,17 +5,55 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 
 	"pocket-agent/internal/companion"
+	"pocket-agent/internal/interactive"
 	"pocket-agent/internal/probe"
+	"pocket-agent/internal/retrieval"
 )
+
+const recentRecallUserMessages = 3
+
+// continuityRecallQuery keeps a concrete current subject authoritative. A
+// purely referential follow-up may borrow the nearest visible user subject so
+// approved memories/events can still be found without another model call.
+// Hidden history and structured UI envelopes never become retrieval queries.
+func continuityRecallQuery(current string, history []probe.Message, floor, end int) string {
+	current = strings.TrimSpace(current)
+	if retrieval.HasTerms(current) {
+		return current
+	}
+	end = min(max(end, 0), len(history))
+	floor = min(max(floor, 0), end)
+	seen := 0
+	for i := end - 1; i >= floor && seen < recentRecallUserMessages; i-- {
+		message := history[i]
+		if message.Role != "user" || message.Source != "" {
+			continue
+		}
+		seen++
+		candidate := strings.TrimSpace(message.Content)
+		_, reserved, _ := interactive.ParseResponse(candidate)
+		if candidate == "" || reserved || !retrieval.HasTerms(candidate) {
+			continue
+		}
+		runes := []rune(candidate)
+		if len(runes) > 512 {
+			candidate = string(runes[:256]) + " " + string(runes[len(runes)-256:])
+		}
+		return candidate
+	}
+	return current
+}
 
 // One closure belongs to one turn. The cache keys actual role-scoped data,
 // never elapsed time: another step must not repeat a paid rerank just because
 // its budget shrank. Changed/deleted records invalidate the complete reference.
 func (s *Server) turnContext(sess *probe.Session, role, sessionID, query string) func(context.Context, probe.StepContext) (probe.StepState, error) {
+	historyEnd := len(sess.Messages())
 	var mu sync.Mutex
 	var previous [32]byte
 	var cached string
@@ -70,6 +108,7 @@ func (s *Server) turnContext(sess *probe.Session, role, sessionID, query string)
 			return probe.StepState{}, err
 		}
 		floor := max(lifeFloor, activityFloor)
+		recallQuery := continuityRecallQuery(query, sess.Messages(), floor, historyEnd)
 		// Include review status/revisions and bindings so corrections, forgetting,
 		// pausing or switching activities cannot resurrect an initial snapshot.
 		signature, err := json.Marshal([]any{preferences, activity, approved, visible, activities, floor})
@@ -87,7 +126,7 @@ func (s *Server) turnContext(sess *probe.Session, role, sessionID, query string)
 					active = nil
 				}
 			}
-			text, err := s.recallReferenceContext(ctx, role, query, prefJSON, active, activityState)
+			text, err := s.recallReferenceContext(ctx, role, recallQuery, prefJSON, active, activityState)
 			if err != nil {
 				return probe.StepState{}, err
 			}

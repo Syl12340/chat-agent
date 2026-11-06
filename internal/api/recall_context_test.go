@@ -124,3 +124,22 @@ func TestRecallContextLifecycle(t *testing.T) {
 		t.Fatal("empty automatic query injected unrelated history")
 	}
 }
+
+func TestContinuityRecallQuery(t *testing.T) {
+	uiAnswer := `{"chat_ui_response":{"schema_version":1,"component_id":"q1","component_type":"quiz.single_choice","source":{"message_index":1,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"answer":{"option_id":"A"}}}`
+	history := []probe.Message{
+		{Role: "user", Content: "上周说的天文摄影计划还没有出发。"},
+		{Role: "assistant", Content: "记得，是准备拍月亮。"},
+		{Role: "user", Content: "嗯。"},
+		{Role: "user", Content: uiAnswer},
+	}
+	if got := continuityRecallQuery("那后来呢？", history, 0, len(history)); got != history[0].Content {
+		t.Fatalf("referential follow-up did not use recent user subject: %q", got)
+	}
+	if got := continuityRecallQuery("换个话题，聊咖啡豆。", history, 0, len(history)); got != "换个话题，聊咖啡豆。" {
+		t.Fatalf("concrete topic change was overridden: %q", got)
+	}
+	if got := continuityRecallQuery("那后来呢？", history, 1, len(history)); got != "那后来呢？" {
+		t.Fatalf("hidden history was reused for recall: %q", got)
+	}
+}

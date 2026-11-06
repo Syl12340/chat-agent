@@ -65,7 +65,7 @@ func (a *Agent) stream(ctx context.Context, assembly PromptAssembly, emit func(E
 		}
 	}
 	return a.provider.Stream(ctx, ModelRequest{Model: a.config.Model, System: assembly.System,
-		Messages: messages, Tools: assembly.Tools.Schemas(), Thinking: a.config.Thinking, ReasoningEffort: a.config.ReasoningEffort,
+		Messages: modelVisibleMessages(messages), Tools: assembly.Tools.Schemas(), Thinking: a.config.Thinking, ReasoningEffort: a.config.ReasoningEffort,
 		MaxOutputTokens: a.config.MaxOutputTokens, TokenParameter: a.config.TokenParameter}, emit)
 }
 
@@ -74,6 +74,20 @@ func cloneMessages(messages []Message) []Message {
 	for i := range out {
 		out[i].ToolCalls = append([]ToolCall(nil), out[i].ToolCalls...)
 		out[i].Images = append([]media.Image(nil), out[i].Images...)
+	}
+	return out
+}
+
+// modelVisibleMessages is the single projection used for both context sizing
+// and provider requests. Final-answer reasoning is display/history data only;
+// assistant reasoning attached to a tool call remains protocol state required
+// by reasoning-capable providers on the following step.
+func modelVisibleMessages(messages []Message) []Message {
+	out := cloneMessages(messages)
+	for i := range out {
+		if len(out[i].ToolCalls) == 0 {
+			out[i].ReasoningContent = ""
+		}
 	}
 	return out
 }
@@ -91,14 +105,14 @@ func (a *Agent) chatAs(ctx context.Context, model string, messages []Message, sy
 	if budget == 0 {
 		budget = 1024 // Utility summaries keep their existing bounded background cost.
 	}
-	return a.provider.Stream(ctx, ModelRequest{Model: model, System: system, Messages: cloneMessages(messages),
+	return a.provider.Stream(ctx, ModelRequest{Model: model, System: system, Messages: modelVisibleMessages(messages),
 		MaxOutputTokens: budget, TokenParameter: a.config.TokenParameter}, emit)
 }
 
 func (p *ChatCompletionsProvider) Stream(ctx context.Context, input ModelRequest, emit func(Event)) (Message, error) {
 	model := input.Model
 	system := input.System
-	messages := input.Messages
+	messages := modelVisibleMessages(input.Messages)
 	if strings.TrimSpace(model) == "" {
 		return Message{}, errors.New("model name is required")
 	}

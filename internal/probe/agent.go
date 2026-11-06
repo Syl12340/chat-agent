@@ -214,7 +214,10 @@ func RunMessages(ctx context.Context, a *Agent, timeout time.Duration, inputs []
 		return err
 	}
 	if a.config.ContextBytes > 0 {
-		data, _ := json.Marshal(a.session.ContextMessagesFrom(a.config.HistoryFloor))
+		// Size the same message projection a provider receives. Display-only
+		// final reasoning remains in the journal but must not force an early
+		// summary when it is not sent back to the model.
+		data, _ := json.Marshal(modelVisibleMessages(a.session.ContextMessagesFrom(a.config.HistoryFloor)))
 		if len(data) > a.config.ContextBytes {
 			send(Event{Type: EventCompactionStart})
 			changed, err := a.compactLocked(ctx)

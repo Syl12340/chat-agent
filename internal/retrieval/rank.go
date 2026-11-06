@@ -24,7 +24,7 @@ type Match struct {
 // Function words are ignored for retrieval only. This list never selects an
 // action, changes tools, or interprets user permission.
 var filler = func() map[string]bool {
-	words := strings.Fields(`今天 现在 最近 这个 那个 这些 那些 怎么 什么 我们 你们 他们 可以 不能 能不能 然后 就是 还是 已经 一下 一些 一个 事情 好像 觉得 知道 记得 继续 聊聊 聊天 陪我 谢谢 想聊 想想 说说 听听 这样 那样 自己 时候 一起 还有 其实 真的 有点 the and i you me we they a an is are was were be been it this that these those my your our their to of on in for with about today now please remember continue chat talk tell thanks thank what how why can could would should do does did have has had just really again`)
+	words := strings.Fields(`今天 现在 最近 这个 那个 这些 那些 怎么 什么 我们 你们 他们 可以 不能 能不能 然后 后来 接着 下去 上次 之前 刚才 刚刚 就是 还是 已经 一下 一些 一个 事情 好像 觉得 知道 记得 继续 聊聊 聊天 陪我 谢谢 想聊 想想 说说 听听 这样 那样 自己 时候 一起 还有 其实 真的 有点 the and i you me we they a an is are was were be been it this that these those my your our their to of on in for with about today now please remember continue chat talk tell thanks thank what how why can could would should do does did have has had just really again later before earlier next`)
 	out := make(map[string]bool, len(words))
 	for _, word := range words {
 		out[word] = true
@@ -112,6 +112,13 @@ func queryTerms(query string) []term {
 		out = append(out[:64:64], out[len(out)-64:]...)
 	}
 	return out
+}
+
+// HasTerms reports whether a query has a concrete lexical signal. It is used
+// only to choose a retrieval query; it never selects tools, permissions or a
+// conversational mode.
+func HasTerms(query string) bool {
+	return len(queryTerms(strings.TrimSpace(query))) > 0
 }
 
 func latinWords(text string) map[string]bool {
