@@ -1,6 +1,6 @@
 # 0.22.0 陪伴接续、模型消息投影与网页界面收敛
 
-2026-11-06。状态：**代码实现完成，尚未部署**。服务端源码版本为 0.22.0；本次没有原生 Android 改动，已发布的 0.21.2-debug / versionCode 20 包装仍兼容。部署与线上检查完成前，生产环境仍是 0.21.2。
+2026-11-06。状态：**服务端已部署**。线上版本为 0.22.0 / `20261106-continuity-ui-01`；本次没有原生 Android 改动，更新通道仍为 0.21.2-debug / versionCode 20，现有包装兼容。
 
 ## 行为变化
 
@@ -19,6 +19,14 @@
 
 这些变化不增加分类模型、模型调用、工具次数或持久格式。没有新增显式聊天模式、自动记忆写入或后台写权限。计划/实际、当前纠正、话题切换和少问问题仍由同一轮 LLM 结合现有历史与有来源参考处理。
 
+## 生产部署
+
+- Linux amd64 二进制 SHA-256：`deb14c0924c0ff6ba20b475e4552ef365066a011a3d707a310010fcb8cd6ddbb`；线上文件哈希一致，systemd 当前软链指向 `/opt/pocket-agent/releases/20261106-continuity-ui-01`。
+- 切换前确认唯一会话无活动生成，正常停止服务后备份数据与环境配置至 `/opt/pocket-agent/backups/pre-continuity-ui-20261106-01.tar.gz`；备份 SHA-256 为 `f8a4aebee975b80d45d0cebaede13a8fb8d169b2b750744b4781e29182987c49`，权限 0600。
+- 保留 `ecnu-max`、本地搜索、调度、设备白名单、回环 HTTP 9991、公网加密 TCP 9992 和 Android 发布目录；未改模型密钥、防火墙、角色数据或更新包。
+- 线上零模型检查确认 `/healthz` 正常、未认证 API 返回 401、`/api/status` 报告 0.22.0、旧会话 18 条消息可读、搜索和调度正常、0.22 UI 与 PWA v28 已返回。Android 清单仍为 0.21.2-debug / versionCode 20，完整清单校验通过。
+- 本机原隧道端口 19991 被 Windows 拒绝绑定，本次仅将本机 SSH 转发临时改到 `http://127.0.0.1:60991`；服务器监听与 Android `pocket://47.117.40.74:9992` 不受影响。
+
 ## 最小验证
 
 - `TestModelProjectionSeparatesDisplayAndToolReasoning`：长展示思考不触发压缩、不进入 Provider；工具协议 reasoning 仍保留；展示思考仍写回会话。
@@ -26,4 +34,4 @@
 - 相关 `internal/probe`、`internal/retrieval`、`internal/memory`、`internal/api` 包测试通过；`go build -buildvcs=false -o bin/chat-agent-0.22.0.exe ./cmd/server` 与 `go vet ./...` 通过。
 - 本地确定性 demo 在 1440×960 检查欢迎页、长对话和右侧工作台，在 390×844 检查聊天与抽屉；手机视口 `scrollWidth - innerWidth = 0`，抽屉最终宽 300px。没有调用真实模型。
 
-本次未调用真实模型、未发送现有会话历史、未迁移数据、未修改生产配置或发布 Android 包。自然表达质量仍需部署后的日常使用反馈；本地模拟回归只证明上下文选择和协议边界。
+本次部署未调用真实模型、未将现有会话正文带离服务器、未迁移数据、未修改生产配置内容或发布 Android 包。自然表达质量仍需日常使用反馈；本地模拟回归和线上只读检查只证明协议、存储读取与服务边界。

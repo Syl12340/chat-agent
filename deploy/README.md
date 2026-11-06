@@ -1,5 +1,7 @@
 # 单机部署（SSH 隧道）
 
+当前发布（2026-11-06）：服务端 **0.22.0** 为 `20261106-continuity-ui-01`；Android 仍为 **0.21.2-debug / versionCode 20**（`android-20261106-02`）。陪伴接续、模型消息投影与网页 UI 已上线；一致性备份 `pre-continuity-ui-20261106-01.tar.gz`、线上版本/鉴权/旧会话/静态资源/监听和 Android 清单均通过零模型检查。见[发布记录](../docs/release-0.22.md)。
+
 当前发布（2026-11-06）：服务端 **0.21.2** 为 `20261106-cot-01`，Android **0.21.2-debug / versionCode 20** 为 `android-20261106-02`。思考正文显示、默认省略输出 token 上限已上线；正常停机备份 `pre-cot-20261106-01.tar.gz`、健康/原会话可读、完整 APK 哈希通过，零模型检查调用。思考进度按需写 turns v3，出现新数据后不可直接切回旧二进制。见[发布与回退边界](../docs/release-0.21.2.md)。
 
 当前发布（2026-11-06）：服务端 **0.21.1** 为 `20261106-reply-01`，Android **0.21.1-debug / versionCode 19** 为 `android-20261106-01`。备份 `pre-reply-20261106-01.tar.gz` 保留；新恢复入口、明确错误类别、线上健康/资源/旧会话及完整 APK 哈希通过。线上独立临时会话已完成超高思考回复并删除，原用户问题没有重发。见[排障记录](../docs/release-0.21.1.md)。
@@ -22,17 +24,17 @@
 
 ## 现在访问
 
-这台电脑已启动后台隧道，打开 <http://127.0.0.1:19991>。访问口令保存在本地忽略文件 `.cache/pocket-agent-access.txt` 的 `ACCESS_TOKEN` 行。将其输入网页登录框；不需要输入 SSH 密钥或模型 API Key。
+这台电脑本轮已在后台启动隧道，打开 <http://127.0.0.1:60991>。访问口令保存在本地忽略文件 `.cache/pocket-agent-access.txt` 的 `ACCESS_TOKEN` 行。将其输入网页登录框；不需要输入 SSH 密钥或模型 API Key。默认端口 19991 本轮被 Windows 拒绝绑定，因此只调整了本机转发端口，服务器仍监听 9991。
 
 电脑重启或隧道断开后，在项目根目录执行并保持终端打开：
 
 ```powershell
-.\deploy\Open-Tunnel.ps1
+.\deploy\Open-Tunnel.ps1 -LocalPort 60991
 ```
 
 同一端口已有隧道时可直接使用。关闭隧道不停止服务器上的服务。当前后台隧道的 PID 记录在 `.cache/pocket-agent-tunnel.pid`，日志位于 `.cache/pocket-agent-tunnel.err`；这些文件不加入 Git。
 
-这条隧道仅绑定电脑回环地址，手机不能直接填写电脑公网地址来访问。当前 Android 新版可直接使用上面的 pocket 地址，不依赖此隧道。USB 调试旧版本时，可针对明确的测试设备执行 `adb -s <设备ID> reverse tcp:19991 tcp:19991`。
+这条隧道仅绑定电脑回环地址，手机不能直接填写电脑公网地址来访问。当前 Android 新版可直接使用上面的 pocket 地址，不依赖此隧道。USB 调试旧版本时，可针对明确的测试设备执行 `adb -s <设备ID> reverse tcp:19991 tcp:60991`。
 
 ## 服务布局
 
