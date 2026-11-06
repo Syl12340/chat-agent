@@ -38,7 +38,7 @@ func persistentMessageValid(message Message) bool {
 	if validateImages(message.Images) != nil {
 		return false
 	}
-	return message.ReasoningContent == "" || message.Role == "assistant" && len(message.ToolCalls) > 0 && len(message.ReasoningContent) <= 256<<10
+	return message.ReasoningContent == "" || message.Role == "assistant" && len(message.ReasoningContent) <= 256<<10
 }
 
 func messageExtended(message Message) bool {

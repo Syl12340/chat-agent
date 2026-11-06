@@ -128,10 +128,10 @@ func (s *Server) imageResolver(role, session string) func(context.Context, media
 	}
 }
 
-// Internal reasoning is provider protocol state, never a chat bubble or export.
+// Provider-supplied reasoning is visible to the authenticated conversation owner.
+// Inline image payloads remain internal; clients use authorized image references.
 func visibleMessages(messages []probe.Message) []probe.Message {
 	for i := range messages {
-		messages[i].ReasoningContent = ""
 		for j := range messages[i].Images {
 			messages[i].Images[j].DataURL = ""
 		}

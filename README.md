@@ -1,6 +1,6 @@
 # chat-agent
 
-当前发布为 **0.21.1**；Android 更新包为 **0.21.1-debug（versionCode 19）**。2026-11-06 已发布聊天恢复入口与明确错误提示，原包名、签名和设备身份保留。[本次发布](docs/release-0.21.1.md)。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
+当前实现为 **0.21.2**；Android 更新包为 **0.21.2-debug（versionCode 20）**。支持思考正文实时/历史折叠显示，聊天默认不设置输出 token 上限，沿用模型服务默认值。原包名、签名和设备身份保留。[本次记录](docs/release-0.21.2.md)。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
 
 0.19 引入的最多三张 JPEG/PNG 图片消息、ECNU Max/Plus 选择、关闭/中/高/超高思考强度，以及聊天阅读与输入界面继续保留，后台接收等 0.18 功能也保留。八项关键新旧流程、构建、隔离浏览器和线上只读检查通过，未调用真实识图/思考生成或安装真机。新数据按需写 transcript/turns v2，旧二进制不能直接降级；Harness 3B/3C 仍未实施。[功能与格式说明](docs/chat-0.19.md)、[Harness 规划](docs/dsh-harness-migration-plan.md)。
 
@@ -21,7 +21,7 @@
 需要 Go 1.26。Windows / PowerShell 7：
 
 ```powershell
-go build -buildvcs=false -o bin/chat-agent-0.21.1.exe ./cmd/server
+go build -buildvcs=false -o bin/chat-agent-0.21.2.exe ./cmd/server
 $env:POCKET_ACCESS_TOKEN = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 $env:POCKET_ACCESS_TOKEN  # 在自己的终端查看，随后输入网页登录框
 .\bin\chat-agent-0.21.1.exe -demo

@@ -291,12 +291,29 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 				err = selectionErr
 			}
 			text := ""
+			reasoning := ""
 			events := []turns.ToolEvent{}
 			progressErr := error(nil)
 			if err == nil {
 				err = probe.RunMessages(ctx, agent, s.chatTimeout(choice), inputs, func(ev probe.Event) {
 					switch ev.Type {
+					case probe.EventThinking:
+						if reasoning != "" {
+							reasoning += "\n\n"
+						}
+					case probe.EventReasoningDelta:
+						if len(reasoning)+len(ev.Text) > 1<<20 {
+							progressErr = turns.ErrLimit
+							cancel()
+							return
+						}
+						reasoning += ev.Text
 					case probe.EventTextDelta:
+						if len(text)+len(ev.Text) > 4<<20 {
+							progressErr = turns.ErrLimit
+							cancel()
+							return
+						}
 						text += ev.Text
 					case probe.EventToolCallStart:
 						// Keep a bounded copy of the arguments so the page can show
@@ -319,7 +336,7 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 						}
 					}
 					if progressErr == nil {
-						progressErr = s.turns.Progress(id, root, text, events)
+						progressErr = s.turns.ProgressWithReasoning(id, root, text, reasoning, events)
 						if progressErr != nil {
 							cancel()
 						}
@@ -349,11 +366,8 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 				if status == "failed" {
 					log.Printf("chat turn failed: category=%s", code)
 				}
-				if len(text) > 64<<10 {
-					text = string([]rune(text)[:min(len([]rune(text)), 16000)])
-				}
 			}
-			if finishErr := s.turns.Finish(id, root, status, text, message, len(sess.Messages()), events); finishErr != nil {
+			if finishErr := s.turns.FinishWithReasoning(id, root, status, text, reasoning, message, len(sess.Messages()), events); finishErr != nil {
 				_ = s.turns.Pause(id, true)
 				return
 			}

@@ -56,6 +56,7 @@ let interactiveUI = null, historyRevision = 0, uiFloor = 0, uiSourceMessages = [
 const workspace = createDesktopWorkspace();
 const richText = createMarkdownRenderer({copyText,notice});
 const richMessages = new Map();
+const reasoningViews = new Map();
 Object.assign(state, { roles: [], roleID: 'companion', memories: [], memoryFilter: 'pending', memoryEditing: null, roleDocument: null, summary: null, compacting: false });
 const deviceAuth = createDeviceAuth({state,onToken:token=>connect(token,'device'),onError:handleError,adminRequest:json});
 const taskUI = createTaskUI({ state, request, json, roleName, drawer, onError: handleError });
@@ -137,7 +138,7 @@ async function submitUIAnswer({content,context}) {
   return {request_id:pending?.request_id || accepted?.id,status:pending?.phase || accepted?.status || 'rejected'};
 }
 function clearInteractiveUI() {
-  historyRevision++; workspace.reset(); interactiveUI?.syncScope('', ''); richMessages.clear(); uiFloor=0; uiSourceMessages=[];
+  historyRevision++; workspace.reset(); interactiveUI?.syncScope('', ''); richMessages.clear(); reasoningViews.clear(); uiFloor=0; uiSourceMessages=[];
 }
 function answerTurns(turns) {
   // The queue trims old payloads but retains their committed message ranges.
@@ -460,13 +461,35 @@ function toolLog(message, data, pending = false) {
   log.summary.textContent = `${label}${hint ? ' ' + hint : ''} · ${state}`;
   log.output.textContent = pending ? '等待工具返回结果…' : data.error || data.output || '执行完成';
 }
+
+// Only the provider's reasoning_content is shown. Treat it as inert text:
+// no generated components, tools, HTML, links or memory writes are evaluated.
+function showReasoning(article, text, key, status = 'completed') {
+  if (!text || !article) return;
+  let view = reasoningViews.get(key);
+  if (!view) {
+    const node=document.createElement('details'), summary=document.createElement('summary'), body=document.createElement('div');
+    node.className='reasoning-log'; body.className='reasoning-body'; node.append(summary,body);
+    view={node,summary,body,manual:false};
+    summary.addEventListener('click',()=>{view.manual=true;});
+    reasoningViews.set(key,view);
+  }
+  if (!view.manual) view.node.open=status!=='completed';
+  view.summary.textContent=status==='running' ? '正在思考…' : status==='completed' ? '思考过程' : '思考过程 · 本次未完成';
+  if (view.body.textContent!==text) view.body.textContent=text;
+  article.querySelector('.message-role').after(view.node);
+  while(reasoningViews.size>96) {
+    const unused=[...reasoningViews].find(([k,v])=>k!==key && !v.node.isConnected);
+    if (!unused) break; reasoningViews.delete(unused[0]);
+  }
+}
 function renderHistory(messages, turns = [], hashes = new Map()) {
   chatInput.beforeHistoryRender();
   const focus=interactiveUI.captureFocus();
   const richFocus=document.activeElement?.closest?.('.rich-text-segment') ? document.activeElement : null;
   const top = ui.conversation.scrollTop;
   ui.messages.replaceChildren(); ui.welcome.hidden = messages.length > 0;
-  const relevant = turns.filter(t => t.content || t.text || t.error || t.images?.length);
+  const relevant = turns.filter(t => t.content || t.text || t.reasoning_content || t.error || t.images?.length);
   const roots = relevant.filter(t => t.batch_id === t.id && t.status !== 'withdrawn');
   const members = new Map();
   for (const t of relevant) if (t.batch_id) { if (!members.has(t.batch_id)) members.set(t.batch_id,[]); members.get(t.batch_id).push(t); }
@@ -504,6 +527,7 @@ function renderHistory(messages, turns = [], hashes = new Map()) {
       const source={role:state.roleID,session:state.current,messageIndex:index,sha256:hashes.get(index) || '',eligible:Boolean(hashes.get(index) && root?.status==='completed' && index===root.end_index-1 && !message.tool_calls?.length),floor:uiFloor};
       if (!current) { current = card('assistant',message.content,key,[],source); currentStart = index; }
       else if (message.content) current.appendSegment(message.content,source);
+      if (!root && message.reasoning_content) showReasoning(current.node,message.reasoning_content,`${state.current}:reasoning:${index}`);
       for (const call of message.tool_calls || []) { toolLog(current,{id:call.id,name:call.function.name},true); calls.set(`${root?.id || `legacy-${legacyUser}`}:${call.id}`,{card:current,name:call.function.name}); }
       if (!message.tool_calls?.length) {
         if (!root || root.status === 'completed') {
@@ -519,6 +543,11 @@ function renderHistory(messages, turns = [], hashes = new Map()) {
     }
   }
   for (const root of roots) if (root.status === 'running' || ['failed','canceled','interrupted'].includes(root.status) && root.end_index >= messages.length) incomplete(root);
+  for (const root of roots) {
+    const end=root.status==='running' ? messages.length : root.end_index;
+    const reasoning=root.reasoning_content || messages.slice(root.start_index,end).filter(m=>m.role==='assistant').map(m=>m.reasoning_content || '').filter(Boolean).join('\n\n');
+    showReasoning(ui.messages.querySelector(`[data-message-id="${CSS.escape(`${state.current}:turn:${root.id}`)}"].assistant`),reasoning,`${state.current}:reasoning:turn:${root.id}`,root.status);
+  }
   for (const t of relevant.filter(t => t.status === 'queued').sort((a,b) => a.sequence - b.sequence)) {
     const pending = card('user',t.content,`${state.current}:user:${t.id}`,t.images || []); pending.node.classList.add('queued'); pending.status.textContent = '待发送';
   }

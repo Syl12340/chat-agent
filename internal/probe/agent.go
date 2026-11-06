@@ -39,7 +39,7 @@ type Config struct {
 }
 
 func DefaultConfig() Config {
-	return Config{MaxTurns: 4, MaxToolCalls: 4, MaxOutputTokens: 1024, Timeout: 30 * time.Second, TokenParameter: "max_tokens", ContextBytes: 64 << 10, KeepRecentTurns: 4}
+	return Config{MaxTurns: 4, MaxToolCalls: 4, Timeout: 30 * time.Second, TokenParameter: "max_tokens", ContextBytes: 64 << 10, KeepRecentTurns: 4}
 }
 
 type toolCallKey struct{}
@@ -77,6 +77,7 @@ const (
 	EventCompactionStart EventType = "compaction_start"
 	EventCompactionDone  EventType = "compaction_done"
 	EventThinking        EventType = "thinking"
+	EventReasoningDelta  EventType = "reasoning_delta"
 )
 
 type ToolResult struct {
@@ -114,8 +115,8 @@ func New(c Config, sess *Session) (*Agent, error) {
 	if (!c.Demo && (strings.TrimSpace(c.Model) == "" || (c.Provider == nil && c.APIKey == ""))) || sess == nil {
 		return nil, errors.New("API key, model and session are required")
 	}
-	if c.MaxTurns < 1 || c.MaxToolCalls < 1 || c.MaxOutputTokens < 1 || c.Timeout <= 0 {
-		return nil, errors.New("turn, tool, output and timeout limits must be positive")
+	if c.MaxTurns < 1 || c.MaxToolCalls < 1 || c.MaxOutputTokens < 0 || c.Timeout <= 0 {
+		return nil, errors.New("turn, tool and timeout limits must be positive; output tokens cannot be negative (0 uses provider default)")
 	}
 	if c.ContextBytes < 0 || c.KeepRecentTurns < 0 {
 		return nil, errors.New("context budget and preserved turns cannot be negative")

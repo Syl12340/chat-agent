@@ -72,7 +72,7 @@ func run() error {
 	flag.DurationVar(&c.Timeout, "timeout", c.Timeout, "maximum generation duration")
 	flag.IntVar(&c.MaxTurns, "max-turns", c.MaxTurns, "maximum model/tool loop turns")
 	flag.IntVar(&c.MaxToolCalls, "max-tools", c.MaxToolCalls, "maximum executed tools per run")
-	flag.IntVar(&c.MaxOutputTokens, "max-output", c.MaxOutputTokens, "output tokens per generation")
+	flag.IntVar(&c.MaxOutputTokens, "max-output", c.MaxOutputTokens, "output tokens per generation; 0 omits the limit (provider default)")
 	flag.StringVar(&c.TokenParameter, "token-parameter", c.TokenParameter, "max_tokens or max_completion_tokens")
 	flag.Parse()
 	if *listen == "" && *wireListen == "" {
@@ -93,7 +93,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	thinkingMax := 4096
+	thinkingMax := 0
 	if value := os.Getenv("POCKET_THINKING_MAX_OUTPUT"); value != "" {
 		thinkingMax, err = strconv.Atoi(value)
 		if err != nil {

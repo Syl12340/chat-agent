@@ -337,7 +337,9 @@ func (s *Server) runCare(r *http.Request, role, id string, automatic bool) (comp
 		return claimed, nil
 	}
 	c := s.config.Agent
-	c.MaxOutputTokens = min(c.MaxOutputTokens, 160)
+	if c.MaxOutputTokens == 0 || c.MaxOutputTokens > 160 {
+		c.MaxOutputTokens = 160
+	}
 	c.Timeout = min(c.Timeout, 15*time.Second)
 	ctx, cancel := context.WithTimeout(s.workCtx, c.Timeout)
 	defer cancel()

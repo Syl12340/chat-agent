@@ -30,11 +30,15 @@ func TestMultimodalThinkingLifecycle(t *testing.T) {
 	image := media.Image{ID: "0123456789abcdef0123456789abcdef", MIMEType: "image/png", Size: 4, Width: 1, Height: 1}
 	const url = "data:image/png;base64,dGVzdA=="
 	requests, thinkingEvents := 0, 0
+	var shownReasoning strings.Builder
 	provider := &ChatCompletionsProvider{endpoint: "https://fixture.example/chat/completions", key: "fixture-only", client: &http.Client{Transport: multimodalTransport(func(r *http.Request) (*http.Response, error) {
 		requests++
 		var body map[string]json.RawMessage
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatal(err)
+		}
+		if body["max_tokens"] != nil || body["max_completion_tokens"] != nil {
+			t.Fatal("default chat request set an output token limit")
 		}
 		if string(body["model"]) != `"ecnu-max"` || string(body["reasoning_effort"]) != `"high"` || !strings.Contains(string(body["thinking"]), "enabled") {
 			t.Fatal("model selection not sent")
@@ -69,6 +73,9 @@ func TestMultimodalThinkingLifecycle(t *testing.T) {
 			t.Fatal("image or tool reasoning not carried forward")
 		}
 		stream := "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"visible reply\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+		if requests == 2 {
+			stream = "data: {\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"final-reasoning-fixture\"}}]}\n\n" + stream
+		}
 		if requests == 1 {
 			stream = "data: {\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"private-reasoning-fixture\"}}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"clock1\",\"type\":\"function\",\"function\":{\"name\":\"get_current_time\",\"arguments\":\"{}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n"
 		}
@@ -85,6 +92,9 @@ func TestMultimodalThinkingLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	emit := func(event Event) {
+		if event.Type == EventReasoningDelta {
+			shownReasoning.WriteString(event.Text)
+		}
 		if event.Type == EventThinking {
 			thinkingEvents++
 			if event.Text != "" {
@@ -99,7 +109,7 @@ func TestMultimodalThinkingLifecycle(t *testing.T) {
 	if err = RunMessages(context.Background(), a, time.Second, []Message{{Role: "user", Images: []media.Image{image, second, third}}}, emit); err != nil {
 		t.Fatal(err)
 	}
-	if requests != 2 || thinkingEvents != 1 {
+	if requests != 2 || thinkingEvents != 2 || shownReasoning.String() != "private-reasoning-fixturefinal-reasoning-fixture" {
 		t.Fatal("unexpected model calls")
 	}
 	if err = RunMessages(context.Background(), a, time.Second, []Message{{Role: "user", Content: "continue", Images: []media.Image{fourth}}}, emit); err != nil {
@@ -125,7 +135,7 @@ func TestMultimodalThinkingLifecycle(t *testing.T) {
 	if _, err = sess.DropTail(2); err != nil {
 		t.Fatal(err)
 	}
-	if len(sess.Messages()) != 4 || sess.Messages()[1].ReasoningContent != "private-reasoning-fixture" {
+	if len(sess.Messages()) != 4 || sess.Messages()[1].ReasoningContent != "private-reasoning-fixture" || sess.Messages()[3].ReasoningContent != "final-reasoning-fixture" {
 		t.Fatal("tool reasoning failed roundtrip or purge")
 	}
 	if _, err = sess.DropTail(len(sess.Messages())); err != nil {

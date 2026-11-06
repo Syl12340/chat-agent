@@ -60,7 +60,7 @@ func endpoint(t *testing.T, handler func(http.ResponseWriter, *http.Request, req
 			}
 			finalReply = len(req.Tools) == 0 && message.Role == "user" && snapshot.Source == "runtime-context" && !snapshot.ToolsAvailable && snapshot.ResponsesLeft > 0 && (snapshot.CallsLeft == 0 || snapshot.ResponsesLeft == 1) && strings.Contains(message.Content, "No tool calls are available in this step")
 		}
-		if req.Model != "test-model" || !req.Stream || req.MaxOutput != 1024 || (!validTools && !finalReply) {
+		if req.Model != "test-model" || !req.Stream || req.MaxOutput != 0 || (!validTools && !finalReply) {
 			t.Errorf("unexpected model, stream, output limit or tools: %+v", req)
 			w.WriteHeader(400)
 			return

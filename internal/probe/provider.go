@@ -87,8 +87,12 @@ func (a *Agent) chatAs(ctx context.Context, model string, messages []Message, sy
 	if withTools {
 		return Message{}, errors.New("tool requests require step assembly")
 	}
+	budget := a.config.MaxOutputTokens
+	if budget == 0 {
+		budget = 1024 // Utility summaries keep their existing bounded background cost.
+	}
 	return a.provider.Stream(ctx, ModelRequest{Model: model, System: system, Messages: cloneMessages(messages),
-		MaxOutputTokens: a.config.MaxOutputTokens, TokenParameter: a.config.TokenParameter}, emit)
+		MaxOutputTokens: budget, TokenParameter: a.config.TokenParameter}, emit)
 }
 
 func (p *ChatCompletionsProvider) Stream(ctx context.Context, input ModelRequest, emit func(Event)) (Message, error) {
@@ -129,7 +133,10 @@ func (p *ChatCompletionsProvider) Stream(ctx context.Context, input ModelRequest
 	}
 	body := map[string]any{
 		"model": model, "messages": wireMessages, "stream": true,
-		input.TokenParameter: input.MaxOutputTokens,
+	}
+	// Zero omits the parameter entirely; it must not become a zero-token request.
+	if input.MaxOutputTokens > 0 {
+		body[input.TokenParameter] = input.MaxOutputTokens
 	}
 	if input.Thinking != "" {
 		body["thinking"] = map[string]string{"type": input.Thinking}
@@ -226,6 +233,7 @@ func (p *ChatCompletionsProvider) Stream(ctx context.Context, input ModelRequest
 					emit(Event{Type: EventThinking})
 					thinkingSent = true
 				}
+				emit(Event{Type: EventReasoningDelta, Text: choice.Delta.Reasoning})
 			}
 			if choice.Delta.Content != "" {
 				text.WriteString(choice.Delta.Content)
@@ -290,9 +298,8 @@ func (p *ChatCompletionsProvider) Stream(ctx context.Context, input ModelRequest
 	if !terminated {
 		return Message{}, &ModelError{Kind: "stream"}
 	}
-	response := Message{Role: "assistant", Content: text.String()}
+	response := Message{Role: "assistant", Content: text.String(), ReasoningContent: reasoning.String()}
 	if finish == "tool_calls" && len(pending) > 0 {
-		response.ReasoningContent = reasoning.String()
 		indices := make([]int, 0, len(pending))
 		for index := range pending {
 			indices = append(indices, index)

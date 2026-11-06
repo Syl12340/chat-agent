@@ -23,9 +23,9 @@ type imageChatFixture struct {
 	calls atomic.Int32
 }
 
-func (m *imageChatFixture) Stream(_ context.Context, request probe.ModelRequest, _ func(probe.Event)) (probe.Message, error) {
+func (m *imageChatFixture) Stream(_ context.Context, request probe.ModelRequest, emit func(probe.Event)) (probe.Message, error) {
 	call := m.calls.Add(1)
-	if request.Model != "ecnu-plus" || request.Thinking != "enabled" || request.ReasoningEffort != "xhigh" || request.MaxOutputTokens != 4096 {
+	if request.Model != "ecnu-plus" || request.Thinking != "enabled" || request.ReasoningEffort != "xhigh" || request.MaxOutputTokens != 0 {
 		m.t.Error("model/thinking selection did not reach prepared request")
 	}
 	visibleImage, echo := false, false
@@ -44,12 +44,17 @@ func (m *imageChatFixture) Stream(_ context.Context, request probe.ModelRequest,
 		}
 	}
 	if call == 1 {
+		emit(probe.Event{Type: probe.EventThinking})
+		emit(probe.Event{Type: probe.EventReasoningDelta, Text: "private-protocol-fixture"})
 		return probe.Message{Role: "assistant", ReasoningContent: "private-protocol-fixture", ToolCalls: []probe.ToolCall{{ID: "fixture-clock", Type: "function", Function: probe.FunctionCall{Name: "get_current_time", Arguments: `{}`}}}}, nil
 	}
 	if !echo {
 		m.t.Error("tool reasoning protocol was not echoed")
 	}
-	return probe.Message{Role: "assistant", Content: "这是本地模拟图片回答。"}, nil
+	emit(probe.Event{Type: probe.EventThinking})
+	emit(probe.Event{Type: probe.EventReasoningDelta, Text: "final-thinking-fixture"})
+	emit(probe.Event{Type: probe.EventTextDelta, Text: "这是本地模拟图片回答。"})
+	return probe.Message{Role: "assistant", Content: "这是本地模拟图片回答。", ReasoningContent: "final-thinking-fixture"}, nil
 }
 
 func TestImageChatLifecycle(t *testing.T) {
@@ -135,8 +140,9 @@ func TestImageChatLifecycle(t *testing.T) {
 	jsonRequest("POST", base+"/turns", body, 409)
 	request("DELETE", base+"/images/"+first.ID, nil, true, 409)
 	history := request("GET", base+"/messages", nil, true, 200)
-	if strings.Contains(history.Body.String(), "private-protocol-fixture") || strings.Contains(history.Body.String(), "data:image") || !strings.Contains(history.Body.String(), first.ID) {
-		t.Fatal("history exposed private protocol or lost image reference")
+	request("GET", base+"/messages", nil, false, 401)
+	if !strings.Contains(history.Body.String(), "private-protocol-fixture") || !strings.Contains(history.Body.String(), "final-thinking-fixture") || strings.Contains(history.Body.String(), "data:image") || !strings.Contains(history.Body.String(), first.ID) || turn.ReasoningContent != "private-protocol-fixture\n\nfinal-thinking-fixture" {
+		t.Fatal("authorized history lost reasoning or image reference, or exposed inline image data")
 	}
 	session, err := s.session(id)
 	if err != nil {

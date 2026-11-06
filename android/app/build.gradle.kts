@@ -7,8 +7,8 @@ android {
         applicationId = "dev.pocketagent.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = providers.gradleProperty("pocketVersionCode").orElse("19").get().toInt()
-        versionName = providers.gradleProperty("pocketVersionName").orElse("0.21.1").get()
+        versionCode = providers.gradleProperty("pocketVersionCode").orElse("20").get().toInt()
+        versionName = providers.gradleProperty("pocketVersionName").orElse("0.21.2").get()
     }
     buildFeatures { buildConfig = true }
     buildTypes {

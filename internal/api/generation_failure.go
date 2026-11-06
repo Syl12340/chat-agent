@@ -31,7 +31,7 @@ func generationFailure(err error) (string, string) {
 				return "model_http", fmt.Sprintf("模型服务暂时不可用（HTTP %d），本次没有自动重试。", model.HTTPStatus)
 			}
 		case "output_limit":
-			return "output_limit", "思考或回答达到本轮输出上限，回复尚未完成。可调低思考强度或分段提问后重新发送。"
+			return "output_limit", "模型服务返回了输出截断，回复尚未完成。已保留收到的思考和回答，没有自动重试。"
 		case "empty":
 			return "empty_reply", "模型没有返回可显示的完整回答，本次没有自动重试。"
 		case "transport":

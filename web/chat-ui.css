@@ -43,3 +43,7 @@
 .ui-answer-summary{font-size:14px}.message.user .message-body details{font-size:11px;color:var(--on-surface-variant)}.message.user .message-body details pre{max-width:100%;max-height:220px;overflow:auto;white-space:pre-wrap}
 @media(max-width:760px){.messages{padding-top:24px}.tool-log summary{min-height:44px;font-size:11px}.message-model{font-size:9px}.message-actions{gap:2px 8px}.composer:focus-within{border-color:var(--primary)}.model-picker{padding-left:4px}.thinking-picker{min-height:36px}.turn-queue{font-size:11px}}
 @media(prefers-reduced-motion:reduce){.tool-log.running summary::before{animation:none}}
+/* Provider reasoning stays selectable plain text and separate from the answer. */
+.reasoning-log{margin:8px 0 14px;border-left:2px solid var(--outline-variant);padding:3px 0 3px 12px;color:var(--on-surface-variant);min-width:0}
+.reasoning-log summary{cursor:pointer;font-size:.88rem;user-select:none;padding:4px 0}
+.reasoning-body{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7;font-size:.9rem;margin-top:8px;max-height:55vh;overflow:auto;user-select:text}

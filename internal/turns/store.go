@@ -32,21 +32,22 @@ type ToolEvent struct {
 	Error     string `json:"error,omitempty"`
 }
 type Turn struct {
-	ID         string        `json:"id"`
-	Sequence   int           `json:"sequence"`
-	Content    string        `json:"content"`
-	Mode       string        `json:"mode"`
-	Status     string        `json:"status"`
-	BatchID    string        `json:"batch_id,omitempty"`
-	StartIndex int           `json:"start_index"`
-	EndIndex   int           `json:"end_index"`
-	Text       string        `json:"text,omitempty"`
-	Tools      []ToolEvent   `json:"tools,omitempty"`
-	Error      string        `json:"error,omitempty"`
-	CreatedAt  time.Time     `json:"created_at"`
-	Model      string        `json:"model,omitempty"`
-	Thinking   string        `json:"thinking,omitempty"`
-	Images     []media.Image `json:"images,omitempty"`
+	ID               string        `json:"id"`
+	Sequence         int           `json:"sequence"`
+	Content          string        `json:"content"`
+	Mode             string        `json:"mode"`
+	Status           string        `json:"status"`
+	BatchID          string        `json:"batch_id,omitempty"`
+	StartIndex       int           `json:"start_index"`
+	EndIndex         int           `json:"end_index"`
+	Text             string        `json:"text,omitempty"`
+	ReasoningContent string        `json:"reasoning_content,omitempty"`
+	Tools            []ToolEvent   `json:"tools,omitempty"`
+	Error            string        `json:"error,omitempty"`
+	CreatedAt        time.Time     `json:"created_at"`
+	Model            string        `json:"model,omitempty"`
+	Thinking         string        `json:"thinking,omitempty"`
+	Images           []media.Image `json:"images,omitempty"`
 }
 type record struct {
 	Turn
@@ -144,7 +145,7 @@ func (s *Store) load(id string) (*state, error) {
 	if err = d.Decode(&st); err != nil {
 		return nil, err
 	}
-	if d.Decode(&extra) != io.EOF || (st.Version != 1 && st.Version != 2) || st.SessionID != id || len(st.Items) > 2048 {
+	if d.Decode(&extra) != io.EOF || (st.Version != 1 && st.Version != 2 && st.Version != 3) || st.SessionID != id || len(st.Items) > 2048 {
 		return nil, errors.New("invalid turn ledger")
 	}
 	if st.Version == 1 {
@@ -162,7 +163,7 @@ func (s *Store) load(id string) (*state, error) {
 	seen := map[string]bool{}
 	for i := range st.Items {
 		t := &st.Items[i]
-		if !storage.ValidID(t.ID) || seen[t.ID] || t.Sequence != i+1 || len(t.Digest) != 64 || t.StartIndex < 0 || t.EndIndex < 0 || len(t.Content) > 64<<10 || len(t.Text) > 64<<10 {
+		if !storage.ValidID(t.ID) || seen[t.ID] || t.Sequence != i+1 || len(t.Digest) != 64 || t.StartIndex < 0 || t.EndIndex < 0 || len(t.Content) > 64<<10 || len(t.Text) > 4<<20 || len(t.ReasoningContent) > 1<<20 || st.Version < 3 && (t.ReasoningContent != "" || len(t.Text) > 64<<10) {
 			return nil, errors.New("invalid turn record")
 		}
 		if !validOptions(t.Model, t.Thinking, t.Images) {
@@ -228,7 +229,7 @@ func (s *Store) EnqueueWithOptions(id, rid, content, mode, model, thinking strin
 	next := clone(st)
 	turn := Turn{ID: rid, Sequence: len(next.Items) + 1, Content: content, Mode: mode, Status: "queued", CreatedAt: time.Now().UTC(), Model: model, Thinking: thinking, Images: append([]media.Image(nil), images...)}
 	if model != "" || thinking != "" || len(images) > 0 {
-		next.Version = 2
+		next.Version = max(next.Version, 2)
 	}
 	next.Items = append(next.Items, record{Turn: turn, Digest: hash})
 	// Retain request digests for the entire bounded ledger; compact only payloads.
@@ -236,6 +237,7 @@ func (s *Store) EnqueueWithOptions(id, rid, content, mode, model, thinking strin
 		if next.Items[i].Status != "queued" && next.Items[i].Status != "running" {
 			next.Items[i].Content = ""
 			next.Items[i].Text = ""
+			next.Items[i].ReasoningContent = ""
 			next.Items[i].Tools = nil
 		}
 	}
@@ -415,9 +417,15 @@ func (s *Store) Begin(id string, start int, merge func(Turn) bool) ([]Turn, erro
 	return out, nil
 }
 func (s *Store) Progress(id, batch, text string, tools []ToolEvent) error {
+	return s.ProgressWithReasoning(id, batch, text, "", tools)
+}
+
+// V3 adds display reasoning to the durable progress without treating it as an
+// answer, tool output or write authority. V1/V2 ledgers remain readable in place.
+func (s *Store) ProgressWithReasoning(id, batch, text, reasoning string, tools []ToolEvent) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(text) > 64<<10 {
+	if len(text) > 4<<20 || len(reasoning) > 1<<20 {
 		return ErrLimit
 	}
 	st, err := s.load(id)
@@ -425,10 +433,14 @@ func (s *Store) Progress(id, batch, text string, tools []ToolEvent) error {
 		return err
 	}
 	next := clone(st)
+	if reasoning != "" || len(text) > 64<<10 {
+		next.Version = 3
+	}
 	for i := range next.Items {
 		r := &next.Items[i]
 		if r.ID == batch && r.Status == "running" {
 			r.Text = text
+			r.ReasoningContent = reasoning
 			r.Tools = append([]ToolEvent(nil), tools...)
 			if time.Since(s.checkpoint[id]) >= time.Second {
 				return s.save(next)
@@ -440,13 +452,23 @@ func (s *Store) Progress(id, batch, text string, tools []ToolEvent) error {
 	return ErrConflict
 }
 func (s *Store) Finish(id, batch, status, text, message string, end int, tools []ToolEvent) error {
+	return s.FinishWithReasoning(id, batch, status, text, "", message, end, tools)
+}
+
+func (s *Store) FinishWithReasoning(id, batch, status, text, reasoning, message string, end int, tools []ToolEvent) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if len(text) > 4<<20 || len(reasoning) > 1<<20 {
+		return ErrLimit
+	}
 	st, err := s.load(id)
 	if err != nil {
 		return err
 	}
 	next := clone(st)
+	if reasoning != "" || len(text) > 64<<10 {
+		next.Version = 3
+	}
 	for i := range next.Items {
 		r := &next.Items[i]
 		if r.BatchID == batch && r.Status == "running" {
@@ -455,6 +477,7 @@ func (s *Store) Finish(id, batch, status, text, message string, end int, tools [
 			r.Error = message
 			if r.ID == batch {
 				r.Text = text
+				r.ReasoningContent = reasoning
 				r.Tools = append([]ToolEvent(nil), tools...)
 			}
 		}
@@ -478,6 +501,7 @@ func (s *Store) Reset(id string) error {
 		r.Status = "withdrawn"
 		r.Content = ""
 		r.Text = ""
+		r.ReasoningContent = ""
 		r.Tools = nil
 		r.Error = ""
 		r.BatchID = ""

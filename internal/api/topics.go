@@ -278,7 +278,9 @@ func (s *Server) discoverTopic(parent context.Context, record topics.Record) (re
 		return
 	}
 	c := s.config.Agent
-	c.MaxOutputTokens = min(c.MaxOutputTokens, 512)
+	if c.MaxOutputTokens == 0 || c.MaxOutputTokens > 512 {
+		c.MaxOutputTokens = 512
+	}
 	c.Timeout = min(c.Timeout, 20*time.Second)
 	result.ModelCalls = 1
 	text, err := probe.Generate(ctx, c, "## Rules\n"+role.Rules+"\n## Persona\n"+role.Identity+"\n## Profile\n"+role.Profile+topicDecisionPrompt, string(input))
