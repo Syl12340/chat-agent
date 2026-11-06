@@ -29,3 +29,17 @@
  .desktop-workbench-note{padding-bottom:max(14px,env(safe-area-inset-bottom))}
 }
 @media(prefers-color-scheme:dark){.desktop-workbench{background:#000}.desktop-workbench-scrim{background:#000b}}
+
+/* 0.22 desktop workbench: a stable DSH-style companion pane beside chat. */
+.session-filter{min-height:36px;margin-bottom:8px;padding:7px 10px;border-radius:9px;background:transparent}
+.session-filter:focus{background:var(--surface);border-color:var(--outline)}
+.desktop-workbench{width:clamp(360px,31vw,500px);background:var(--surface-low)}
+.desktop-workbench-header{min-height:64px;padding:10px 16px;background:var(--surface);border-bottom-color:var(--outline-variant)}
+.desktop-workbench-eyebrow{font-size:10px}.desktop-workbench-header h2{font-size:15px;margin-top:1px}.desktop-workbench-header .icon-button{width:36px;height:36px;min-width:36px;min-height:36px;border-radius:9px}
+.desktop-workbench-body{padding:16px;background:var(--surface-low)}
+.desktop-workbench-note{padding:10px 16px 12px;background:var(--surface);font-size:10px}
+.desktop-workbench-placeholder{border-radius:10px;background:var(--surface);padding:12px}
+@media(min-width:1200px){.app-shell.workbench-open .sidebar{width:236px}.app-shell.workbench-open .messages,.app-shell.workbench-open .composer-area{padding-left:18px;padding-right:18px}.app-shell.workbench-open .topbar{padding-left:18px;padding-right:18px}}
+@media(max-width:1199px){.desktop-workbench{width:min(500px,92vw);box-shadow:-16px 0 54px #0004}}
+@media(max-width:760px){.session-filter{min-height:40px}.desktop-workbench{width:100%}.desktop-workbench-header{min-height:62px;padding:max(10px,env(safe-area-inset-top)) 12px 9px}.desktop-workbench-body{padding:12px}}
+@media(prefers-color-scheme:dark){.desktop-workbench-body{background:#080808}.desktop-workbench-header,.desktop-workbench-note{background:#000}}

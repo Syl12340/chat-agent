@@ -363,7 +363,7 @@ function card(role, text = '', key = '', images = [], context = null) {
   const attachments=document.createElement('div'); attachments.className='message-attachments';
   chatInput.renderImages(attachments,images);
   const actions=document.createElement('div'); actions.className='message-actions';
-  const copy=document.createElement('button'); copy.type='button'; copy.className='message-copy'; copy.textContent='复制回答'; copy.setAttribute('aria-label','复制这条回答');
+  const copy=document.createElement('button'); copy.type='button'; copy.className='message-copy'; copy.textContent='复制'; copy.setAttribute('aria-label','复制这条回答');
   content.append(label, logs, attachments, body, status); if(role==='assistant'){actions.append(copy);content.append(actions);}
   article.append(avatar, content); ui.messages.append(article);
   const result = { node: article, body, status, logs, tools: new Map(), text: '',
