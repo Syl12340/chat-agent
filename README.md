@@ -1,8 +1,8 @@
 # chat-agent
 
-当前实现为 **0.21.2**；Android 更新包为 **0.21.2-debug（versionCode 20）**。支持思考正文实时/历史折叠显示，聊天默认不设置输出 token 上限，沿用模型服务默认值。原包名、签名和设备身份保留。[本次记录](docs/release-0.21.2.md)。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
+当前发布为 **0.21.2**；Android 更新包为 **0.21.2-debug（versionCode 20）**。支持思考正文实时/历史折叠显示，聊天默认不设置输出 token 上限，沿用模型服务默认值。原包名、签名和设备身份保留。[本次记录](docs/release-0.21.2.md)。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
 
-0.19 引入的最多三张 JPEG/PNG 图片消息、ECNU Max/Plus 选择、关闭/中/高/超高思考强度，以及聊天阅读与输入界面继续保留，后台接收等 0.18 功能也保留。八项关键新旧流程、构建、隔离浏览器和线上只读检查通过，未调用真实识图/思考生成或安装真机。新数据按需写 transcript/turns v2，旧二进制不能直接降级；Harness 3B/3C 仍未实施。[功能与格式说明](docs/chat-0.19.md)、[Harness 规划](docs/dsh-harness-migration-plan.md)。
+0.19 引入的最多三张 JPEG/PNG 图片消息、ECNU Max/Plus 选择、关闭/中/高/超高思考强度，以及聊天阅读与输入界面继续保留，后台接收等 0.18 功能也保留。八项关键新旧流程、构建、隔离浏览器和线上只读检查通过，未调用真实识图/思考生成或安装真机。新数据按需写 transcript v2、turns v2/v3（思考进度），旧二进制不能直接降级；Harness 3B/3C 仍未实施。[功能与格式说明](docs/chat-0.19.md)、[Harness 规划](docs/dsh-harness-migration-plan.md)。
 
 独立实现的轻量个人 AI 助手，当前具备 P0–P3 核心能力：运行时、PWA 聊天、角色/记忆、待办和提醒收件箱。Go 标准库 + 原生 HTML/CSS/JavaScript，**Go 侧零第三方模块、无前端构建步骤**，网页资源嵌入单个可执行文件。前端数学渲染唯一外部依赖为本地固定 KaTeX 0.19.1，许可随包保留。
 

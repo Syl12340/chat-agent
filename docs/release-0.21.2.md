@@ -1,6 +1,6 @@
 # 0.21.2 思考正文与模型默认输出预算
 
-2026-11-06。服务端 0.21.2，Android 0.21.2-debug / versionCode 20。代码与关键回归完成，发布结果待下方记录。
+2026-11-06。服务端 0.21.2，Android 0.21.2-debug / versionCode 20。服务端和 Android 更新通道均已发布，沿用原包名、签名和设备身份。
 
 ## 行为
 
@@ -25,4 +25,16 @@
 
 ## 发布记录
 
-待发布后填写。
+| 项目 | 记录 |
+| --- | --- |
+| 服务目录 | `/opt/pocket-agent/releases/20261106-cot-01` |
+| 上一版本 | `/opt/pocket-agent/releases/20261106-reply-01` |
+| 一致性备份 | `/opt/pocket-agent/backups/pre-cot-20261106-01.tar.gz`，root:0600 |
+| 源码提交 | `9796097025233663ca131ee784f3c646fae8490d` |
+| Linux SHA-256 | `2af778ec330acc541d04e3d51bfa70d56f7496cc2436b9c9afe1adaedf278458` |
+| Android 更新目录 | `/opt/pocket-agent/android/releases/android-20261106-02` |
+| APK 版本 / 字节 | `0.21.2-debug` / versionCode `20` / 947292 字节 |
+| APK SHA-256 | `3929c00d6630660c68f2c5e07ada242b9497ebe1fe95482dbe617548145dd295` |
+| 原签名证书 SHA-256 | `4905b966d06c53d22da462b9ef3e36ff27b54994829950a610f92a6bab68b24a` |
+
+正常停机备份后切换服务，线上健康、版本、SW v27、思考展示资源、原会话可读、模型允许列表和未鉴权访问拒绝通过。服务状态确认普通/思考两个 token 预算均为 0；原启动脚本未显式覆盖输出上限，思考预算环境变量未设置。更新接口与完整 APK 下载哈希通过。检查未触发模型，没有重发原问题或发送现有历史，原用户问题的回复结果仍待实际使用确认。
