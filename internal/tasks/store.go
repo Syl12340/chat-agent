@@ -5,6 +5,7 @@ package tasks
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -25,6 +26,12 @@ import (
 var ErrNotFound = errors.New("task not found")
 var ErrConflict = errors.New("task changed or idempotency key reused")
 
+const (
+	maxSnapshotBytes   = 16 << 20
+	maxReceipts        = 32768
+	maxReceiptsPerRole = 8192
+)
+
 type Item struct {
 	ID        string     `json:"id"`
 	RoleID    string     `json:"role_id"`
@@ -41,14 +48,30 @@ type Item struct {
 	Key       string     `json:"idempotency_key"`
 	RetryKeys []string   `json:"retry_keys,omitempty"`
 }
+
+// Receipt is the durable proof of one protected business mutation. It stores
+// no prompt or evidence text and is committed in the same state replacement as
+// the task change it describes.
+type Receipt struct {
+	RoleID             string    `json:"role_id"`
+	OperationID        string    `json:"operation_id"`
+	ArgumentsSHA256    string    `json:"arguments_sha256"`
+	OperationKind      string    `json:"operation_kind"`
+	CommittedAt        time.Time `json:"committed_at"`
+	EntityIDs          []string  `json:"entity_ids"`
+	ResultingRevisions []int     `json:"resulting_revisions"`
+	OutcomeDigest      string    `json:"outcome_digest"`
+}
 type snapshot struct {
-	Version int    `json:"version"`
-	Items   []Item `json:"items"`
+	Version  int       `json:"version"`
+	Items    []Item    `json:"items"`
+	Receipts []Receipt `json:"receipts,omitempty"`
 }
 type Store struct {
 	mu        sync.Mutex
 	dir, lock string
 	items     []Item
+	receipts  []Receipt
 	closed    bool
 }
 
@@ -82,11 +105,11 @@ func Open(dir string) (s *Store, err error) {
 		return nil, err
 	}
 	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, (4<<20)+1))
+	data, err := io.ReadAll(io.LimitReader(f, maxSnapshotBytes+1))
 	if err != nil {
 		return nil, err
 	}
-	if len(data) > 4<<20 {
+	if len(data) > maxSnapshotBytes {
 		return nil, errors.New("task snapshot too large")
 	}
 	var snap snapshot
@@ -96,7 +119,7 @@ func Open(dir string) (s *Store, err error) {
 		return nil, err
 	}
 	var extra any
-	if decoder.Decode(&extra) != io.EOF || snap.Version != 1 || len(snap.Items) > 2000 {
+	if decoder.Decode(&extra) != io.EOF || (snap.Version != 1 && snap.Version != 2) || len(snap.Items) > 2000 || len(snap.Receipts) > maxReceipts || snap.Version == 1 && len(snap.Receipts) != 0 {
 		return nil, errors.New("invalid task snapshot")
 	}
 	seen := map[string]bool{}
@@ -120,7 +143,30 @@ func Open(dir string) (s *Store, err error) {
 			keys[index] = true
 		}
 	}
+	receiptKeys := map[string]bool{}
+	receiptRoles := map[string]int{}
+	itemsByID := map[string]Item{}
+	for _, item := range snap.Items {
+		itemsByID[item.ID] = item
+	}
+	for _, receipt := range snap.Receipts {
+		key := receipt.RoleID + "\x00" + receipt.OperationID
+		receiptRoles[receipt.RoleID]++
+		valid := validReceipt(receipt) && !receiptKeys[key] && receiptRoles[receipt.RoleID] <= maxReceiptsPerRole
+		if valid {
+			for i, id := range receipt.EntityIDs {
+				if item, exists := itemsByID[id]; exists && (item.RoleID != receipt.RoleID || item.Revision < receipt.ResultingRevisions[i]) {
+					valid = false
+				}
+			}
+		}
+		if !valid {
+			return nil, errors.New("invalid task receipt")
+		}
+		receiptKeys[key] = true
+	}
 	s.items = snap.Items
+	s.receipts = snap.Receipts
 	return s, nil
 }
 func validTitle(title string) bool { return strings.TrimSpace(title) != "" && len(title) <= 256 }
@@ -143,18 +189,39 @@ func copyItem(item Item) Item {
 	}
 	return item
 }
-func (s *Store) save(items []Item) error {
-	data, err := json.MarshalIndent(snapshot{Version: 1, Items: items}, "", "  ")
+func validDigest(value string) bool {
+	decoded, err := hex.DecodeString(value)
+	return err == nil && len(decoded) == sha256.Size
+}
+func validReceipt(receipt Receipt) bool {
+	if !storage.ValidID(receipt.RoleID) || !storage.ValidID(receipt.OperationID) || !storage.ValidID(receipt.OperationKind) || !validDigest(receipt.ArgumentsSHA256) || !validDigest(receipt.OutcomeDigest) || receipt.CommittedAt.IsZero() || len(receipt.EntityIDs) == 0 || len(receipt.EntityIDs) > 8 || len(receipt.EntityIDs) != len(receipt.ResultingRevisions) {
+		return false
+	}
+	for i, id := range receipt.EntityIDs {
+		if !storage.ValidID(id) || receipt.ResultingRevisions[i] < 1 {
+			return false
+		}
+	}
+	return true
+}
+func copyReceipt(receipt Receipt) Receipt {
+	receipt.EntityIDs = append([]string(nil), receipt.EntityIDs...)
+	receipt.ResultingRevisions = append([]int(nil), receipt.ResultingRevisions...)
+	return receipt
+}
+func (s *Store) save(items []Item, receipts []Receipt) error {
+	data, err := json.MarshalIndent(snapshot{Version: 2, Items: items, Receipts: receipts}, "", "  ")
 	if err != nil {
 		return err
 	}
-	if len(data) > 4<<20 {
+	if len(data) > maxSnapshotBytes {
 		return errors.New("task snapshot too large")
 	}
 	if err := storage.Replace(filepath.Join(s.dir, "state.json"), append(data, '\n')); err != nil {
 		return err
 	}
 	s.items = items
+	s.receipts = receipts
 	return nil
 }
 func (s *Store) List(role, kind string) ([]Item, error) {
@@ -176,15 +243,56 @@ func (s *Store) List(role, kind string) ([]Item, error) {
 	return out, nil
 }
 func (s *Store) Add(role, kind, title, key, source, session string, due *time.Time, now time.Time) (Item, error) {
+	item, _, _, err := s.add(role, kind, title, key, source, session, due, now, "", "")
+	return item, err
+}
+
+// AddWithReceipt protects task creation with an operation receipt committed in
+// the same state.json replacement. A replay of the same operation and argument
+// digest returns its original receipt without creating another task.
+func (s *Store) AddWithReceipt(role, kind, title, operationID, argumentsSHA256, operationKind, source, session string, due *time.Time, now time.Time) (Item, Receipt, bool, error) {
+	return s.add(role, kind, title, operationID, source, session, due, now, argumentsSHA256, operationKind)
+}
+
+func (s *Store) add(role, kind, title, key, source, session string, due *time.Time, now time.Time, argumentsSHA256, operationKind string) (Item, Receipt, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return Item{}, errors.New("task store closed")
+		return Item{}, Receipt{}, false, errors.New("task store closed")
 	}
 	title = strings.Join(strings.Fields(title), " ")
 	now = now.UTC()
 	if !storage.ValidID(role) || !validTitle(title) || !validKey(key) || (kind != "todo" && kind != "reminder") {
-		return Item{}, errors.New("invalid task title, kind or key")
+		return Item{}, Receipt{}, false, errors.New("invalid task title, kind or key")
+	}
+	protected := argumentsSHA256 != "" || operationKind != ""
+	if protected && (!validDigest(argumentsSHA256) || !storage.ValidID(operationKind)) {
+		return Item{}, Receipt{}, false, errors.New("invalid task receipt identity")
+	}
+	if protected {
+		for _, receipt := range s.receipts {
+			if receipt.RoleID != role || receipt.OperationID != key {
+				continue
+			}
+			if receipt.ArgumentsSHA256 != argumentsSHA256 || receipt.OperationKind != operationKind {
+				return Item{}, Receipt{}, true, ErrConflict
+			}
+			for _, item := range s.items {
+				if item.RoleID == role && len(receipt.EntityIDs) == 1 && item.ID == receipt.EntityIDs[0] {
+					return copyItem(item), copyReceipt(receipt), true, nil
+				}
+			}
+			return Item{}, copyReceipt(receipt), true, nil
+		}
+		roleReceipts := 0
+		for _, receipt := range s.receipts {
+			if receipt.RoleID == role {
+				roleReceipts++
+			}
+		}
+		if len(s.receipts) >= maxReceipts || roleReceipts >= maxReceiptsPerRole {
+			return Item{}, Receipt{}, false, errors.New("task receipt limit reached")
+		}
 	}
 	var at *time.Time
 	if due != nil {
@@ -192,7 +300,7 @@ func (s *Store) Add(role, kind, title, key, source, session string, due *time.Ti
 		at = &value
 	}
 	if kind == "todo" && at != nil || kind == "reminder" && at == nil {
-		return Item{}, errors.New("invalid task due time")
+		return Item{}, Receipt{}, false, errors.New("invalid task due time")
 	}
 	// Resolve key ownership before semantic deduplication: an existing key for
 	// another item must never be rebound to an earlier matching title.
@@ -200,9 +308,17 @@ func (s *Store) Add(role, kind, title, key, source, session string, due *time.Ti
 		if item.RoleID == role && (item.Key == key || slices.Contains(item.RetryKeys, key)) {
 			same := item.Kind == kind && strings.EqualFold(item.Title, title) && (at == nil && item.DueAt == nil || at != nil && item.DueAt != nil && at.Equal(*item.DueAt))
 			if !same {
-				return Item{}, ErrConflict
+				return Item{}, Receipt{}, false, ErrConflict
 			}
-			return copyItem(item), nil
+			if !protected {
+				return copyItem(item), Receipt{}, false, nil
+			}
+			receipt := newReceipt(role, key, argumentsSHA256, operationKind, item, now)
+			receipts := append(append([]Receipt(nil), s.receipts...), receipt)
+			if err := s.save(append([]Item(nil), s.items...), receipts); err != nil {
+				return Item{}, Receipt{}, false, err
+			}
+			return copyItem(item), copyReceipt(receipt), false, nil
 		}
 	}
 	count := 0
@@ -214,26 +330,32 @@ func (s *Store) Add(role, kind, title, key, source, session string, due *time.Ti
 		same := item.Kind == kind && strings.EqualFold(item.Title, title) && (at == nil && item.DueAt == nil || at != nil && item.DueAt != nil && at.Equal(*item.DueAt))
 		if same && (item.Status == "open" || item.Status == "scheduled" || item.Status == "due") {
 			if len(item.RetryKeys) >= 16 {
-				return Item{}, ErrConflict
+				return Item{}, Receipt{}, false, ErrConflict
 			}
 			item.RetryKeys = append(append([]string(nil), item.RetryKeys...), key)
 			items := append([]Item(nil), s.items...)
 			items[i] = item
-			if err := s.save(items); err != nil {
-				return Item{}, err
+			receipts := append([]Receipt(nil), s.receipts...)
+			var receipt Receipt
+			if protected {
+				receipt = newReceipt(role, key, argumentsSHA256, operationKind, item, now)
+				receipts = append(receipts, receipt)
 			}
-			return copyItem(item), nil
+			if err := s.save(items, receipts); err != nil {
+				return Item{}, Receipt{}, false, err
+			}
+			return copyItem(item), copyReceipt(receipt), false, nil
 		}
 	}
 	if at != nil && (at.Before(now.Add(-time.Minute)) || at.After(now.Add(366*24*time.Hour))) {
-		return Item{}, errors.New("reminder time must be within one minute past and one year ahead")
+		return Item{}, Receipt{}, false, errors.New("reminder time must be within one minute past and one year ahead")
 	}
 	if count >= 500 || len(s.items) >= 2000 {
-		return Item{}, errors.New("task limit reached")
+		return Item{}, Receipt{}, false, errors.New("task limit reached")
 	}
 	var id [16]byte
 	if _, err := rand.Read(id[:]); err != nil {
-		return Item{}, err
+		return Item{}, Receipt{}, false, err
 	}
 	status := "open"
 	if kind == "reminder" {
@@ -241,10 +363,42 @@ func (s *Store) Add(role, kind, title, key, source, session string, due *time.Ti
 	}
 	item := Item{ID: hex.EncodeToString(id[:]), RoleID: role, Kind: kind, Title: title, Status: status, DueAt: at, Key: key, Source: source, SessionID: session, Revision: 1, CreatedAt: now, UpdatedAt: now}
 	items := append(append([]Item(nil), s.items...), item)
-	if err := s.save(items); err != nil {
-		return Item{}, err
+	receipts := append([]Receipt(nil), s.receipts...)
+	var receipt Receipt
+	if protected {
+		receipt = newReceipt(role, key, argumentsSHA256, operationKind, item, now)
+		receipts = append(receipts, receipt)
 	}
-	return copyItem(item), nil
+	if err := s.save(items, receipts); err != nil {
+		return Item{}, Receipt{}, false, err
+	}
+	return copyItem(item), copyReceipt(receipt), false, nil
+}
+
+func newReceipt(role, operationID, argumentsSHA256, operationKind string, item Item, now time.Time) Receipt {
+	outcome, _ := json.Marshal(struct {
+		ID       string `json:"id"`
+		Revision int    `json:"revision"`
+	}{item.ID, item.Revision})
+	digest := sha256.Sum256(outcome)
+	return Receipt{RoleID: role, OperationID: operationID, ArgumentsSHA256: argumentsSHA256, OperationKind: operationKind, CommittedAt: now.UTC(), EntityIDs: []string{item.ID}, ResultingRevisions: []int{item.Revision}, OutcomeDigest: hex.EncodeToString(digest[:])}
+}
+
+func (s *Store) Receipt(role, operationID string) (Receipt, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return Receipt{}, false, errors.New("task store closed")
+	}
+	if !storage.ValidID(role) || !validKey(operationID) {
+		return Receipt{}, false, errors.New("invalid task receipt identity")
+	}
+	for _, receipt := range s.receipts {
+		if receipt.RoleID == role && receipt.OperationID == operationID {
+			return copyReceipt(receipt), true, nil
+		}
+	}
+	return Receipt{}, false, nil
 }
 func (s *Store) Update(role, id, status string, revision int, now time.Time) (Item, error) {
 	s.mu.Lock()
@@ -271,7 +425,7 @@ func (s *Store) Update(role, id, status string, revision int, now time.Time) (It
 		item.Revision++
 		item.UpdatedAt = now.UTC()
 		items[i] = item
-		if err := s.save(items); err != nil {
+		if err := s.save(items, s.receipts); err != nil {
 			return Item{}, err
 		}
 		return copyItem(item), nil
@@ -291,7 +445,7 @@ func (s *Store) Delete(role, id string, revision int) error {
 			}
 			items := append([]Item(nil), s.items[:i]...)
 			items = append(items, s.items[i+1:]...)
-			return s.save(items)
+			return s.save(items, s.receipts)
 		}
 	}
 	return ErrNotFound
@@ -322,7 +476,7 @@ func (s *Store) Advance(now time.Time) (int, error) {
 	if count == 0 {
 		return 0, nil
 	}
-	if err := s.save(items); err != nil {
+	if err := s.save(items, s.receipts); err != nil {
 		return 0, err
 	}
 	return count, nil

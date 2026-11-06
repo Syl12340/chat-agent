@@ -13,8 +13,10 @@ import (
 // Business handlers must forward cancellation and keep their own atomic guards.
 type ToolExecutor struct{ guards []ToolGuard }
 
-func (e *ToolExecutor) Execute(ctx context.Context, set *ToolSet, call ToolCall) (result ToolResult) {
+func (e *ToolExecutor) Execute(ctx context.Context, set *ToolSet, call ToolCall, recorder RunRecorder, step int) (result ToolResult, recordErr error) {
 	started := time.Now()
+	operationID := ""
+	dispatched := false
 	defer func() {
 		if recover() != nil {
 			result = toolFailure("TOOL_INTERNAL", "tool execution failed; inspect saved state before retrying")
@@ -22,28 +24,33 @@ func (e *ToolExecutor) Execute(ctx context.Context, set *ToolSet, call ToolCall)
 		result = normalizeToolResult(result)
 		result.CallID = call.ID
 		result.DurationMS = time.Since(started).Milliseconds()
+		if dispatched && recorder != nil {
+			if err := recorder.ToolFinished(context.WithoutCancel(ctx), step, call, operationID, result); err != nil {
+				recordErr = recordingError("tool finish", err)
+			}
+		}
 	}()
 	if err := ctx.Err(); err != nil {
-		return toolFailure("TOOL_CANCELED", "tool canceled before dispatch")
+		return toolFailure("TOOL_CANCELED", "tool canceled before dispatch"), nil
 	}
 	tool, ok := set.byName[call.Function.Name]
 	if !ok {
-		return toolFailure("UNKNOWN_TOOL", "tool is not explicitly allowed for this step")
+		return toolFailure("UNKNOWN_TOOL", "tool is not explicitly allowed for this step"), nil
 	}
 	value, err := decodeArguments([]byte(call.Function.Arguments))
 	if err == nil {
 		err = tool.schema.validate(value)
 	}
 	if err != nil {
-		return toolFailure("INVALID_ARGUMENTS", err.Error())
+		return toolFailure("INVALID_ARGUMENTS", err.Error()), nil
 	}
 	canonical, err := json.Marshal(value)
 	if err != nil {
-		return toolFailure("INVALID_ARGUMENTS", "invalid tool arguments")
+		return toolFailure("INVALID_ARGUMENTS", "invalid tool arguments"), nil
 	}
 	if tool.definition.Validate != nil {
 		if err := tool.definition.Validate(append(json.RawMessage(nil), canonical...)); err != nil {
-			return toolFailure("INVALID_ARGUMENTS", err.Error())
+			return toolFailure("INVALID_ARGUMENTS", err.Error()), nil
 		}
 	}
 	invocation := ToolExecution{Step: set.step, CallID: call.ID, Name: call.Function.Name, Arguments: canonical}
@@ -55,13 +62,23 @@ func (e *ToolExecutor) Execute(ctx context.Context, set *ToolSet, call ToolCall)
 		copy := invocation
 		copy.Arguments = append(json.RawMessage(nil), canonical...)
 		if err := guard(ctx, copy); err != nil {
-			return toolFailure("TOOL_DENIED", err.Error())
+			return toolFailure("TOOL_DENIED", err.Error()), nil
 		}
 	}
 	if ctx.Err() != nil {
-		return toolFailure("TOOL_CANCELED", "tool canceled before dispatch")
+		return toolFailure("TOOL_CANCELED", "tool canceled before dispatch"), nil
 	}
+	if recorder != nil {
+		operationID, err = recorder.ToolStarted(ctx, step, call, canonical, tool.definition.Receipt)
+		if err != nil {
+			return toolFailure("RUNTIME_RECORDING", "tool was not dispatched because its durable start record failed"), recordingError("tool start", err)
+		}
+	}
+	dispatched = true
 	execCtx := context.WithValue(ctx, toolCallKey{}, call.ID)
+	if operationID != "" {
+		execCtx = context.WithValue(execCtx, toolOperationKey{}, operationID)
+	}
 	cancel := func() {}
 	if tool.definition.Timeout > 0 {
 		execCtx, cancel = context.WithTimeout(execCtx, tool.definition.Timeout)
@@ -79,7 +96,7 @@ func (e *ToolExecutor) Execute(ctx context.Context, set *ToolSet, call ToolCall)
 	}
 	// A committed successful write stays successful even if cancellation raced
 	// its return. Do not pretend it was rolled back or invite an automatic retry.
-	return result
+	return result, nil
 }
 
 func toolFailure(code, message string) ToolResult { return ToolResult{Error: message, Code: code} }

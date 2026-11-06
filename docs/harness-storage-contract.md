@@ -1,6 +1,6 @@
 # Harness 3A：持久运行与删除契约
 
-更新：2026-11-06，设计基线 `harness-storage/1`。现有 0.21.2 使用 transcript v1/v2、turns ledger v1/v2/v3；它们与本文规划的 runtime 事件 v2 布局不同。尚未实施本文的事件写入器、迁移器或恢复器。**第 5 节的旧容量草案尚未适配当前思考/正文边界，不能直接作为 3B 实现参数**；先完成该节修订，再冻结实现契约。总体依据见[项目现状与架构路线](architecture-roadmap-2026-11.md)。
+更新：2026-11-07，设计基线 `harness-storage/1`。当前生产 0.22 使用 transcript v1/v2、turns ledger v1/v2/v3；它们与 runtime 事件 v2 布局不同。0.23 已按第 5 节冻结容量实现隔离事件 writer、snapshot/payload 和 task create 回执，但尚未实现 3C 迁移器、恢复投影、删除或生产权威切换。总体依据见[项目现状与架构路线](architecture-roadmap-2026-11.md)。
 
 设计借鉴 DeepSeek Harness（MIT，固定参考 `8bd073392eef6f54e921a093b95076248eb08cbb`）对 turn/step、请求快照和持久事件的区分，Go 侧独立实现；许可见 [THIRD_PARTY_NOTICES](../THIRD_PARTY_NOTICES.md)。本契约不引入 Cordis、数据库依赖或新的模型调用。
 
@@ -28,7 +28,7 @@
 
 ## 3. 权威存储及边界
 
-以下路径是待实现 runtime v2 布局，`<data>` 为现有 DataDir；旧 `<data>/pocket/<session>.jsonl` 与 `<data>/turns/<session>.json` 在未迁移状态由现有 transcript v1/v2、ledger v1/v2/v3 使用，不能因版本数字相同而当成本节事件格式。
+以下路径已由 3B 在显式隔离根实现 writer，`<data>` 只表示 3C 将来的接入位置；旧 `<data>/pocket/<session>.jsonl` 与 `<data>/turns/<session>.json` 在未迁移状态继续由 transcript v1/v2、ledger v1/v2/v3 使用，不能因版本数字相同而当成本节事件格式。
 
 ```text
 <data>/runtime/<session>/manifest.json
@@ -93,18 +93,19 @@ snapshot 必须保存最终准备的 model/system/messages/tools、Thinking/Reas
 
 动态 `RuntimeSnapshot`、摘要、记忆和工具结果即使作为 user role 传输也保存独立来源标签。它们永远不能用来通过 `turnHasEvidence`；写入依据只来自本 turn 的真实、已接收用户输入。快照按聊天敏感数据保护，用户在原文输入的私人内容不会因命名为“快照”变成匿名数据；管理导出需明确选择，默认不暴露给模型、推送或诊断日志。
 
-以下为 2026-11-05 的**旧容量草案及修订要求**，不是当前产品限制。0.21.2 已允许每轮最多 4 MiB 回答、1 MiB 思考进度，单模型消息 reasoning 另有 256 KiB 边界；当前 turns 文件上限 12 MiB。3B 开始实现前须核对 JSON 编码开销、合并输入、多步完整请求与正文的重复存储，形成一套能实际容纳现有合法输入/输出的预算。
+0.23 的 3B 隔离实现已冻结以下编码后上限。它们是运行台账的存储边界，不是聊天 token 上限；输出参数为 0 仍表示不向服务商发送 token 参数。容量在外部操作派发前检查，超限直接停止本 attempt，不截断后谎称快照完整。
 
-| 范围 | 旧草案值 | 冻结前的对齐要求 |
+| 范围 | 0.23 冻结值 | 处理方式 |
 | --- | --- | --- |
-| 原始输入 / attempt 展示文本 | 各 64 KiB | 输入按实际单条与合并准入计算；显示进度与完整正文分别计量，不能以展示预算截断完整历史 |
-| 单快照 | 512 KiB 编码后 JSON | 依据实际请求投影计算，包括工具协议 reasoning；不足时明确拒绝或调整设计，不能省略 schema/消息后声称可重建 |
-| 单事件行 | 1 MiB（含换行） | 大正文不能直接内联；实现前在有界 payload 文件引用和事件承载方案中确定一种，并补齐 schema、原子提交和删除规则 |
-| 单 attempt | 4 MiB，预留 64 KiB 结算 | 已不足以承载当前合法正文与思考；重新计算多步快照/结果/结算总量及预留空间，不借存储迁移恢复聊天 token 上限 |
-| 单会话 / 全 runtime | 32 MiB / 256 MiB | 与实际每轮容量、保留周期及候选代临时空间一起确定；满额仍应可读、可删，不能为腾空间复活旧代 |
+| 合并用户文字 | 64 KiB | 沿用现有准入；最多 8 条、3 张图片，图片二进制不复制进快照 |
+| 单请求 snapshot | 128 MiB 编码后 JSON | 保存完整 model/system/messages/tools 与思考、输出参数；超限时模型请求不派发 |
+| 单大 payload | 64 MiB 编码后 JSON | 保存完整/部分模型结果或工具参数/结果；足以覆盖 4 MiB 回答、1 MiB 展示思考及 JSON 最坏转义余量 |
+| 单事件行 | 256 KiB（含换行） | 只放身份、状态、小型元数据和 payload 引用；正文不内联 |
+| 单会话隔离代 | 1 GiB | 包括 manifest、事件、snapshot 与 payload；满额后 writer 失败关闭，旧数据仍可只读检查 |
+| task store v2 | 16 MiB、每角色最多 8192 / 全 store 最多 32768 回执 | 回执和任务状态同一次原子替换；任一边界满额即拒绝新的受保护写入，不按日期复用 operation ID |
 | 接收队列 | 8 条 queued、2048 条 request、最近 32 条详细台账 | 保留现有产品语义；详细台账数量限制不等于可以丢弃请求身份与去重记录 |
 
-推荐优先评估同代内的有界 payload 文件，以 ID/hash 关联事件，避免重复内联大正文；这是待冻结设计，不是已存在的目录或读取能力。任何新增副本都受同一 manifest、删除登记和保留规则管理。预算必须在派发前预留，磁盘仍可能外部耗尽；写入成功但落结算失败仍按回执/unknown 规则处理，不能声称全局事务。主模型之外的摘要/关怀/话题请求采用相同 snapshot/attempt 原则时需各有宿主来源；本次不把已有 topic budget 回执冒充全 Harness 回执。
+`internal/runlog` 已采用同代内有界文件：先同步并原子替换 snapshot/payload，再向 `events.jsonl` 追加带 ID、相对路径、字节数和 SHA-256 的引用并 Sync。写入短写或 Sync 失败立即封闭 writer；未被事件引用的孤儿文件不构成运行事实。当前只在临时数据或显式注入的 recorder 中使用，未接入现有 API 权威、迁移、保留或删除；这些仍属于 3C。磁盘仍可能外部耗尽，业务写入成功但结算事件失败按原子回执或 unknown 处理，不能声称跨文件事务。
 
 ### 图片依赖（0.19 后补充）
 
@@ -122,7 +123,7 @@ snapshot 必须保存最终准备的 model/system/messages/tools、Thinking/Reas
 
 写工具按 `receipt_capability` 显式声明 `atomic` 或 `none`，不能因为工具可写就假定原子去重。atomic 的业务 store 在同一锁、同一次持久替换中同时写业务修改和回执：`role_id, operation_id, arguments_sha256, operation_kind, committed_at, entity_ids, resulting_revisions, outcome_digest`。回执不保存原聊天、证据原句、完整参数或模型提示；必要的当前业务内容仍属于各自 store。再次查询同 operation 且摘要一致返回原结果引用；实体已被后续修改/删除时说明原提交事实，不重新创建或宣称当前值相同。
 
-活动/任务已有创建幂等 key、角色 proposal 的部分恢复逻辑不能直接升级为全工具回执；3B 必须逐 store 修改持久格式并公布支持清单。角色文件与候选文件是多文件写入，未实现明确提交协议前标记 none。memory merge、删除、revision 更新也须单独接回执，不能只覆盖 create。
+0.23 只把 `todo_add` / `reminder_add` 升级为 task store v2 原子回执；活动既有请求记录、角色 proposal 的部分恢复逻辑和任务的普通 HTTP 幂等 key 仍不能直接升级为全工具回执。角色文件与候选文件是多文件写入，未实现明确提交协议前标记 none。memory merge、删除、revision 更新以及任务 update/delete 也须单独接回执，不能用 create 的覆盖范围代替。
 
 | 重启时证据 | 恢复结果 |
 | --- | --- |
@@ -162,10 +163,10 @@ snapshot 必须保存最终准备的 model/system/messages/tools、Thinking/Reas
 
 ## 9. 后续实施与最小验收
 
-3B 先完成第 5 节的容量与 payload 契约修订，再加入事件/snapshot 写入和逐业务原子回执，使用临时数据验证；3C 再接入现有 API、旧数据转换与重启恢复。保留现有对外接口及角色/授权边界，包重命名另行处理。只保留三个关键故障流程：
+3B 已完成第 5 节容量修订、事件/snapshot/payload 写入和 task create 原子回执，并使用临时数据验证；3C 再接入现有 API、旧数据转换与重启恢复。保留现有对外接口及角色/授权边界，包重命名另行处理。只保留三个关键故障流程：
 
 1. 业务提交后运行结果落盘失败，重启查询原回执；none/无回执显示 unknown，计数证实没有重执行。
 2. 模型流取消/进程中断，partial 不进历史，已提交工具结果可见；没有新的付费请求。
 3. 旧数据迁移与最新合并轮/整会话硬删，覆盖派生快照、旧代、summary、台账和旧备份恢复；注入切换失败仍有明确可读权威，不复活删除正文。
 
-这些是 3B/3C 的完成标准，本次未运行这些测试，也未据此宣称恢复功能已完成。
+前两条 3B 故障流及正常 snapshot/hash 流已通过最小测试；第三条属于 3C，尚未实现或运行，因此不能宣称生产恢复功能完成。

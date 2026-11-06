@@ -20,7 +20,7 @@ func validateImages(images []media.Image) error {
 	}
 	seen := map[string]bool{}
 	for _, image := range images {
-		if !storage.ValidID(image.ID) || seen[image.ID] || image.MIMEType != "image/png" && image.MIMEType != "image/jpeg" || image.Size < 1 || image.Size > 4<<20 || image.Width < 1 || image.Height < 1 || image.Width > 4096 || image.Height > 4096 || int64(image.Width)*int64(image.Height) > 12_000_000 || image.DataURL != "" {
+		if !storage.ValidID(image.ID) || seen[image.ID] || image.MIMEType != "image/png" && image.MIMEType != "image/jpeg" || image.Size < 1 || image.Size > 4<<20 || image.Width < 1 || image.Height < 1 || image.Width > 4096 || image.Height > 4096 || int64(image.Width)*int64(image.Height) > 12_000_000 || image.SHA256 != "" && !media.ValidSHA256(image.SHA256) || image.DataURL != "" {
 			return errors.New("invalid image reference")
 		}
 		seen[image.ID] = true
@@ -29,6 +29,9 @@ func validateImages(images []media.Image) error {
 }
 
 func persistentMessageValid(message Message) bool {
+	if message.Source != "" {
+		return false
+	}
 	if message.Role != "user" && message.Role != "assistant" && message.Role != "tool" {
 		return false
 	}

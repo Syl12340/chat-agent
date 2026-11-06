@@ -25,7 +25,7 @@ func validOptions(model, thinking string, images []media.Image) bool {
 	}
 	seen := map[string]bool{}
 	for _, image := range images {
-		if !storage.ValidID(image.ID) || seen[image.ID] || image.MIMEType != "image/png" && image.MIMEType != "image/jpeg" || image.Size < 1 || image.Size > 4<<20 || image.Width < 1 || image.Height < 1 || image.Width > 4096 || image.Height > 4096 || int64(image.Width)*int64(image.Height) > 12_000_000 || image.DataURL != "" {
+		if !storage.ValidID(image.ID) || seen[image.ID] || image.MIMEType != "image/png" && image.MIMEType != "image/jpeg" || image.Size < 1 || image.Size > 4<<20 || image.Width < 1 || image.Height < 1 || image.Width > 4096 || image.Height > 4096 || int64(image.Width)*int64(image.Height) > 12_000_000 || image.SHA256 != "" && !media.ValidSHA256(image.SHA256) || image.DataURL != "" {
 			return false
 		}
 		seen[image.ID] = true
@@ -36,10 +36,21 @@ func optionsDigest(content, mode, model, thinking string, images []media.Image) 
 	if model == "" && thinking == "" && len(images) == 0 {
 		return digest(content, mode)
 	}
+	type imageIdentity struct {
+		ID       string `json:"id"`
+		MIMEType string `json:"mime_type"`
+		Size     int    `json:"size"`
+		Width    int    `json:"width"`
+		Height   int    `json:"height"`
+	}
+	identities := make([]imageIdentity, 0, len(images))
+	for _, image := range images {
+		identities = append(identities, imageIdentity{image.ID, image.MIMEType, image.Size, image.Width, image.Height})
+	}
 	value, _ := json.Marshal(struct {
 		Content, Mode, Model, Thinking string
-		Images                         []media.Image
-	}{content, mode, model, thinking, images})
+		Images                         []imageIdentity
+	}{content, mode, model, thinking, identities})
 	hash := sha256.Sum256(value)
 	return hex.EncodeToString(hash[:])
 }

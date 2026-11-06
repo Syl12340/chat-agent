@@ -29,6 +29,7 @@ type Tool struct {
 	Available   func(context.Context, StepContext) (bool, error)           `json:"-"`
 	Validate    func(json.RawMessage) error                                `json:"-"`
 	Guard       ToolGuard                                                  `json:"-"`
+	Receipt     ReceiptCapability                                          `json:"-"`
 	Execute     func(context.Context, json.RawMessage) (ToolResult, error) `json:"-"`
 }
 
@@ -63,7 +64,10 @@ func NewToolRegistry(definitions []Tool) (*ToolRegistry, error) {
 	r := &ToolRegistry{}
 	names := map[string]bool{}
 	for _, tool := range definitions {
-		if tool.Name == "" || tool.Execute == nil || tool.Timeout < 0 || names[tool.Name] {
+		if tool.Receipt == "" {
+			tool.Receipt = ReceiptNone
+		}
+		if tool.Name == "" || tool.Execute == nil || tool.Timeout < 0 || names[tool.Name] || tool.Receipt != ReceiptNone && tool.Receipt != ReceiptAtomic {
 			return nil, errors.New("invalid or duplicate tool definition")
 		}
 		schema, err := parseParameterSchema(tool.Parameters)

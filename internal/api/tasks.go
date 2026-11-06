@@ -162,7 +162,7 @@ func (s *Server) taskTools(role, sessionID string) []probe.Tool {
 			status = "canceled"
 			addSchema = `{"type":"object","properties":{"title":{"type":"string"},"due_at":{"type":"string","description":"RFC3339 timestamp with an explicit time-zone offset; use the configured user timezone."}},"required":["title","due_at"],"additionalProperties":false}`
 		}
-		out = append(out, probe.Tool{Name: addName, Usage: "create only the requested item; reminder timestamps require an explicit timezone offset and deliver to the inbox.", Order: 710, Description: "Create a role-scoped " + kind + " only when the user asks. Reminders are one-shot inbox items, not closed-app push notifications. Identical active items are deduplicated.", Parameters: json.RawMessage(addSchema), Execute: func(ctx context.Context, data json.RawMessage) (probe.ToolResult, error) {
+		out = append(out, probe.Tool{Name: addName, Usage: "create only the requested item; reminder timestamps require an explicit timezone offset and deliver to the inbox.", Order: 710, Receipt: probe.ReceiptAtomic, Description: "Create a role-scoped " + kind + " only when the user asks. Reminders are one-shot inbox items, not closed-app push notifications. Identical active items are deduplicated.", Parameters: json.RawMessage(addSchema), Execute: func(ctx context.Context, data json.RawMessage) (probe.ToolResult, error) {
 			if err := ctx.Err(); err != nil {
 				return probe.ToolResult{}, err
 			}
@@ -175,6 +175,26 @@ func (s *Server) taskTools(role, sessionID string) []probe.Tool {
 			}
 			if err := toolInput(data, &args); err != nil {
 				return probe.ToolResult{}, err
+			}
+			operationID := probe.ToolOperationID(ctx)
+			if operationID != "" {
+				digest := sha256.Sum256(data)
+				item, receipt, replayed, err := s.tasks.AddWithReceipt(role, kind, args.Title, operationID, hex.EncodeToString(digest[:]), addName, "agent", sessionID, args.DueAt, time.Now())
+				if err != nil {
+					return probe.ToolResult{}, errors.New("任务创建失败，请检查标题或带时区的提醒时间")
+				}
+				var current *tasks.Item
+				if item.ID != "" {
+					current = &item
+				}
+				result, encodeErr := encoded(struct {
+					Committed bool          `json:"committed"`
+					Replayed  bool          `json:"replayed"`
+					Item      *tasks.Item   `json:"item,omitempty"`
+					Receipt   tasks.Receipt `json:"receipt"`
+				}{true, replayed, current, receipt})
+				result.Receipt = &probe.BusinessReceipt{Store: "tasks", RoleID: receipt.RoleID, OperationID: receipt.OperationID, ArgumentsSHA256: receipt.ArgumentsSHA256, EntityIDs: append([]string(nil), receipt.EntityIDs...), ResultingRevisions: append([]int(nil), receipt.ResultingRevisions...), OutcomeDigest: receipt.OutcomeDigest}
+				return result, encodeErr
 			}
 			item, err := s.tasks.Add(role, kind, args.Title, key(ctx), "agent", sessionID, args.DueAt, time.Now())
 			if err != nil {

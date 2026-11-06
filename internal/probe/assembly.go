@@ -8,12 +8,12 @@ import (
 
 // StepContext is trusted host state, never decoded from model arguments.
 type StepContext struct {
-	RoleID        string
-	SessionID     string
-	Number        int
-	ResponsesLeft int
-	CallsLeft     int
-	ToolsAllowed  bool
+	RoleID        string `json:"role_id"`
+	SessionID     string `json:"session_id"`
+	Number        int    `json:"number"`
+	ResponsesLeft int    `json:"responses_left"`
+	CallsLeft     int    `json:"calls_left"`
+	ToolsAllowed  bool   `json:"tools_allowed"`
 }
 
 // StepState refreshes dynamic reference and the effective-history boundary.
@@ -24,10 +24,11 @@ type StepState struct {
 }
 
 type PromptAssembly struct {
-	System   string
-	Messages []Message
-	Tools    *ToolSet
-	Step     StepContext
+	System       string
+	Messages     []Message
+	Tools        *ToolSet
+	Step         StepContext
+	HistoryFloor int
 }
 
 // RuntimeContextPrefix identifies the ephemeral host message on transports
@@ -100,7 +101,7 @@ func (a *Agent) assemble(ctx context.Context, step StepContext) (PromptAssembly,
 	if err := ctx.Err(); err != nil {
 		return PromptAssembly{}, err
 	}
-	return PromptAssembly{System: system, Messages: messages, Tools: set, Step: step}, nil
+	return PromptAssembly{System: system, Messages: messages, Tools: set, Step: step, HistoryFloor: state.HistoryFloor}, nil
 }
 
 func referenceValue(text string) []byte {

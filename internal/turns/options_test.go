@@ -3,6 +3,7 @@ package turns
 import (
 	"errors"
 	"pocket-agent/internal/media"
+	"strings"
 	"testing"
 )
 
@@ -22,6 +23,11 @@ func TestMultimodalQueueLifecycle(t *testing.T) {
 	}
 	if _, duplicate, err := s.EnqueueWithOptions("session", "first", "", "auto", "ecnu-max", "high", []media.Image{image}); err != nil || !duplicate {
 		t.Fatal("same options not idempotent")
+	}
+	withHash := image
+	withHash.SHA256 = strings.Repeat("a", 64)
+	if _, duplicate, err := s.EnqueueWithOptions("session", "first", "", "auto", "ecnu-max", "high", []media.Image{withHash}); err != nil || !duplicate {
+		t.Fatal("adding an immutable image hash broke an old request identity")
 	}
 	if _, _, err = s.EnqueueWithOptions("session", "second", "next", "auto", "ecnu-plus", "high", nil); err != nil {
 		t.Fatal(err)

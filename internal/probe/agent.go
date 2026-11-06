@@ -36,6 +36,8 @@ type Config struct {
 	HistoryFloor                            int
 	Thinking, ReasoningEffort               string
 	ResolveImage                            func(context.Context, media.Image) (string, error)
+	RequestID                               string
+	Recorder                                RunRecorder
 }
 
 func DefaultConfig() Config {
@@ -58,7 +60,7 @@ type ToolCall struct {
 }
 type Message struct {
 	// Source is host-only provenance for ephemeral request context.
-	Source           string        `json:"-"`
+	Source           string        `json:"source,omitempty"`
 	Role             string        `json:"role"`
 	Content          string        `json:"content"`
 	ToolCalls        []ToolCall    `json:"tool_calls,omitempty"`
@@ -81,13 +83,14 @@ const (
 )
 
 type ToolResult struct {
-	Output     string          `json:"output"`
-	Error      string          `json:"error,omitempty"`
-	Value      json.RawMessage `json:"value,omitempty"`
-	Code       string          `json:"code,omitempty"`
-	CallID     string          `json:"call_id,omitempty"`
-	DurationMS int64           `json:"duration_ms,omitempty"`
-	Truncated  bool            `json:"truncated,omitempty"`
+	Output     string           `json:"output"`
+	Error      string           `json:"error,omitempty"`
+	Value      json.RawMessage  `json:"value,omitempty"`
+	Code       string           `json:"code,omitempty"`
+	CallID     string           `json:"call_id,omitempty"`
+	DurationMS int64            `json:"duration_ms,omitempty"`
+	Truncated  bool             `json:"truncated,omitempty"`
+	Receipt    *BusinessReceipt `json:"receipt,omitempty"`
 }
 type Event struct {
 	Type     EventType
@@ -206,6 +209,27 @@ func RunMessages(ctx context.Context, a *Agent, timeout time.Duration, inputs []
 			send(Event{Type: EventDone})
 		}
 	}()
+	if a.config.Recorder != nil {
+		if err := a.config.Recorder.AttemptStarted(ctx, AttemptRecord{SessionID: a.config.SessionID, RoleID: a.config.RoleID, RequestID: a.config.RequestID, HistoryFrom: len(a.session.Messages()), Inputs: cloneMessages(inputs), MaxTurns: a.config.MaxTurns, MaxTools: a.config.MaxToolCalls}); err != nil {
+			return recordingError("attempt start", err)
+		}
+		defer func() {
+			status, reason := "completed", "final_response"
+			if runErr != nil {
+				status, reason = "failed", "runtime_error"
+			}
+			if ctx.Err() != nil || errors.Is(runErr, context.Canceled) || errors.Is(runErr, context.DeadlineExceeded) {
+				status, reason = "canceled", "context_canceled"
+			}
+			finish := AttemptFinish{Status: status, StopReason: reason}
+			if runErr != nil {
+				finish.Error = runErr.Error()
+			}
+			if err := a.config.Recorder.AttemptFinished(context.WithoutCancel(ctx), finish); err != nil {
+				runErr = errors.Join(runErr, recordingError("attempt finish", err))
+			}
+		}()
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -244,7 +268,7 @@ func RunMessages(ctx context.Context, a *Agent, timeout time.Duration, inputs []
 		if err != nil {
 			return err
 		}
-		response, err := a.stream(ctx, assembly, send)
+		response, err := a.stream(ctx, turn, assembly, send)
 		if err != nil {
 			return err
 		}
@@ -284,7 +308,13 @@ func RunMessages(ctx context.Context, a *Agent, timeout time.Duration, inputs []
 				result = normalizeToolResult(toolFailure("TOOL_LIMIT", "tool invocation limit reached"))
 			} else {
 				calls++
-				result = a.executor.Execute(ctx, assembly.Tools, call)
+				var recordErr error
+				result, recordErr = a.executor.Execute(ctx, assembly.Tools, call, a.config.Recorder, turn)
+				if recordErr != nil {
+					results = append(results, result)
+					send(Event{Type: EventToolResult, ToolCall: &call, Result: &result})
+					return recordErr
+				}
 			}
 			results = append(results, result)
 			batch = append(batch, Message{Role: "tool", Content: result.modelContent(), ToolCallID: call.ID})

@@ -121,7 +121,7 @@ func (s *Server) imageResolver(role, session string) func(context.Context, media
 		if err != nil {
 			return "", fmt.Errorf("会话图片已不可用，未重试模型请求")
 		}
-		if image.MIMEType != reference.MIMEType || image.Size != reference.Size || image.Width != reference.Width || image.Height != reference.Height {
+		if image.MIMEType != reference.MIMEType || image.Size != reference.Size || image.Width != reference.Width || image.Height != reference.Height || reference.SHA256 != "" && image.SHA256 != reference.SHA256 {
 			return "", errors.New("图片引用与已保存内容不一致")
 		}
 		return "data:" + image.MIMEType + ";base64," + base64.StdEncoding.EncodeToString(data), nil
@@ -144,7 +144,7 @@ func sameImages(a, b []media.Image) bool {
 		return false
 	}
 	for i := range a {
-		if a[i] != b[i] {
+		if a[i].ID != b[i].ID || a[i].MIMEType != b[i].MIMEType || a[i].Size != b[i].Size || a[i].Width != b[i].Width || a[i].Height != b[i].Height {
 			return false
 		}
 	}

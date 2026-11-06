@@ -4,13 +4,13 @@
 
 0.22.0 将上下文估算与实际模型消息统一，指代式追问可延续最近可见用户主题，共同话题参考近期分享减少重复；网页改为固定工作轨道、克制的对话阅读列、聚焦输入区和稳定右侧工作台。生产配置仍使用 `ecnu-max`，本地搜索、设备白名单、加密 9992 入口和 Android 0.21.2 更新通道保持不变。
 
-0.19 引入的最多三张 JPEG/PNG 图片消息、ECNU Max/Plus 选择、关闭/中/高/超高思考强度，以及聊天阅读与输入界面继续保留，后台接收等 0.18 功能也保留。0.19 的八项关键流程、构建、隔离浏览器和线上只读检查已通过；0.21.2 的检查与浏览器/真机缺口以本次发布记录为准。新数据按需写 transcript v2、turns v2/v3（思考进度），旧二进制不能直接降级；Harness 3B/3C 仍未实施。[功能与格式说明](docs/chat-0.19.md)、[Harness 规划](docs/dsh-harness-migration-plan.md)。
+0.19 引入的最多三张 JPEG/PNG 图片消息、ECNU Max/Plus 选择、关闭/中/高/超高思考强度，以及聊天阅读与输入界面继续保留，后台接收等 0.18 功能也保留。新数据按需写 transcript v2、turns v2/v3（思考进度），旧二进制不能直接降级。Harness 3B 的隔离 `RunRecorder`、请求快照和 task create 原子回执已在源码完成，但没有接入生产 API 或切换权威格式；3C 迁移/删除/恢复仍未实施。[功能与格式说明](docs/chat-0.19.md)、[Harness 规划](docs/dsh-harness-migration-plan.md)。
 
 独立实现的轻量个人 AI 助手，当前具备 P0–P3 核心能力：运行时、PWA 聊天、角色/记忆、待办和提醒收件箱。Go 标准库 + 原生 HTML/CSS/JavaScript，**Go 侧零第三方模块、无前端构建步骤**，网页资源嵌入单个可执行文件。前端数学渲染唯一外部依赖为本地固定 KaTeX 0.19.1，许可随包保留。
 
 0.21 已合并交付原拟 0.20.1 参数记忆和 0.21 渲染/UI：按模型记住思考档位，Markdown 表格/嵌套列表、LaTeX/MathML、JSON 树、数据表/柱状图/流程图，以及同实例工作台和工具状态排版。普通网页与 Android 共享渲染，Android 新包通过原生存储解决随机代理端口导致的偏好丢失。[实施与边界](docs/rendering-and-ui-plan.md)。
 
-后续顺序为 **0.23/0.24 持久结算与恢复迁移**，随后优先统一主动陪伴，再按需要扩展持久 Generative UI，均为待实施建议。见[当前规划](docs/feature-plan.md)及[项目现状与架构路线](docs/architecture-roadmap-2026-11.md)。
+下一步为 **0.24 Harness 3C 恢复迁移**：显式转换旧数据、重启投影、删除联动与回退；达标后才切换生产权威。随后优先统一主动陪伴，再按需要扩展持久 Generative UI。见[0.23 实施记录](docs/release-0.23.md)、[当前规划](docs/feature-plan.md)及[项目现状与架构路线](docs/architecture-roadmap-2026-11.md)。
 
 **0.7.0 已交付**：睡前闲聊、一天复盘、共同兴趣和小目标陪伴。共同活动支持手动保存进展、跨会话继续、暂停与结束，只影响明确关联的会话。[使用说明](docs/activities-0.7.md)。原有[连续聊天、事件与关怀](docs/companion-0.6.md)、[陪伴偏好](docs/companion.md)继续保留。
 

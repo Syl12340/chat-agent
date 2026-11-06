@@ -47,7 +47,13 @@ type Image struct {
 	Size     int    `json:"size"`
 	Width    int    `json:"width"`
 	Height   int    `json:"height"`
+	SHA256   string `json:"sha256,omitempty"`
 	DataURL  string `json:"-"`
+}
+
+func ValidSHA256(value string) bool {
+	decoded, err := hex.DecodeString(value)
+	return err == nil && len(decoded) == sha256.Size
 }
 
 type metadata struct {
@@ -465,7 +471,8 @@ func (s *Store) Upload(role, session string, reader io.Reader) (Image, error) {
 	}
 	defer func() { _ = s.safeRemove(staging) }()
 	digest := sha256.Sum256(data)
-	meta, _ := json.Marshal(metadata{Version: 1, RoleID: role, SessionID: session, Image: info, SHA256: hex.EncodeToString(digest[:])})
+	info.SHA256 = hex.EncodeToString(digest[:])
+	meta, _ := json.Marshal(metadata{Version: 1, RoleID: role, SessionID: session, Image: info, SHA256: info.SHA256})
 	if err = writeFile(filepath.Join(staging, "meta.json"), meta); err != nil {
 		return Image{}, err
 	}
@@ -516,13 +523,14 @@ func (s *Store) get(role, session, id string) (Image, []byte, error) {
 		return Image{}, nil, err
 	}
 	digest := sha256.Sum256(data)
-	if len(data) != value.Image.Size || value.SHA256 != hex.EncodeToString(digest[:]) {
+	if len(data) != value.Image.Size || value.SHA256 != hex.EncodeToString(digest[:]) || value.Image.SHA256 != "" && value.Image.SHA256 != value.SHA256 {
 		return Image{}, nil, ErrInvalid
 	}
 	config, format, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil || format != "png" && format != "jpeg" || value.Image.MIMEType != "image/"+format || config.Width != value.Image.Width || config.Height != value.Image.Height {
 		return Image{}, nil, ErrInvalid
 	}
+	value.Image.SHA256 = value.SHA256
 	return value.Image, data, nil
 }
 

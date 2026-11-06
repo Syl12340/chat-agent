@@ -4,6 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,13 +21,16 @@ import (
 // ModelRequest is a prepared step snapshot. No credentials or execution
 // callbacks cross this seam. Providers must not mutate or retry the request.
 type ModelRequest struct {
-	Model                     string
-	System                    string
-	Messages                  []Message
-	Tools                     []ToolSchema
-	MaxOutputTokens           int
-	TokenParameter            string
-	Thinking, ReasoningEffort string
+	Model           string       `json:"model"`
+	System          string       `json:"system"`
+	Messages        []Message    `json:"messages"`
+	Tools           []ToolSchema `json:"tools,omitempty"`
+	MaxOutputTokens int          `json:"max_output_tokens"`
+	TokenParameter  string       `json:"token_parameter"`
+	Thinking        string       `json:"thinking,omitempty"`
+	ReasoningEffort string       `json:"reasoning_effort,omitempty"`
+	HistoryFloor    int          `json:"history_floor"`
+	HostStep        StepContext  `json:"host_step"`
 }
 
 type ModelProvider interface {
@@ -38,8 +44,8 @@ type ChatCompletionsProvider struct {
 	client   *http.Client
 }
 
-func (a *Agent) stream(ctx context.Context, assembly PromptAssembly, emit func(Event)) (Message, error) {
-	if a.config.Demo {
+func (a *Agent) stream(ctx context.Context, step int, assembly PromptAssembly, emit func(Event)) (Message, error) {
+	if a.config.Demo && a.config.Recorder == nil {
 		return a.demoStream(ctx, assembly.Tools, emit)
 	}
 	messages := cloneMessages(assembly.Messages)
@@ -62,11 +68,57 @@ func (a *Agent) stream(ctx context.Context, assembly PromptAssembly, emit func(E
 				return Message{}, errors.New("image attachment is unavailable")
 			}
 			messages[i].Images[j].DataURL = url
+			if messages[i].Images[j].SHA256 == "" {
+				comma := strings.IndexByte(url, ',')
+				if comma < 0 {
+					return Message{}, errors.New("image attachment is unavailable")
+				}
+				data, decodeErr := base64.StdEncoding.DecodeString(url[comma+1:])
+				if decodeErr != nil {
+					return Message{}, errors.New("image attachment is unavailable")
+				}
+				digest := sha256.Sum256(data)
+				messages[i].Images[j].SHA256 = hex.EncodeToString(digest[:])
+			}
 		}
 	}
-	return a.provider.Stream(ctx, ModelRequest{Model: a.config.Model, System: assembly.System,
+	request := ModelRequest{Model: a.config.Model, System: assembly.System,
 		Messages: modelVisibleMessages(messages), Tools: assembly.Tools.Schemas(), Thinking: a.config.Thinking, ReasoningEffort: a.config.ReasoningEffort,
-		MaxOutputTokens: a.config.MaxOutputTokens, TokenParameter: a.config.TokenParameter}, emit)
+		MaxOutputTokens: a.config.MaxOutputTokens, TokenParameter: a.config.TokenParameter, HistoryFloor: assembly.HistoryFloor, HostStep: assembly.Step}
+	if a.config.Recorder != nil {
+		if err := a.config.Recorder.ModelRequested(ctx, step, request); err != nil {
+			return Message{}, recordingError("model request", err)
+		}
+	}
+	var response Message
+	var runErr error
+	recordingEmit := emit
+	var partialText, partialReasoning strings.Builder
+	if a.config.Recorder != nil {
+		recordingEmit = func(event Event) {
+			if event.Type == EventTextDelta {
+				partialText.WriteString(event.Text)
+			} else if event.Type == EventReasoningDelta {
+				partialReasoning.WriteString(event.Text)
+			}
+			emit(event)
+		}
+	}
+	if a.config.Demo {
+		response, runErr = a.demoStream(ctx, assembly.Tools, recordingEmit)
+	} else {
+		response, runErr = a.provider.Stream(ctx, request, recordingEmit)
+	}
+	if a.config.Recorder != nil {
+		recorded := response
+		if runErr != nil {
+			recorded = Message{Role: "assistant", Content: partialText.String(), ReasoningContent: partialReasoning.String()}
+		}
+		if err := a.config.Recorder.ModelFinished(context.WithoutCancel(ctx), step, recorded, runErr); err != nil {
+			runErr = errors.Join(runErr, recordingError("model finish", err))
+		}
+	}
+	return response, runErr
 }
 
 func cloneMessages(messages []Message) []Message {

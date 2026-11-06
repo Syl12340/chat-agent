@@ -37,7 +37,7 @@ func TestImageLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if one.MIMEType != "image/png" || two.MIMEType != "image/jpeg" || one.Width != 8 || one.Height != 6 || one.ID == two.ID {
+	if one.MIMEType != "image/png" || two.MIMEType != "image/jpeg" || one.Width != 8 || one.Height != 6 || one.ID == two.ID || !ValidSHA256(one.SHA256) || !ValidSHA256(two.SHA256) {
 		t.Fatalf("invalid metadata: %+v %+v", one, two)
 	}
 	read, data, err := s.Get("companion", "session-one", one.ID)
