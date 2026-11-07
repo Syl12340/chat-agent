@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -17,6 +18,7 @@ import (
 
 	"pocket-agent/internal/api"
 	"pocket-agent/internal/probe"
+	"pocket-agent/internal/runlog"
 	"pocket-agent/internal/securewire"
 	"pocket-agent/internal/semantic"
 	"pocket-agent/internal/webtools"
@@ -66,6 +68,8 @@ func run() error {
 	rolesDir := flag.String("roles", "", "role workspace directory (default <data>/roles)")
 	timeZone := flag.String("timezone", "Asia/Shanghai", "user timezone for reminder interpretation")
 	webEnabled := flag.Bool("enable-web", false, "enable explicitly configured HTTPS web tools")
+	migrateRuntime := flag.Bool("migrate-runtime", false, "explicitly migrate stopped transcript/turn data to runtime v2 and exit")
+	exportRuntime := flag.String("export-runtime", "", "export runtime conversations to a new transcript-v2/turns-v3 directory and exit")
 	flag.IntVar(&c.ContextBytes, "context-bytes", c.ContextBytes, "effective history bytes before automatic compaction; 0 disables")
 	flag.IntVar(&c.KeepRecentTurns, "keep-turns", c.KeepRecentTurns, "recent user turns preserved when compacting")
 	flag.BoolVar(&c.Demo, "demo", false, "explicit local demo without a model API")
@@ -75,17 +79,43 @@ func run() error {
 	flag.IntVar(&c.MaxOutputTokens, "max-output", c.MaxOutputTokens, "output tokens per generation; 0 omits the limit (provider default)")
 	flag.StringVar(&c.TokenParameter, "token-parameter", c.TokenParameter, "max_tokens or max_completion_tokens")
 	flag.Parse()
-	if *listen == "" && *wireListen == "" {
-		return errors.New("at least one HTTP or encrypted TCP listener is required")
-	}
-	if (*wireListen == "") != (*wireKey == "") {
-		return errors.New("wire-listen and wire-key must be configured together")
-	}
 	if *data == "" {
 		*data = "data/sessions"
 		if c.Demo {
 			*data = "data/demo-sessions"
 		}
+	}
+	if *migrateRuntime && *exportRuntime != "" {
+		return errors.New("migrate-runtime and export-runtime are mutually exclusive")
+	}
+	if *migrateRuntime || *exportRuntime != "" {
+		registry, err := runlog.OpenRegistry(filepath.Join(*data, "runtime"))
+		if err != nil {
+			return err
+		}
+		if *migrateRuntime {
+			report, migrateErr := registry.MigrateLegacy(*data)
+			ownershipErr := registry.AdoptParentOwnership()
+			closeErr := registry.Close()
+			if err = errors.Join(migrateErr, ownershipErr, closeErr); err != nil {
+				return err
+			}
+			fmt.Printf("chat-agent: runtime migration complete (migrated=%d resumed=%d skipped=%d)\n", report.Migrated, report.Resumed, report.Skipped)
+			return nil
+		}
+		exportErr := registry.ExportLegacy(*data, *exportRuntime)
+		closeErr := registry.Close()
+		if err = errors.Join(exportErr, closeErr); err != nil {
+			return err
+		}
+		fmt.Printf("chat-agent: runtime compatibility export complete (%s)\n", *exportRuntime)
+		return nil
+	}
+	if *listen == "" && *wireListen == "" {
+		return errors.New("at least one HTTP or encrypted TCP listener is required")
+	}
+	if (*wireListen == "") != (*wireKey == "") {
+		return errors.New("wire-listen and wire-key must be configured together")
 	}
 	c.BaseURL, c.APIKey, c.Model = os.Getenv("POCKET_BASE_URL"), os.Getenv("POCKET_API_KEY"), os.Getenv("POCKET_MODEL")
 	c.UtilityModel = utilityModel(c.Model)

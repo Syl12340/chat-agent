@@ -1,6 +1,6 @@
-// Package runlog implements the isolated Harness phase-3B execution journal.
-// It is not an online replacement for the transcript or turns ledger; phase 3C
-// owns migration, projection, deletion and production authority switching.
+// Package runlog implements the Harness runtime journal and its phase-3C
+// manifest-selected storage registry. Transcript-era files are accepted only
+// by the explicit stopped-server migration path.
 package runlog
 
 import (
@@ -36,15 +36,6 @@ type Scope struct {
 	SessionID string
 	RoleID    string
 	RequestID string
-}
-
-type manifest struct {
-	Version          int       `json:"version"`
-	Contract         string    `json:"contract"`
-	SessionID        string    `json:"session_id"`
-	RoleID           string    `json:"role_id"`
-	ActiveGeneration int       `json:"active_generation"`
-	CreatedAt        time.Time `json:"created_at"`
 }
 
 type Reference struct {
@@ -122,10 +113,10 @@ func Open(root string, scope Scope) (*Recorder, error) {
 		return nil, err
 	}
 	manifestPath := filepath.Join(dir, "manifest.json")
-	var m manifest
+	var m Manifest
 	data, err := os.ReadFile(manifestPath)
 	if errors.Is(err, os.ErrNotExist) {
-		m = manifest{Version: Version, Contract: Contract, SessionID: scope.SessionID, RoleID: scope.RoleID, ActiveGeneration: 1, CreatedAt: time.Now().UTC()}
+		m = Manifest{Version: Version, Contract: Contract, SessionID: scope.SessionID, RoleID: scope.RoleID, Generation: 1, ImportedFrom: "isolated-3b"}
 		encoded, encodeErr := json.MarshalIndent(m, "", "  ")
 		if encodeErr != nil {
 			return nil, encodeErr
@@ -135,10 +126,10 @@ func Open(root string, scope Scope) (*Recorder, error) {
 		}
 	} else if err != nil {
 		return nil, err
-	} else if len(data) > 64<<10 || decodeStrict(data, &m) != nil || m.Version != Version || m.Contract != Contract || m.SessionID != scope.SessionID || m.RoleID != scope.RoleID || m.ActiveGeneration != 1 || m.CreatedAt.IsZero() {
+	} else if len(data) > 64<<10 || decodeStrict(data, &m) != nil || m.Version != Version || m.Contract != Contract || m.SessionID != scope.SessionID || m.RoleID != scope.RoleID || m.Generation < 1 || m.ImportedFrom == "" {
 		return nil, errors.New("invalid runlog manifest")
 	}
-	generation := filepath.Join(dir, "g-1")
+	generation := filepath.Join(dir, generationName(m.Generation))
 	for _, name := range []string{generation, filepath.Join(generation, "snapshots"), filepath.Join(generation, "payloads")} {
 		if err := os.MkdirAll(name, 0700); err != nil {
 			return nil, err
@@ -161,7 +152,7 @@ func Open(root string, scope Scope) (*Recorder, error) {
 			_ = os.Remove(lockPath)
 		}
 	}()
-	used, err := directorySize(dir)
+	used, err := directorySize(generation)
 	if err != nil || used > MaxGenerationSize {
 		if err == nil {
 			err = errors.New("runlog session capacity exceeded")
@@ -622,7 +613,15 @@ func ReadEvents(root, sessionID string) ([]Event, error) {
 	if !storage.ValidID(sessionID) {
 		return nil, errors.New("invalid session id")
 	}
-	path := filepath.Join(root, sessionID, "g-1", "events.jsonl")
+	manifestData, err := os.ReadFile(filepath.Join(root, sessionID, "manifest.json"))
+	if err != nil {
+		return nil, err
+	}
+	var manifest Manifest
+	if len(manifestData) > 64<<10 || decodeStrict(manifestData, &manifest) != nil || manifest.Version != Version || manifest.Contract != Contract || manifest.SessionID != sessionID || manifest.Generation < 1 || manifest.ImportedFrom == "" {
+		return nil, errors.New("invalid runlog manifest")
+	}
+	path := filepath.Join(root, sessionID, generationName(manifest.Generation), "events.jsonl")
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err

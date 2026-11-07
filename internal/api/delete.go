@@ -1,11 +1,9 @@
 package api
 
 import (
-	"errors"
 	"net/http"
 
 	"pocket-agent/internal/probe"
-	"pocket-agent/internal/turns"
 )
 
 // deleteSession removes a conversation and everything the server keeps for it:
@@ -35,16 +33,22 @@ func (s *Server) deleteSession(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if err := probe.DeleteSession(s.config.DataDir, probe.AgentID, id); err != nil {
-		fail(w, 500, "无法删除会话记录")
-		return
-	}
-	if err := s.turns.Delete(id); err != nil {
-		fail(w, 500, "会话已删除，但待处理记录未能清理")
+	deleteID, err := s.runtime.BeginSessionDeletion(id)
+	if err != nil {
+		fail(w, 503, "无法登记会话删除，请稍后重试")
 		return
 	}
 	if err := s.images.DeleteSession(id); err != nil {
-		fail(w, 500, "会话已删除，但图片未能完全清理，请再次删除以重试清理")
+		writeJSON(w, 503, map[string]any{"error": "删除已登记，但图片尚未完全清理；请再次删除以继续", "delete_id": deleteID})
+		return
+	}
+	s.turns.Forget(id)
+	if err := s.runtime.RemoveSessionData(s.config.DataDir, id); err != nil {
+		writeJSON(w, 503, map[string]any{"error": "删除已登记，但会话文件尚未完全清理；请再次删除以继续", "delete_id": deleteID})
+		return
+	}
+	if err := s.runtime.CompleteDeletion(deleteID); err != nil {
+		writeJSON(w, 503, map[string]any{"error": "会话内容已清理，但删除登记尚未结算；请再次删除以继续", "delete_id": deleteID})
 		return
 	}
 	writeJSON(w, 200, map[string]bool{"ok": true})
@@ -81,20 +85,33 @@ func (s *Server) purgeTurn(w http.ResponseWriter, r *http.Request, sess *probe.S
 			removedImages[image.ID] = true
 		}
 	}
-	dropped, err := sess.DropTail(total - turn.StartIndex)
+	s.mu.Lock()
+	delete(s.sessions, id)
+	s.mu.Unlock()
+	if err := sess.Close(); err != nil {
+		fail(w, 503, "无法关闭会话以执行删除")
+		return
+	}
+	s.turns.Forget(id)
+	removedRequests, deleteID, err := s.runtime.RewriteLatestTurn(id, rid, turn.StartIndex)
 	if err != nil {
-		if errors.Is(err, probe.ErrSessionBusy) {
-			fail(w, 409, "会话正在生成，请先停止")
-			return
-		}
-		fail(w, 503, "无法删除这条记录")
+		writeJSON(w, 503, map[string]any{"error": "删除已登记，但新存储代尚未完成；需要显式维护后重试", "delete_id": deleteID})
 		return
 	}
-	if err := s.turns.RemoveBatch(id, rid); err != nil && !errors.Is(err, turns.ErrNotFound) {
-		fail(w, 500, "聊天记录已删除，但队列记录未能清理")
+	historyPath, err := s.runtime.HistoryPath(id)
+	if err != nil {
+		fail(w, 503, "记录已删除，但新存储代暂时不可读")
 		return
 	}
-	keep, err := s.referencedImages(sess, id)
+	newSession, err := probe.OpenRuntimeSession(historyPath)
+	if err != nil {
+		fail(w, 503, "记录已删除，但会话暂时无法重开")
+		return
+	}
+	s.mu.Lock()
+	s.sessions[id] = newSession
+	s.mu.Unlock()
+	keep, err := s.referencedImages(newSession, id)
 	if err != nil {
 		fail(w, 500, "聊天记录已删除，但无法核对图片引用")
 		return
@@ -103,11 +120,11 @@ func (s *Server) purgeTurn(w http.ResponseWriter, r *http.Request, sess *probe.S
 	// references, after checking the complete retained journal and queue.
 	for imageID := range removedImages {
 		if !keep[imageID] {
-			if err = s.images.Delete(sess.RoleID(), id, imageID); err != nil {
+			if err = s.images.Delete(newSession.RoleID(), id, imageID); err != nil {
 				fail(w, 500, "聊天记录已删除，但图片清理未完成")
 				return
 			}
 		}
 	}
-	writeJSON(w, 200, map[string]int{"removed_messages": dropped})
+	writeJSON(w, 200, map[string]any{"removed_messages": total - turn.StartIndex, "removed_request_ids": removedRequests})
 }

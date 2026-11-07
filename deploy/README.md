@@ -1,22 +1,24 @@
 # 单机部署（SSH 隧道）
 
-当前发布（2026-11-06）：服务端 **0.22.0** 为 `20261106-continuity-ui-01`；Android 仍为 **0.21.2-debug / versionCode 20**（`android-20261106-02`）。陪伴接续、模型消息投影与网页 UI 已上线；一致性备份 `pre-continuity-ui-20261106-01.tar.gz`、线上版本/鉴权/旧会话/静态资源/监听和 Android 清单均通过零模型检查。见[发布记录](../docs/release-0.22.md)。
+当前发布（2026-11-07）：服务端 **0.24.0** 为 `20261107-runtime-v2-01`；Android 仍为 **0.21.2-debug / versionCode 20**（`android-20261106-02`）。Harness 3B/3C 的运行结算、显式迁移、恢复与删除防复活已上线；停机备份 `pre-runtime-v2-20261107-01.tar.gz`、迁移后历史、鉴权、监听和 Android 更新清单均通过零模型检查。见[发布记录](../docs/release-0.24.md)。
 
-当前发布（2026-11-06）：服务端 **0.21.2** 为 `20261106-cot-01`，Android **0.21.2-debug / versionCode 20** 为 `android-20261106-02`。思考正文显示、默认省略输出 token 上限已上线；正常停机备份 `pre-cot-20261106-01.tar.gz`、健康/原会话可读、完整 APK 哈希通过，零模型检查调用。思考进度按需写 turns v3，出现新数据后不可直接切回旧二进制。见[发布与回退边界](../docs/release-0.21.2.md)。
+历史发布（2026-11-06）：服务端 **0.22.0** 为 `20261106-continuity-ui-01`；Android 仍为 **0.21.2-debug / versionCode 20**（`android-20261106-02`）。陪伴接续、模型消息投影与网页 UI 已上线；一致性备份 `pre-continuity-ui-20261106-01.tar.gz`、线上版本/鉴权/旧会话/静态资源/监听和 Android 清单均通过零模型检查。见[发布记录](../docs/release-0.22.md)。
 
-当前发布（2026-11-06）：服务端 **0.21.1** 为 `20261106-reply-01`，Android **0.21.1-debug / versionCode 19** 为 `android-20261106-01`。备份 `pre-reply-20261106-01.tar.gz` 保留；新恢复入口、明确错误类别、线上健康/资源/旧会话及完整 APK 哈希通过。线上独立临时会话已完成超高思考回复并删除，原用户问题没有重发。见[排障记录](../docs/release-0.21.1.md)。
+历史发布（2026-11-06）：服务端 **0.21.2** 为 `20261106-cot-01`，Android **0.21.2-debug / versionCode 20** 为 `android-20261106-02`。思考正文显示、默认省略输出 token 上限已上线；正常停机备份 `pre-cot-20261106-01.tar.gz`、健康/原会话可读、完整 APK 哈希通过，零模型检查调用。思考进度按需写 turns v3，出现新数据后不可直接切回旧二进制。见[发布与回退边界](../docs/release-0.21.2.md)。
 
-当前发布（2026-11-05）：服务端 **0.21.0** 为 `20261105-rich-01`，Android **0.21.0-debug / versionCode 18** 为 `android-20261105-04`。参数记忆、Markdown/MathML/JSON 树、七类结构和 UI 优化已上线；一致性备份 `pre-rich-20261105-01.tar.gz` 保留，线上只读与完整 APK 哈希通过。见[发布记录](../docs/release-0.21.md)。
+历史发布（2026-11-06）：服务端 **0.21.1** 为 `20261106-reply-01`，Android **0.21.1-debug / versionCode 19** 为 `android-20261106-01`。备份 `pre-reply-20261106-01.tar.gz` 保留；新恢复入口、明确错误类别、线上健康/资源/旧会话及完整 APK 哈希通过。线上独立临时会话已完成超高思考回复并删除，原用户问题没有重发。见[排障记录](../docs/release-0.21.1.md)。
 
-当前发布（2026-11-05）：服务端 **0.20.0** 为 `20261105-ui-01`，Android **0.20.0-debug / versionCode 17** 为 `android-20261105-03`。四种互动组件与电脑网页工作台已上线；一致性备份 `pre-ui-20261105-01.tar.gz` 保留，线上只读与完整 APK 哈希通过。详见[发布记录](../docs/release-0.20.md)及[电脑端使用](../docs/desktop-web-plan.md)。下文旧版本与首次口令说明为历史记录；设备连接以当前白名单机制为准。
+历史发布（2026-11-05）：服务端 **0.21.0** 为 `20261105-rich-01`，Android **0.21.0-debug / versionCode 18** 为 `android-20261105-04`。参数记忆、Markdown/MathML/JSON 树、七类结构和 UI 优化已上线；一致性备份 `pre-rich-20261105-01.tar.gz` 保留，线上只读与完整 APK 哈希通过。见[发布记录](../docs/release-0.21.md)。
 
-当前发布（2026-11-05）：服务端 **0.19.0** 为 `20261105-chat-01`，Android **0.19.0-debug / versionCode 16** 为 `android-20261105-02`。一致性备份 `pre-chat-20261105-01.tar.gz` 和旧版本保留，线上只读检查及 APK 下载哈希通过。注意新 transcript/turns v2 不能直接切回 0.18，见[发布与回退边界](../docs/release-0.19.md)。以下为历史记录与通用部署操作。
+历史发布（2026-11-05）：服务端 **0.20.0** 为 `20261105-ui-01`，Android **0.20.0-debug / versionCode 17** 为 `android-20261105-03`。四种互动组件与电脑网页工作台已上线；一致性备份 `pre-ui-20261105-01.tar.gz` 保留，线上只读与完整 APK 哈希通过。详见[发布记录](../docs/release-0.20.md)及[电脑端使用](../docs/desktop-web-plan.md)。下文旧版本与首次口令说明为历史记录；设备连接以当前白名单机制为准。
 
-当前发布（2026-11-05）：服务端 **0.18.0** 已切至 `20261105-companion-01`，Android 更新通道为 **0.18.0-debug / versionCode 15**（`android-20261105-01`）。一致性备份 `pre-companion-20261105-01.tar.gz` 已保留，线上只读检查及 APK 下载哈希通过。后台接收默认关闭，无配置/端口/角色文件变更，未安装手机。见[发布记录](../docs/release-0.18.md)。以下为历史发布及通用操作说明。
+历史发布（2026-11-05）：服务端 **0.19.0** 为 `20261105-chat-01`，Android **0.19.0-debug / versionCode 16** 为 `android-20261105-02`。一致性备份 `pre-chat-20261105-01.tar.gz` 和旧版本保留，线上只读检查及 APK 下载哈希通过。注意新 transcript/turns v2 不能直接切回 0.18，见[发布与回退边界](../docs/release-0.19.md)。以下为历史记录与通用部署操作。
 
-当前发布（2026-11-04）：服务端 **0.17.0** / `20261104-topics-02`；Android **versionCode 14** / `android-20261104-02`。备份 `/opt/pocket-agent/backups/pre-topics-20261104-02.tar.gz`。话题默认关闭，线上只读与 APK 下载哈希检查通过；未调用真实模型。详见[0.17 发布记录](../docs/release-0.17.md)。以下旧版本段落为历史记录。
+历史发布（2026-11-05）：服务端 **0.18.0** 已切至 `20261105-companion-01`，Android 更新通道为 **0.18.0-debug / versionCode 15**（`android-20261105-01`）。一致性备份 `pre-companion-20261105-01.tar.gz` 已保留，线上只读检查及 APK 下载哈希通过。后台接收默认关闭，无配置/端口/角色文件变更，未安装手机。见[发布记录](../docs/release-0.18.md)。以下为历史发布及通用操作说明。
 
-当前发布（2026-11-04）：服务端 **0.16.0** / `20261104-companion-01`；Android **0.16.0-debug / versionCode 13** / `android-20261104-01`。一致性备份 `/opt/pocket-agent/backups/pre-companion-20261104-01.tar.gz`。已完成线上只读检查和 APK 下载哈希检查，未调用真实模型。关怀 state.json 兼容读取 v1、后续写 v2，回退不可仅换旧二进制。详见[本次发布](../docs/release-0.16.md)。下文旧版本检查与发布段落为历史记录。
+历史发布（2026-11-04）：服务端 **0.17.0** / `20261104-topics-02`；Android **versionCode 14** / `android-20261104-02`。备份 `/opt/pocket-agent/backups/pre-topics-20261104-02.tar.gz`。话题默认关闭，线上只读与 APK 下载哈希检查通过；未调用真实模型。详见[0.17 发布记录](../docs/release-0.17.md)。以下旧版本段落为历史记录。
+
+历史发布（2026-11-04）：服务端 **0.16.0** / `20261104-companion-01`；Android **0.16.0-debug / versionCode 13** / `android-20261104-01`。一致性备份 `/opt/pocket-agent/backups/pre-companion-20261104-01.tar.gz`。已完成线上只读检查和 APK 下载哈希检查，未调用真实模型。关怀 state.json 兼容读取 v1、后续写 v2，回退不可仅换旧二进制。详见[本次发布](../docs/release-0.16.md)。下文旧版本检查与发布段落为历史记录。
 
 2026-10-27 已部署至 `root@47.117.40.74`：Ubuntu 24.04 / Linux amd64。
 
@@ -59,6 +61,16 @@ curl --fail http://127.0.0.1:9991/healthz
 systemctl restart pocket-agent
 ```
 
+从 0.22 及更早格式升级到 0.24 runtime 时，必须先停止服务并确认无进程持锁，再在原数据目录运行一次显式迁移：
+
+```sh
+systemctl stop pocket-agent
+/opt/pocket-agent/current/pocket-agent -migrate-runtime -data /var/lib/pocket-agent/sessions
+systemctl start pocket-agent
+```
+
+维护命令会把新 runtime 树的属主对齐到数据目录属主，即使用 root 执行也不会留下服务账户无法读取的文件。迁移发布后不能只切换旧二进制回退；应停机恢复迁移前的完整数据与配置备份。需要旧格式副本时使用 `-export-runtime <全新目录>`，不要覆盖生产目录。
+
 ## 接通真实模型
 
 在服务器上用编辑器修改 `/etc/pocket-agent/pocket-agent.env`，保留现有访问口令并设置：
@@ -85,15 +97,15 @@ go build -trimpath -buildvcs=false -ldflags '-s -w' -o bin/chat-agent-linux-amd6
 
 ## 验证与剩余范围
 
-本次只执行一条分两阶段的部署检查：健康检查、未认证 API 返回 401、Android 导出静态资源、真实 Linux 进程内的演示 SSE 时间工具，以及 systemd 重启后聊天历史恢复。另从本机隧道验证了鉴权后的状态接口和提醒调度状态。
+当前 Agent 版本 `20261107-runtime-v2-01`（0.24.0），Linux SHA-256：`d04d0359a0c29d6d1b5ef03b2409ca46c734b18ef03e3d54190045969f2971a0`。旧版本仍保留，但 runtime 数据不能仅靠切换旧二进制回退。升级前停机备份为 `/opt/pocket-agent/backups/pre-runtime-v2-20261107-01.tar.gz`（root-only），SHA-256 为 `8ceba7a373519c8e1257dd4daae980e985460b04b142e8f03e4a7d29d9818830`。
 
-当前 Agent 版本 `20261103-device-01`（0.15.0），Linux SHA-256：`c14c74d9b3233cc0460087c48d101fae5ee8eb3d103781150ddc1c75d2f7d2c0`；搜索服务仍为 `20261027-search-01`，程序 SHA-256：`08e3db205ab94cc828bd51da9d1f9b2fe5d2197bb2eea78c0fb76a071d2832f8`。旧版本保留以供回滚。升级前已停机备份生产会话和环境配置至 `/opt/pocket-agent/backups/pre-device-20261103-01.tar.gz`（root-only）。[本次变更说明](../docs/release-0.15.md)。
+本次零模型部署检查覆盖健康、鉴权、版本、调度与搜索开关、历史和 turns 投影、9991/9992 监听、Android 更新清单及本机隧道。迁移后 20 条消息、12 轮记录可读，running/queued 均为 0；没有向真实模型发送诊断请求。详见[0.24 发布记录](../docs/release-0.24.md)。
 
 尚未配置公网浏览器 HTTPS、自动备份、日志保留策略和生产速率限制；真实模型已完成一次最小工具循环验收，长期运行尚未验收。文件型存储需要一致性备份：安排短暂维护，正常停止服务后备份 `/var/lib/pocket-agent`，再启动服务；配置文件中的密钥应独立加密备份。不要直接将正在写入的数据当作已验证的可恢复备份。
 
 ## Android 包发布
 
-当前服务版本 `20261103-device-01`，Android 包 `0.15.0-debug`（versionCode 12，发布目录 `android-20261103-07`），支持自动登录与应用内更新。发布使用 `deploy/publish-android.ps1`，详情见[自动登录与更新发布说明](../docs/android-updates.md)。服务端 `POCKET_ANDROID_RELEASE_DIR=/opt/pocket-agent/android/current` 已配置；后续发布只切换安装包目录，无需重启服务。
+当前服务版本 `20261107-runtime-v2-01`，Android 包仍为 `0.21.2-debug`（versionCode 20，发布目录 `android-20261106-02`），支持自动登录与应用内更新。发布使用 `deploy/publish-android.ps1`，详情见[自动登录与更新发布说明](../docs/android-updates.md)。服务端 `POCKET_ANDROID_RELEASE_DIR=/opt/pocket-agent/android/current` 已配置；后续发布只切换安装包目录，无需重启服务。
 
 语音朗读在同一服务环境文件中显式设置 `POCKET_TTS_MODEL=ecnu-tts` 和 `POCKET_TTS_VOICE=xiayu`，复用服务端网关密钥；聊天模型仍为 `ecnu-max`。取消配置并重启即可关闭，不增加端口、后台推送服务或持久化音频。
 

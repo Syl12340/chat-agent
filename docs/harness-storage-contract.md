@@ -1,6 +1,6 @@
 # Harness 3A：持久运行与删除契约
 
-更新：2026-11-07，设计基线 `harness-storage/1`。当前生产 0.22 使用 transcript v1/v2、turns ledger v1/v2/v3；它们与 runtime 事件 v2 布局不同。0.23 已按第 5 节冻结容量实现隔离事件 writer、snapshot/payload 和 task create 回执，但尚未实现 3C 迁移器、恢复投影、删除或生产权威切换。总体依据见[项目现状与架构路线](architecture-roadmap-2026-11.md)。
+更新：2026-11-07，设计基线 `harness-storage/1`。0.24 已实现 3C：停机显式迁移 transcript v1/v2 与 turns v1/v2/v3、manifest 选代、API 接线、删除登记、新代重写及兼容导出；0.23 的事件 writer、snapshot/payload 和 task create 回执同时接入聊天运行。生产切换记录见 [0.24 发布](release-0.24.md)，总体依据见[项目现状与架构路线](architecture-roadmap-2026-11.md)。
 
 设计借鉴 DeepSeek Harness（MIT，固定参考 `8bd073392eef6f54e921a093b95076248eb08cbb`）对 turn/step、请求快照和持久事件的区分，Go 侧独立实现；许可见 [THIRD_PARTY_NOTICES](../THIRD_PARTY_NOTICES.md)。本契约不引入 Cordis、数据库依赖或新的模型调用。
 
@@ -8,7 +8,7 @@
 
 当前 `probe.RunMessages` 先保存真实用户输入；工具执行完毕后才保存完整 assistant/tool batch。业务写入成功后会话保存仍可能失败。`turns.Progress` 约一秒保存进度、重启将 running 改为 interrupted，但台账文本不是业务成功凭据。`Session` 严格读取 transcript v1/v2；0.21.2 在 v2 中保存完整回答的 reasoning，turns v3 另保存思考进度；末尾缺换行仍拒绝继续追加。`storage.Replace` 同目录替换且同步文件，尚不承诺目录断电持久性。
 
-因此 runtime v2 采用**每会话一份权威事件日志**；完整聊天历史与 turns 是其投影，业务结果仍以业务存储中的回执为准。请求正文放在同一代目录中的有界快照文件，不另建可独立复活会话的全局聊天日志。不能在现有 transcript JSONL 里直接加入事件字段，也不能让旧存储与新事件日志同时成为写入权威。
+0.24 将权威边界收敛为**manifest 明确选中的单个 runtime 代**。该代中的 `history.json` 与 `turns.json` 是聊天/队列的规范持久状态，`events.jsonl` 是 attempt/model/tool 的追加式运行与结算事实；业务结果仍以业务存储中的回执为准。这里修订了 3A 的“所有聊天都必须仅由事件重放”草案：当前 Go 会话与队列本来就是各自原子提交，强行双写全量事件会制造另一个不真实的跨文件事务。读取器只认同一 manifest 代，旧 transcript/turns 在切换后移除，因此没有两套在线权威。以后若改为完整 event sourcing，必须另做格式版本，不得把当前规范状态伪称为可从现有事件完整重建。
 
 ## 2. 标识与作用域
 
@@ -28,14 +28,14 @@
 
 ## 3. 权威存储及边界
 
-以下路径已由 3B 在显式隔离根实现 writer，`<data>` 只表示 3C 将来的接入位置；旧 `<data>/pocket/<session>.jsonl` 与 `<data>/turns/<session>.json` 在未迁移状态继续由 transcript v1/v2、ledger v1/v2/v3 使用，不能因版本数字相同而当成本节事件格式。
+以下路径已由 0.24 接入 `<data>/runtime`。旧 `<data>/pocket/<session>.jsonl` 与 `<data>/turns/<session>.json` 只允许停机迁移器读取；在线服务发现未登记旧会话会拒绝启动，不能因版本数字相同而当成本节事件格式。
 
 ```text
 <data>/runtime/<session>/manifest.json
 <data>/runtime/<session>/g-<generation>/events.jsonl
 <data>/runtime/<session>/g-<generation>/snapshots/<snapshot-id>.json
-<data>/runtime/<session>/g-<generation>/history.json       # 可重建投影
-<data>/runtime/<session>/g-<generation>/turns.json         # 可重建投影
+<data>/runtime/<session>/g-<generation>/history.json       # 规范聊天状态
+<data>/runtime/<session>/g-<generation>/turns.json         # 规范队列/展示状态
 <data>/runtime/format-index.json                         # 非正文 v2 会话登记
 <data>/runtime/deletions.json                            # 非正文删除登记
 ```
@@ -44,8 +44,9 @@ manifest 的严格字段为 `version:2, contract:"harness-storage/1", session_id
 
 | 数据 | 权威来源与职责 |
 | --- | --- |
-| 接收输入、合并队列、执行生命周期 | v2 events；`request.accepted` 必须包含原始输入和摘要，不能只保留 UI 台账 |
-| 完整历史、摘要、上下文 floor | 已提交的历史事件；history.json 只是缓存，不从进度文本拼历史 |
+| 接收输入、合并队列 | manifest 选中代的 `turns.json`；request ID、摘要、批次、参数、状态和完整/部分展示进度都在该规范状态中 |
+| 完整历史、摘要、上下文 floor | manifest 选中代的 `history.json`；完整消息批次才提交，仍不从 turns 进度拼历史 |
+| attempt / model / tool 执行生命周期 | 同代 v2 events 与 snapshot/payload；结算失败 fail-closed，不自动重放付费请求或 unknown 工具 |
 | 模型请求 | 已绑定的不可变 snapshot；只说明“请求是什么”，不说明服务商执行成功 |
 | 业务写入 | memory/tasks/activities/life/companion/roles 各自状态及其同事务回执；运行日志不能反过来覆盖业务结果 |
 | turns / 网页实时事件 / 推送 | 队列与展示投影；通知已发送不等于用户已读，更不等于工具提交成功 |
@@ -61,7 +62,7 @@ manifest 的严格字段为 `version:2, contract:"harness-storage/1", session_id
 {"version":2,"event_id":"e_01","event_seq":8,"session_id":"s_01","role_id":"companion","kind":"tool.started","at":"2026-11-05T01:00:00Z","turn_id":"t_01","attempt_id":"a_01","step_id":"step_1","call_id":"c_01","operation_id":"sha256-hex","payload":{"name":"activity_control","arguments":{"action":"pause","activity_id":"activity_01","revision":2},"arguments_sha256":"sha256-hex","provider_call_id":"provider_01","receipt_capability":"atomic"}}
 ```
 
-示例 ID 为便于阅读的占位值；实际摘要是 64 位十六进制，时间及 ID 必须通过读取器校验。schema 按 kind 定义：
+示例 ID 为便于阅读的占位值；实际摘要是 64 位十六进制，时间及 ID 必须通过读取器校验。0.23/0.24 已落地 `attempt.*`、`model.*`、`tool.*`；下表其余 kind 保留为未来完整 event-sourcing 版本的 schema，不得由 0.24 读取器伪造。当前 request/turn/history/summary/reset 的权威状态由同一 manifest 代内的规范文件承担：
 
 | kind | 必需 payload / 语义 |
 | --- | --- |
@@ -83,9 +84,9 @@ manifest 的严格字段为 `version:2, contract:"harness-storage/1", session_id
 
 ### 完整历史与 attempt
 
-用户输入只提交一次。完整收到的 assistant/tool batch 可以进入后续历史，即使之后最终回答失败；它记录真实发生的调用，但所有 tool 内容仍是不可信参考。部分 assistant 文本仅用于 attempt 展示，不进入后续模型上下文。完整最终回答必须先提交 `history.committed`，再结束 attempt；UI 不以 SSE done 或 turns 的 completed 单独判断历史已保存。
+用户输入只提交一次。完整收到的 assistant/tool batch 可以进入后续历史，即使之后最终回答失败；它记录真实发生的调用，但所有 tool 内容仍是不可信参考。部分 assistant 文本仅用于 attempt 展示，不进入后续模型上下文。0.24 以 `history.json` 的同步成功作为完整历史提交点，再结束 attempt；UI 不以 SSE done 或 turns 的 completed 单独判断历史已保存。未来若启用 `history.committed`，其顺序必须保持相同。
 
-合并消息的一次回答覆盖整个 turn。最新轮硬删必须覆盖该 turn 的全部 request IDs 与对应输入/回答，不能只移除其中一个 request 的队列行却留下同批回答。3C 需向兼容 API 返回实际删除的 request IDs；中间 turn 继续返回 409。排队但未执行的单条消息仍可使用既有软撤回。
+合并消息的一次回答覆盖整个 turn。最新轮硬删覆盖该 turn 的全部 request IDs 与对应输入/回答，不能只移除其中一个 request 的队列行却留下同批回答。0.24 兼容 API 返回实际删除的 request IDs；中间 turn 继续返回 409。排队但未执行的单条消息仍可使用既有软撤回。
 
 ## 5. 请求快照、来源与预算
 
@@ -105,11 +106,11 @@ snapshot 必须保存最终准备的 model/system/messages/tools、Thinking/Reas
 | task store v2 | 16 MiB、每角色最多 8192 / 全 store 最多 32768 回执 | 回执和任务状态同一次原子替换；任一边界满额即拒绝新的受保护写入，不按日期复用 operation ID |
 | 接收队列 | 8 条 queued、2048 条 request、最近 32 条详细台账 | 保留现有产品语义；详细台账数量限制不等于可以丢弃请求身份与去重记录 |
 
-`internal/runlog` 已采用同代内有界文件：先同步并原子替换 snapshot/payload，再向 `events.jsonl` 追加带 ID、相对路径、字节数和 SHA-256 的引用并 Sync。写入短写或 Sync 失败立即封闭 writer；未被事件引用的孤儿文件不构成运行事实。当前只在临时数据或显式注入的 recorder 中使用，未接入现有 API 权威、迁移、保留或删除；这些仍属于 3C。磁盘仍可能外部耗尽，业务写入成功但结算事件失败按原子回执或 unknown 处理，不能声称跨文件事务。
+`internal/runlog` 采用同代内有界文件：先同步并原子替换 snapshot/payload，再向 `events.jsonl` 追加带 ID、相对路径、字节数和 SHA-256 的引用并 Sync。写入短写或 Sync 失败立即封闭 writer；未被事件引用的孤儿文件不构成运行事实。0.24 已在队列 worker 与兼容流式入口创建 recorder，并由 registry 把它固定到 manifest 当前代。磁盘仍可能外部耗尽，业务写入成功但结算事件失败按原子回执或 unknown 处理，不能声称跨文件事务。
 
 ### 图片依赖（0.19 后补充）
 
-当前图片已独立保存在会话绑定的 images store，DataURL 只在请求内存中。未来请求快照用不可变图片引用、MIME、尺寸和 SHA-256 关联原始规范化二进制，不复制 base64；重建必须同时拥有快照及哈希匹配的完整图片，只有 ID/hash 不算可重建。快照 JSON 的最终预算不含共享图片字节，图片另受媒体配额约束。依赖图片被删除后明确 snapshot_unavailable，不伪造完整快照。
+图片独立保存在会话绑定的 images store，DataURL 只在请求内存中。0.24 请求快照使用不可变图片引用、MIME、尺寸和 SHA-256 关联原始规范化二进制，不复制 base64；重建必须同时拥有快照及哈希匹配的完整图片，只有 ID/hash 不算可重建。快照 JSON 的最终预算不含共享图片字节，图片另受媒体配额约束。依赖图片被删除后不再承诺快照可重建。
 
 删除和迁移须覆盖这些图片依赖。整会话清理所有本会话原图及上传草稿；删最新合并轮只清仅由该轮使用的原图，保留其他有效消息仍引用的图片。清理请求快照不得顺便删除仍被聊天使用的图片。旧 transcript v2 的图片引用/完整 reasoning 与 turns v2/v3 的参数和思考进度须显式导入，不能按旧 v1 规则静默丢掉。
 
@@ -143,30 +144,30 @@ snapshot 必须保存最终准备的 model/system/messages/tools、Thinking/Reas
 3. 整会话：撤销可读 manifest，关闭 writer，物理移除该 session 的全部当前/旧/候选代与所有旧格式 transcript/turns 文件，以及含其正文的迁移临时文件。只读缓存同时清理；同名会话 ID 不复用。
 4. 清理所有在线旧代后才返回 200；清理中断/失败返回 503 与删除任务 ID，保留登记使读取不可见，后续只完成清理，不恢复内容。不能仅追加 tombstone 就报告“硬删完成”。
 
-最新轮删除也要检查保留事件中是否存在其正文的派生复制；不能只按 envelope 的 turn ID 筛选。清除快照会使旧 attempt 标为 `snapshot_unavailable: deleted_dependency`，不再承诺请求可重建。没有删除依赖的普通保留清理可在终态满 7 天后删除快照、部分流与详细运行参数/结果，只保留有界状态/引用；完整聊天、request 去重身份及获准业务内容不随诊断 TTL 删除。计划内清理通过新代完成，不在活动 journal 中打洞。
+最新轮删除也要检查运行记录中是否存在其正文的派生复制；不能只按 envelope 的 request ID 筛选。0.24 采用隐私优先边界：删除重写后的新代不复制旧事件、payload 或任何模型快照，因此旧 attempt 诊断不可再重建，也不会带回被删内容。没有删除依赖的普通保留策略另行实现；完整聊天、request 去重身份及获准业务内容不随诊断 TTL 删除。计划内清理通过新代完成，不在活动 journal 中打洞。
 
 角色长期记忆、活动、事件、任务、偏好和人设候选保持独立范围；它们可能含用户主动保存的来源文字，删会话不声称全部擦除。新增运行副本不得躲在业务回执里。网页/手机已收到的通知、用户导出和部署备份不能由服务端会话删除追溯撤销。
 
 `deletions.json` 只保留必要 ID，不存正文/hash 内容，不自动过期；最多 100000 项，满额时先拒绝新数据创建并要求维护归档，不能静默抛弃登记。format-index 的已迁移/已删除会话 ID 同样最多 100000 项且不自动过期。恢复旧备份必须同时携带**当前删除登记与格式登记**，先在隔离副本应用登记、清理全部对应代/快照/旧格式源文件，再校验发布；若当前登记丢失或无法确认完整，禁止自动合并/上线旧会话，要求明确的离线恢复处置。防复活不等于物理销毁历史备份。
 
-## 8. 现有 transcript/ledger → runtime 事件 v2 的迁移及回退
+## 8. 现有 transcript/ledger → runtime v2 的迁移及回退
 
 3C 的显式维护命令在停止服务、持有独占存储锁后执行；不在启动时偷偷转换。下文旧格式明确包含 transcript v1/v2 和 turns v1/v2/v3，不能只按最初的 v1 数据写转换器。
 
 1. 先留应用数据与配置一致性备份、记录当前删除登记；检查剩余空间与现有全部格式的可读性。源文件损坏/末行撕裂不自动丢弃，输出非正文错误定位并中止该会话。
-2. 将旧格式角色绑定、reset、summary、消息和 turns 纳入候选代，分配稳定 message IDs；保留图片、参数、完整/部分思考及 UI 原文。旧工具结果标 `legacy_unknown`，不伪造 snapshot、operation ID 或 committed 回执。只有可靠匹配的完整台账范围才绑定 turn；无法匹配的旧历史保留为 legacy batch，不能伪造可删除 request 边界。
+2. 将旧格式角色绑定、reset、summary、消息原始记录和 turns 纳入候选代；保留图片引用、参数、完整/部分思考及 UI 原文。迁移不为旧工具结果伪造 snapshot、operation ID、事件或 committed 回执；只有原 turns 已可靠记录的范围继续作为可删除 request 边界。
 3. 验证消息顺序、assistant/tool 配对、summary 覆盖、角色绑定、请求摘要及删除登记。原 queued 保留但暂停，running 转 interrupted，不发网络或执行工具。
 4. 同步候选文件及目录，写入已迁移登记并原子发布 manifest；全部旧格式在线源移入仅迁移器可见的候选清理范围并删除，读取器无自动回退路径。登记前失败保留原可读数据；登记后、manifest 发布前失败保持维护态，由显式命令完成发布或核验后撤销登记，不能自动回退。发布后失败按 manifest 继续完成清理。目录同步在不支持的平台须明示较弱持久性并拒绝声称断电无损。
 5. 切换后不再允许旧二进制运行该数据根。回退只允许：停止服务，保留 runtime v2 现场，显式导出可表示的完整历史/队列到独立旧格式目录，应用当前删除登记并校验，再使用明确兼容的旧程序。包含图片/思考进度时目标程序须支持对应 transcript v2 / turns v3；不支持则拒绝有损回退，不能强写 v1。unknown、attempt 和快照无法表示的部分保留隔离档案并明确不会被旧程序显示；不得覆盖或丢弃新业务状态以制造兼容。
 
-迁移/清理过程的 manifest、临时目录和未完成步骤是维护事实，不可含聊天正文。备份回退会丢失哪些新提交、已发生的业务写入如何保留，都必须在实际发布记录中说明；本契约不授权立即执行生产迁移。
+迁移/清理过程的 manifest、临时目录和未完成步骤是维护事实，不可含聊天正文。备份回退会丢失哪些新提交、已发生的业务写入如何保留，都在实际发布记录中说明；生产迁移只在用户明确要求的本次发布中停机执行。
 
-## 9. 后续实施与最小验收
+## 9. 实施结果与最小验收
 
-3B 已完成第 5 节容量修订、事件/snapshot/payload 写入和 task create 原子回执，并使用临时数据验证；3C 再接入现有 API、旧数据转换与重启恢复。保留现有对外接口及角色/授权边界，包重命名另行处理。只保留三个关键故障流程：
+3B 完成第 5 节容量修订、事件/snapshot/payload 写入和 task create 原子回执；3C 已接入现有 API、旧数据转换与重启恢复。保留现有对外接口及角色/授权边界，包重命名另行处理。只保留三个关键故障流程：
 
 1. 业务提交后运行结果落盘失败，重启查询原回执；none/无回执显示 unknown，计数证实没有重执行。
 2. 模型流取消/进程中断，partial 不进历史，已提交工具结果可见；没有新的付费请求。
 3. 旧数据迁移与最新合并轮/整会话硬删，覆盖派生快照、旧代、summary、台账和旧备份恢复；注入切换失败仍有明确可读权威，不复活删除正文。
 
-前两条 3B 故障流及正常 snapshot/hash 流已通过最小测试；第三条属于 3C，尚未实现或运行，因此不能宣称生产恢复功能完成。
+前两条 3B 故障流、正常 snapshot/hash 流与第三条 3C 迁移/删除/切换故障流均已通过最小测试。测试不等于断电恢复演练，也不扩大 `atomic` 回执的工具范围。

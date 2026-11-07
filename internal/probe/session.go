@@ -58,10 +58,25 @@ func OpenSession(base, agent, key string) (_ *Session, openErr error) {
 		return nil, errors.New("invalid agent or session key; use letters, digits, hyphen or underscore")
 	}
 	dir := filepath.Join(base, agent)
+	return openSessionFile(filepath.Join(dir, key+".jsonl"), filepath.Join(dir, key+".lock"))
+}
+
+// OpenRuntimeSession opens the manifest-selected history projection used by
+// Harness phase 3C. The caller is responsible for selecting the path through
+// the runtime format index; this reader never scans generations or falls back
+// to the legacy transcript directory.
+func OpenRuntimeSession(path string) (*Session, error) {
+	if filepath.Base(path) != "history.json" {
+		return nil, errors.New("invalid runtime history path")
+	}
+	return openSessionFile(path, path+".lock")
+}
+
+func openSessionFile(path, lockPath string) (_ *Session, openErr error) {
+	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
-	lockPath := filepath.Join(dir, key+".lock")
 	lock, err := os.OpenFile(lockPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("session lock unavailable (another writer or stale lock): %w", err)
@@ -77,7 +92,7 @@ func OpenSession(base, agent, key string) (_ *Session, openErr error) {
 			s.Close()
 		}
 	}()
-	s.file, err = os.OpenFile(filepath.Join(dir, key+".jsonl"), os.O_RDWR|os.O_APPEND|os.O_CREATE, 0600)
+	s.file, err = os.OpenFile(path, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0600)
 	if err != nil {
 		return nil, err
 	}

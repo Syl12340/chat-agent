@@ -59,15 +59,34 @@ type state struct {
 	Paused    bool     `json:"paused"`
 	Items     []record `json:"items"`
 }
+
+// PathResolver returns the manifest-selected turns projection for a session.
+// It is intentionally a function seam so this package does not choose a
+// runtime generation or fall back to a legacy file on its own.
+type PathResolver func(sessionID string) (string, error)
+
 type Store struct {
 	mu         sync.Mutex
 	dir, lock  string
 	closed     bool
 	cache      map[string]*state
 	checkpoint map[string]time.Time
+	resolver   PathResolver
+	paths      map[string]string
 }
 
 func Open(dir string) (*Store, error) {
+	return open(dir, nil)
+}
+
+func OpenResolved(dir string, resolver PathResolver) (*Store, error) {
+	if resolver == nil {
+		return nil, errors.New("turn path resolver is required")
+	}
+	return open(dir, resolver)
+}
+
+func open(dir string, resolver PathResolver) (*Store, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
@@ -82,7 +101,7 @@ func Open(dir string) (*Store, error) {
 		os.Remove(lock)
 		return nil, err
 	}
-	return &Store{dir: dir, lock: lock, cache: map[string]*state{}, checkpoint: map[string]time.Time{}}, nil
+	return &Store{dir: dir, lock: lock, cache: map[string]*state{}, checkpoint: map[string]time.Time{}, resolver: resolver, paths: map[string]string{}}, nil
 }
 func clone(st *state) *state {
 	out := *st
@@ -93,6 +112,79 @@ func clone(st *state) *state {
 	}
 	return &out
 }
+
+func decodeState(id string, b []byte) (*state, bool, error) {
+	if len(b) > 12<<20 {
+		return nil, false, ErrLimit
+	}
+	d := json.NewDecoder(bytes.NewReader(b))
+	d.DisallowUnknownFields()
+	var st state
+	var extra any
+	if err := d.Decode(&st); err != nil {
+		return nil, false, err
+	}
+	if d.Decode(&extra) != io.EOF || (st.Version != 1 && st.Version != 2 && st.Version != 3) || st.SessionID != id || len(st.Items) > 2048 {
+		return nil, false, errors.New("invalid turn ledger")
+	}
+	if st.Version == 1 {
+		var raw struct {
+			Items []map[string]json.RawMessage `json:"items"`
+		}
+		_ = json.Unmarshal(b, &raw)
+		for _, item := range raw.Items {
+			if item["model"] != nil || item["thinking"] != nil || item["images"] != nil {
+				return nil, false, errors.New("v1 ledger contains v2 fields")
+			}
+		}
+	}
+	changed := false
+	seen := map[string]bool{}
+	for i := range st.Items {
+		t := &st.Items[i]
+		if !storage.ValidID(t.ID) || seen[t.ID] || t.Sequence != i+1 || len(t.Digest) != 64 || t.StartIndex < 0 || t.EndIndex < 0 || len(t.Content) > 64<<10 || len(t.Text) > 4<<20 || len(t.ReasoningContent) > 1<<20 || st.Version < 3 && (t.ReasoningContent != "" || len(t.Text) > 64<<10) {
+			return nil, false, errors.New("invalid turn record")
+		}
+		if !validOptions(t.Model, t.Thinking, t.Images) {
+			return nil, false, errors.New("invalid turn options")
+		}
+		seen[t.ID] = true
+		switch t.Status {
+		case "queued":
+			if !st.Paused {
+				st.Paused = true
+				changed = true
+			}
+		case "running":
+			t.Status = "interrupted"
+			t.Error = "服务曾中断；没有自动重新调用模型。"
+			st.Paused = true
+			changed = true
+		case "completed", "canceled", "failed", "interrupted", "withdrawn":
+		default:
+			return nil, false, errors.New("invalid turn status")
+		}
+	}
+	return &st, changed, nil
+}
+
+// NormalizeLegacy validates transcript-era turns v1/v2/v3 and returns the
+// restart-safe representation. Queued work remains paused and running work is
+// marked interrupted; this function never executes or resumes a request.
+func NormalizeLegacy(id string, b []byte) ([]byte, error) {
+	st, _, err := decodeState(id, b)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(st)
+}
+
+func EmptyProjection(id string) ([]byte, error) {
+	if !storage.ValidID(id) {
+		return nil, ErrNotFound
+	}
+	return json.Marshal(&state{Version: 3, SessionID: id, Items: []record{}})
+}
 func (s *Store) save(st *state) error {
 	b, err := json.Marshal(st)
 	if err != nil {
@@ -101,13 +193,34 @@ func (s *Store) save(st *state) error {
 	if len(b) > 12<<20 {
 		return ErrLimit
 	}
-	if err = storage.Replace(filepath.Join(s.dir, st.SessionID+".json"), b); err != nil {
+	path, err := s.path(st.SessionID)
+	if err != nil {
+		return err
+	}
+	if err = storage.Replace(path, b); err != nil {
 		return err
 	}
 	s.cache[st.SessionID] = st
 	s.checkpoint[st.SessionID] = time.Now()
 	return nil
 }
+
+func (s *Store) path(id string) (string, error) {
+	if path := s.paths[id]; path != "" {
+		return path, nil
+	}
+	path := filepath.Join(s.dir, id+".json")
+	var err error
+	if s.resolver != nil {
+		path, err = s.resolver(id)
+		if err != nil {
+			return "", err
+		}
+	}
+	s.paths[id] = path
+	return path, nil
+}
+
 func (s *Store) load(id string) (*state, error) {
 	if s.closed {
 		return nil, errors.New("turn store closed")
@@ -118,8 +231,15 @@ func (s *Store) load(id string) (*state, error) {
 	if st := s.cache[id]; st != nil {
 		return st, nil
 	}
-	f, err := os.Open(filepath.Join(s.dir, id+".json"))
+	path, err := s.path(id)
+	if err != nil {
+		return nil, err
+	}
+	f, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
+		if s.resolver != nil {
+			return nil, errors.New("runtime turn projection is missing")
+		}
 		st := &state{Version: 1, SessionID: id, Items: []record{}}
 		s.cache[id] = st
 		return st, nil
@@ -135,63 +255,18 @@ func (s *Store) load(id string) (*state, error) {
 	if closeErr != nil {
 		return nil, closeErr
 	}
-	if len(b) > 12<<20 {
-		return nil, ErrLimit
-	}
-	d := json.NewDecoder(bytes.NewReader(b))
-	d.DisallowUnknownFields()
-	var st state
-	var extra any
-	if err = d.Decode(&st); err != nil {
+	st, changed, err := decodeState(id, b)
+	if err != nil {
 		return nil, err
 	}
-	if d.Decode(&extra) != io.EOF || (st.Version != 1 && st.Version != 2 && st.Version != 3) || st.SessionID != id || len(st.Items) > 2048 {
-		return nil, errors.New("invalid turn ledger")
-	}
-	if st.Version == 1 {
-		var raw struct {
-			Items []map[string]json.RawMessage `json:"items"`
-		}
-		_ = json.Unmarshal(b, &raw)
-		for _, item := range raw.Items {
-			if item["model"] != nil || item["thinking"] != nil || item["images"] != nil {
-				return nil, errors.New("v1 ledger contains v2 fields")
-			}
-		}
-	}
-	changed := false
-	seen := map[string]bool{}
-	for i := range st.Items {
-		t := &st.Items[i]
-		if !storage.ValidID(t.ID) || seen[t.ID] || t.Sequence != i+1 || len(t.Digest) != 64 || t.StartIndex < 0 || t.EndIndex < 0 || len(t.Content) > 64<<10 || len(t.Text) > 4<<20 || len(t.ReasoningContent) > 1<<20 || st.Version < 3 && (t.ReasoningContent != "" || len(t.Text) > 64<<10) {
-			return nil, errors.New("invalid turn record")
-		}
-		if !validOptions(t.Model, t.Thinking, t.Images) {
-			return nil, errors.New("invalid turn options")
-		}
-		seen[t.ID] = true
-		switch t.Status {
-		case "queued":
-			st.Paused = true
-			changed = true
-		case "running":
-			t.Status = "interrupted"
-			t.Error = "服务曾中断；没有自动重新调用模型。"
-			st.Paused = true
-			changed = true
-		case "completed", "canceled", "failed", "interrupted", "withdrawn":
-		default:
-			return nil, errors.New("invalid turn status")
-		}
-	}
-	s.cache[id] = &st
+	s.cache[id] = st
 	if changed {
-		if err = s.save(&st); err != nil {
+		if err = s.save(st); err != nil {
 			delete(s.cache, id)
 			return nil, err
 		}
 	}
-	return &st, nil
+	return st, nil
 }
 func digest(content, mode string) string {
 	b := sha256.Sum256([]byte(mode + "\x00" + content))
@@ -343,11 +418,26 @@ func (s *Store) Delete(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.cache, id)
-	err := os.Remove(filepath.Join(s.dir, id+".json"))
+	path, pathErr := s.path(id)
+	if pathErr != nil {
+		return pathErr
+	}
+	delete(s.paths, id)
+	err := os.Remove(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	return nil
+}
+
+// Forget drops only in-memory state after a runtime generation switch. The
+// selected generation owns physical cleanup.
+func (s *Store) Forget(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.cache, id)
+	delete(s.paths, id)
+	delete(s.checkpoint, id)
 }
 
 func (s *Store) Withdraw(id, rid string) error {

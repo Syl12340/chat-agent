@@ -4,9 +4,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"strings"
+
 	"pocket-agent/internal/media"
 	"pocket-agent/internal/storage"
-	"strings"
 )
 
 func cloneTurn(turn Turn) Turn {
@@ -85,6 +87,14 @@ func (s *Store) RemoveBatch(id, rid string) error {
 	if err != nil {
 		return err
 	}
+	next, _, err := removeBatchState(st, rid)
+	if err != nil {
+		return err
+	}
+	return s.save(next)
+}
+
+func removeBatchState(st *state, rid string) (*state, []string, error) {
 	var target *record
 	for i := range st.Items {
 		if st.Items[i].ID == rid {
@@ -93,16 +103,18 @@ func (s *Store) RemoveBatch(id, rid string) error {
 		}
 	}
 	if target == nil {
-		return ErrNotFound
+		return nil, nil, ErrNotFound
 	}
 	next := clone(st)
 	next.Items = next.Items[:0]
+	removed := []string{}
 	for _, r := range st.Items {
 		remove := r.ID == rid || target.BatchID != "" && r.BatchID == target.BatchID
 		if remove {
 			if r.Status == "running" {
-				return ErrConflict
+				return nil, nil, ErrConflict
 			}
+			removed = append(removed, r.ID)
 			continue
 		}
 		next.Items = append(next.Items, r)
@@ -110,5 +122,27 @@ func (s *Store) RemoveBatch(id, rid string) error {
 	for i := range next.Items {
 		next.Items[i].Sequence = i + 1
 	}
-	return s.save(next)
+	return next, removed, nil
+}
+
+// RemoveBatchProjection performs the same complete merged-batch removal on an
+// unpublished projection. It is used to build a replacement runtime
+// generation without mutating the active generation first.
+func RemoveBatchProjection(id, rid string, data []byte) ([]byte, []string, error) {
+	st, _, err := decodeState(id, data)
+	if err != nil {
+		return nil, nil, err
+	}
+	next, removed, err := removeBatchState(st, rid)
+	if err != nil {
+		return nil, nil, err
+	}
+	b, err := json.Marshal(next)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(b) > 12<<20 {
+		return nil, nil, errors.New("turn projection exceeds capacity")
+	}
+	return b, removed, nil
 }

@@ -49,7 +49,16 @@ func TestTasksAndRemindersLifecycle(t *testing.T) {
 			for _, m := range req.Messages {
 				if m.Role == "tool" {
 					var item tasks.Item
+					var settled struct {
+						Item *tasks.Item `json:"item"`
+					}
 					if json.Unmarshal([]byte(m.Content), &item) != nil || item.ID == "" {
+						_ = json.Unmarshal([]byte(m.Content), &settled)
+						if settled.Item != nil {
+							item = *settled.Item
+						}
+					}
+					if item.ID == "" {
 						t.Errorf("task tool failed: %s", m.Content)
 					}
 					ids = append(ids, item.ID)

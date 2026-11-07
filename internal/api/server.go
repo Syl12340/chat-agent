@@ -27,6 +27,7 @@ import (
 	"pocket-agent/internal/memory"
 	"pocket-agent/internal/probe"
 	"pocket-agent/internal/roles"
+	"pocket-agent/internal/runlog"
 	"pocket-agent/internal/semantic"
 	"pocket-agent/internal/tasks"
 	"pocket-agent/internal/topics"
@@ -68,6 +69,7 @@ type Server struct {
 	activities      *companion.ActivityStore
 	devices         *deviceauth.Store
 	turns           *turns.Store
+	runtime         *runlog.Registry
 	workCtx         context.Context
 	workCancel      context.CancelFunc
 	workWG          sync.WaitGroup
@@ -167,8 +169,27 @@ func New(c Config) (*Server, error) {
 		mem.Close()
 		return nil, err
 	}
-	turnStore, err := turns.Open(filepath.Join(path, "turns"))
+	runtimeStore, err := runlog.OpenRegistry(filepath.Join(path, "runtime"))
 	if err != nil {
+		lifeStore.Close()
+		companionStore.Close()
+		webClient.Close()
+		taskStore.Close()
+		mem.Close()
+		return nil, err
+	}
+	if err = runtimeStore.RequireMigrated(path); err != nil {
+		runtimeStore.Close()
+		lifeStore.Close()
+		companionStore.Close()
+		webClient.Close()
+		taskStore.Close()
+		mem.Close()
+		return nil, err
+	}
+	turnStore, err := turns.OpenResolved(filepath.Join(path, "turns"), runtimeStore.TurnsPath)
+	if err != nil {
+		runtimeStore.Close()
 		lifeStore.Close()
 		companionStore.Close()
 		webClient.Close()
@@ -179,6 +200,7 @@ func New(c Config) (*Server, error) {
 	activityStore, err := companion.OpenActivities(filepath.Join(path, "activities"))
 	if err != nil {
 		turnStore.Close()
+		runtimeStore.Close()
 		lifeStore.Close()
 		companionStore.Close()
 		webClient.Close()
@@ -189,27 +211,27 @@ func New(c Config) (*Server, error) {
 	deviceStore, err := deviceauth.Open(filepath.Join(path, "devices"))
 	if err != nil {
 		webClient.Close()
-		return nil, errors.Join(err, activityStore.Close(), turnStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
+		return nil, errors.Join(err, activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
 	}
 	topicStore, err := topics.Open(filepath.Join(path, "topics"))
 	if err != nil {
 		webClient.Close()
-		return nil, errors.Join(err, deviceStore.Close(), activityStore.Close(), turnStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
+		return nil, errors.Join(err, deviceStore.Close(), activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
 	}
 	workCtx, workCancel := context.WithCancel(context.Background())
 	push, err := openPush(filepath.Join(path, "delivery"))
 	if err != nil {
 		workCancel()
 		webClient.Close()
-		return nil, errors.Join(err, topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
+		return nil, errors.Join(err, topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
 	}
 	images, err := media.Open(filepath.Join(path, "images"))
 	if err != nil {
 		workCancel()
 		webClient.Close()
-		return nil, errors.Join(err, push.close(), topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
+		return nil, errors.Join(err, push.close(), topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
 	}
-	s := &Server{devices: deviceStore, activities: activityStore, life: lifeStore, turns: turnStore, workCtx: workCtx, workCancel: workCancel, careSlots: make(chan struct{}, 1), config: c, tokenHash: sha256.Sum256([]byte(c.AccessToken)), sessions: map[string]*probe.Session{}, runs: map[string]*runState{}, roles: roleManager, memory: mem, companion: companionStore, tasks: taskStore, web: webClient, location: location}
+	s := &Server{devices: deviceStore, activities: activityStore, life: lifeStore, turns: turnStore, runtime: runtimeStore, workCtx: workCtx, workCancel: workCancel, careSlots: make(chan struct{}, 1), config: c, tokenHash: sha256.Sum256([]byte(c.AccessToken)), sessions: map[string]*probe.Session{}, runs: map[string]*runState{}, roles: roleManager, memory: mem, companion: companionStore, tasks: taskStore, web: webClient, location: location}
 	s.speechSlots = make(chan struct{}, 1)
 	s.topics = topicStore
 	s.topicSource = webClient
@@ -328,7 +350,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		model = "chat-agent Demo"
 	}
 	identity := currentAuth(r)
-	writeJSON(w, 200, map[string]any{"name": "chat-agent", "version": "0.22.0", "auth_method": identity.Method, "device_id": identity.Device.ID, "device_admin": identity.Method == "owner" || identity.Device.Admin, "speech_enabled": s.speechEnabled(), "speech_max_chars": 1200, "model": model, "demo": s.config.Agent.Demo, "max_output": s.config.Agent.MaxOutputTokens, "thinking_max_output": s.config.ThinkingMaxOutput, "timeout_seconds": s.config.Agent.Timeout.Seconds(), "time_zone": s.location.String(), "web_fetch": s.web.FetchEnabled(), "web_search": s.web.SearchEnabled(), "reminder_delivery": "inbox", "scheduler_ok": s.schedulerOK.Load()})
+	writeJSON(w, 200, map[string]any{"name": "chat-agent", "version": "0.24.0", "auth_method": identity.Method, "device_id": identity.Device.ID, "device_admin": identity.Method == "owner" || identity.Device.Admin, "speech_enabled": s.speechEnabled(), "speech_max_chars": 1200, "model": model, "demo": s.config.Agent.Demo, "max_output": s.config.Agent.MaxOutputTokens, "thinking_max_output": s.config.ThinkingMaxOutput, "timeout_seconds": s.config.Agent.Timeout.Seconds(), "time_zone": s.location.String(), "web_fetch": s.web.FetchEnabled(), "web_search": s.web.SearchEnabled(), "reminder_delivery": "inbox", "scheduler_ok": s.schedulerOK.Load()})
 }
 
 func validID(id string) bool {
@@ -355,10 +377,11 @@ func (s *Server) session(id string) (*probe.Session, error) {
 	if sess := s.sessions[id]; sess != nil {
 		return sess, nil
 	}
-	if _, err := os.Stat(filepath.Join(s.config.DataDir, probe.AgentID, id+".jsonl")); err != nil {
+	historyPath, err := s.runtime.HistoryPath(id)
+	if err != nil {
 		return nil, err
 	}
-	sess, err := probe.OpenSession(s.config.DataDir, probe.AgentID, id)
+	sess, err := probe.OpenRuntimeSession(historyPath)
 	if err != nil {
 		return nil, err
 	}
@@ -407,26 +430,15 @@ func title(messages []probe.Message) string {
 }
 
 func (s *Server) list(w http.ResponseWriter, r *http.Request) {
-	files, err := os.ReadDir(filepath.Join(s.config.DataDir, probe.AgentID))
+	entries, err := s.runtime.Entries()
 	if err != nil {
 		fail(w, 500, "无法读取会话列表")
 		return
 	}
 	items := []sessionInfo{}
-	for _, file := range files {
-		if !strings.HasSuffix(file.Name(), ".jsonl") {
-			continue
-		}
-		id := strings.TrimSuffix(file.Name(), ".jsonl")
-		if !validID(id) {
-			continue
-		}
-		info, err := file.Info()
-		if err != nil || !info.Mode().IsRegular() {
-			continue
-		}
-		item := sessionInfo{ID: id, Title: "无法读取的会话", UpdatedAt: info.ModTime()}
-		sess, err := s.session(id)
+	for _, entry := range entries {
+		item := sessionInfo{ID: entry.ID, Title: "无法读取的会话", UpdatedAt: entry.UpdatedAt, RoleID: entry.RoleID}
+		sess, err := s.session(entry.ID)
 		if err != nil {
 			item.Unavailable = true
 		} else {
@@ -434,7 +446,7 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 			item.RoleID = sess.RoleID()
 		}
 		s.mu.Lock()
-		item.Active = s.runs[id] != nil
+		item.Active = s.runs[entry.ID] != nil
 		s.mu.Unlock()
 		items = append(items, item)
 	}
@@ -481,14 +493,18 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, "服务正在关闭")
 		return
 	}
-	sess, err := probe.OpenSession(s.config.DataDir, probe.AgentID, id)
-	if err != nil {
+	if err := s.runtime.Create(id, input.RoleID); err != nil {
 		fail(w, 500, "无法创建会话")
 		return
 	}
-	if err := sess.BindRole(input.RoleID); err != nil {
-		sess.Close()
-		fail(w, 500, "无法绑定会话角色")
+	historyPath, err := s.runtime.HistoryPath(id)
+	if err != nil {
+		fail(w, 500, "无法读取新会话")
+		return
+	}
+	sess, err := probe.OpenRuntimeSession(historyPath)
+	if err != nil {
+		fail(w, 500, "无法打开新会话")
 		return
 	}
 	s.sessions[id] = sess
@@ -553,6 +569,13 @@ func (s *Server) message(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	ctx, cancel := context.WithCancel(r.Context())
 	state := &runState{cancel: cancel, done: make(chan struct{})}
+	var requestBytes [16]byte
+	if _, err := rand.Read(requestBytes[:]); err != nil {
+		cancel()
+		fail(w, 500, "无法创建运行记录")
+		return
+	}
+	requestID := hex.EncodeToString(requestBytes[:])
 	s.mu.Lock()
 	if s.closing || s.runs[id] != nil || len(s.runs) >= 4 {
 		closing, busy := s.closing, s.runs[id] != nil
@@ -567,8 +590,19 @@ func (s *Server) message(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	agent, err := s.agent(sess, input.Content, id, input.Mode)
+	recorder, err := runlog.Open(s.runtime.Root(), runlog.Scope{SessionID: id, RoleID: sess.RoleID(), RequestID: requestID})
 	if err != nil {
+		s.mu.Unlock()
+		cancel()
+		fail(w, 503, "运行记录暂时不可用；没有调用模型")
+		return
+	}
+	agent, err := s.agentForTurn(sess, []string{input.Content}, id, func(c *probe.Config) {
+		c.RequestID = requestID
+		c.Recorder = recorder
+	})
+	if err != nil {
+		recorder.Close()
 		s.mu.Unlock()
 		cancel()
 		fail(w, 503, "模型或陪伴上下文暂时不可用")
@@ -612,6 +646,7 @@ func (s *Server) message(w http.ResponseWriter, r *http.Request) {
 			send("compaction_done", map[string]bool{"changed": ev.Text != "skipped"})
 		}
 	})
+	err = errors.Join(err, recorder.Close())
 	finish()
 	if err == nil {
 		send("done", map[string]bool{"ok": true})
@@ -721,7 +756,7 @@ func (s *Server) Close(ctx context.Context) error {
 	}
 	err = errors.Join(err, s.memory.Close())
 	err = errors.Join(err, s.tasks.Close())
-	err = errors.Join(err, s.companion.Close(), s.life.Close(), s.turns.Close(), s.activities.Close())
+	err = errors.Join(err, s.companion.Close(), s.life.Close(), s.turns.Close(), s.runtime.Close(), s.activities.Close())
 	err = errors.Join(err, s.devices.Close())
 	err = errors.Join(err, s.topics.Close())
 	err = errors.Join(err, s.push.close())

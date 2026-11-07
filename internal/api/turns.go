@@ -7,8 +7,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -16,6 +14,7 @@ import (
 	"pocket-agent/internal/interactive"
 	"pocket-agent/internal/media"
 	"pocket-agent/internal/probe"
+	"pocket-agent/internal/runlog"
 	"pocket-agent/internal/turns"
 )
 
@@ -262,6 +261,7 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 			}
 			choice, selectionErr := s.selectChat(batch[0].Model, batch[0].Thinking)
 			var agent *probe.Agent
+			var recorder *runlog.Recorder
 			// Recheck a queued answer before building an agent or appending a
 			// user message: context may have changed while the queue was paused.
 			for _, t := range batch {
@@ -277,6 +277,9 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 				}
 			}
 			if err == nil {
+				recorder, err = runlog.Open(s.runtime.Root(), runlog.Scope{SessionID: id, RoleID: sess.RoleID(), RequestID: root})
+			}
+			if err == nil {
 				agent, err = s.agentForTurn(sess, query, id, func(c *probe.Config) {
 					c.Model = choice.Model
 					c.Thinking = choice.ProviderThinking
@@ -285,6 +288,8 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 					if choice.Thinking != "off" {
 						c.MaxOutputTokens = s.config.ThinkingMaxOutput
 					}
+					c.RequestID = root
+					c.Recorder = recorder
 				})
 			}
 			if selectionErr != nil {
@@ -343,6 +348,11 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 					}
 				})
 			}
+			if recorder != nil {
+				if closeErr := recorder.Close(); closeErr != nil {
+					err = errors.Join(err, closeErr)
+				}
+			}
 			status, message := "completed", ""
 			if err != nil || progressErr != nil {
 				status = "failed"
@@ -395,21 +405,22 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 // panel mutations and all other running conversations remain blocked.
 func (s *Server) roleContextCuts(role string, currentRun ...string) (map[string]int, error) {
 	cuts := map[string]int{}
-	files, err := os.ReadDir(filepath.Join(s.config.DataDir, probe.AgentID))
+	entries, err := s.runtime.Entries()
 	if err != nil {
 		return nil, err
 	}
-	for _, file := range files {
-		if !strings.HasSuffix(file.Name(), ".jsonl") || !file.Type().IsRegular() {
+	for _, entry := range entries {
+		if entry.RoleID != role {
 			continue
 		}
-		id := strings.TrimSuffix(file.Name(), ".jsonl")
-		if !validID(id) {
-			continue
-		}
+		id := entry.ID
 		sess := s.sessions[id]
 		if sess == nil {
-			sess, err = probe.OpenSession(s.config.DataDir, probe.AgentID, id)
+			historyPath, pathErr := s.runtime.HistoryPath(id)
+			if pathErr != nil {
+				return nil, pathErr
+			}
+			sess, err = probe.OpenRuntimeSession(historyPath)
 			if err != nil {
 				return nil, err
 			}
