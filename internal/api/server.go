@@ -37,17 +37,19 @@ import (
 )
 
 type Config struct {
-	Agent             probe.Config
-	DataDir           string
-	AccessToken       string
-	RolesDir          string
-	TimeZone          string
-	Web               webtools.Config
-	AndroidReleaseDir string
-	Speech            SpeechConfig
-	Semantic          semantic.Config
-	ChatModels        []ChatModel
-	ThinkingMaxOutput int
+	Agent                  probe.Config
+	DataDir                string
+	AccessToken            string
+	RolesDir               string
+	TimeZone               string
+	Web                    webtools.Config
+	AndroidReleaseDir      string
+	Speech                 SpeechConfig
+	Semantic               semantic.Config
+	ChatModels             []ChatModel
+	ThinkingMaxOutput      int
+	TurnCompletionObserver TurnCompletionObserver
+	OneBot                 OneBotConfig
 }
 
 type runState struct {
@@ -89,6 +91,8 @@ type Server struct {
 	pushSlots       chan struct{}
 	images          *media.Store
 	mediaMu         sync.Mutex
+	onebot          *oneBotIntegration
+	turnObserver    TurnCompletionObserver
 }
 
 func New(c Config) (*Server, error) {
@@ -238,6 +242,14 @@ func New(c Config) (*Server, error) {
 	s.push = push
 	s.images = images
 	s.pushSlots = make(chan struct{}, 4)
+	onebot, err := newOneBotIntegration(s, c.OneBot, filepath.Join(path, "channels", "onebot"))
+	if err != nil {
+		workCancel()
+		webClient.Close()
+		return nil, errors.Join(err, images.Close(), push.close(), topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
+	}
+	s.onebot = onebot
+	s.turnObserver = combineCompletionObservers(c.TurnCompletionObserver, onebot)
 	s.startScheduler()
 	s.startTopicScheduler()
 	s.startPushScheduler()
@@ -247,6 +259,10 @@ func New(c Config) (*Server, error) {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
+	if s.onebot != nil {
+		mux.HandleFunc("POST /hooks/onebot/v1/events", s.oneBotWebhook)
+	}
+	mux.HandleFunc("/hooks/", func(w http.ResponseWriter, r *http.Request) { fail(w, http.StatusNotFound, "接口不存在") })
 	mux.HandleFunc("GET /api/status", s.status)
 	mux.HandleFunc("GET /api/chat/options", s.chatOptions)
 	mux.HandleFunc("POST /api/sessions/{id}/images", s.uploadImage)
@@ -350,7 +366,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		model = "chat-agent Demo"
 	}
 	identity := currentAuth(r)
-	writeJSON(w, 200, map[string]any{"name": "chat-agent", "version": "0.24.0", "auth_method": identity.Method, "device_id": identity.Device.ID, "device_admin": identity.Method == "owner" || identity.Device.Admin, "speech_enabled": s.speechEnabled(), "speech_max_chars": 1200, "model": model, "demo": s.config.Agent.Demo, "max_output": s.config.Agent.MaxOutputTokens, "thinking_max_output": s.config.ThinkingMaxOutput, "timeout_seconds": s.config.Agent.Timeout.Seconds(), "time_zone": s.location.String(), "web_fetch": s.web.FetchEnabled(), "web_search": s.web.SearchEnabled(), "reminder_delivery": "inbox", "scheduler_ok": s.schedulerOK.Load()})
+	writeJSON(w, 200, map[string]any{"name": "chat-agent", "version": "0.25.0", "auth_method": identity.Method, "device_id": identity.Device.ID, "device_admin": identity.Method == "owner" || identity.Device.Admin, "speech_enabled": s.speechEnabled(), "speech_max_chars": 1200, "model": model, "demo": s.config.Agent.Demo, "max_output": s.config.Agent.MaxOutputTokens, "thinking_max_output": s.config.ThinkingMaxOutput, "timeout_seconds": s.config.Agent.Timeout.Seconds(), "time_zone": s.location.String(), "web_fetch": s.web.FetchEnabled(), "web_search": s.web.SearchEnabled(), "reminder_delivery": "inbox", "scheduler_ok": s.schedulerOK.Load(), "onebot_enabled": s.onebot != nil})
 }
 
 func validID(id string) bool {
@@ -751,6 +767,9 @@ func (s *Server) Close(ctx context.Context) error {
 		return context.Cause(ctx)
 	}
 	var err error
+	if s.onebot != nil {
+		err = errors.Join(err, s.onebot.Close(ctx))
+	}
 	for _, sess := range sessions {
 		err = errors.Join(err, sess.Close())
 	}

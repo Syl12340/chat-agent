@@ -1,6 +1,8 @@
 # chat-agent 当前规划
 
-当前发布（2026-11-07）：服务端 **0.24.0**（`20261107-runtime-v2-01`）；Android 仍为 **0.21.2-debug / versionCode 20**（`android-20261106-02`）。0.23 Harness 3B 的结算日志已由 0.24 接入，3C 已完成停机显式迁移、manifest 选代、重启恢复、硬删除与兼容导出，见[0.24 发布](release-0.24.md)。
+当前发布（2026-11-08）：服务端 **0.25.0**（`20261108-channel-02`）；Android 仍为 **0.21.2-debug / versionCode 20**（`android-20261106-02`）。默认关闭的 OneBot owner 私聊 P0–P2 已部署，生产没有配置凭据或连接真实 QQ；Harness 3B/3C 与 runtime v2 保持不变，见[0.25 发布](release-0.25.md)。
+
+2026-11-08 已完成并部署 Channel Integration P0–P2：传输无关 Envelope、OneBot HMAC/owner 私聊纯文本规范化、确定性 request ID、共享 `SubmitTurn`、持久 Inbox/Outbox、稳定 session mapping、纯文本 Renderer、结算后 completion observer 和一次性 dispatcher。功能默认关闭，生产尚未配置 OneBot 凭据或连接真实 QQ；详见[Channel 架构](channel-integration-architecture.md)。
 
 2026-11-06 已按代码重新整理[项目现状与架构路线](architecture-roadmap-2026-11.md)，覆盖 DSH 复用、网页 Generative UI 和聊天仿生 Agent。当前技术栈继续保留，已交付能力不重复排期。
 
@@ -54,6 +56,7 @@
 | 已发布 · 0.22 陪伴接续与 UI 收敛 | 上下文估算与 Provider 共用消息投影；指代式追问可回看最近可见用户主题，明确换题仍以当前消息为准；共同话题参考最近分享减少重复；固定桌面轨道、860px 阅读/输入列、稳定右侧工作台与紧凑手机布局 | 两条新增回归及相关包通过；隔离 demo 检查桌面、工作台和 390px 抽屉，线上零模型检查通过；保留工具协议 reasoning、候选审核、关怀/话题额度和角色隔离；未增加分类模型、持久格式或 Android 原生改动 |
 | 已发布 · 0.23 Harness 3B 持久结算（随 0.24 接线） | fail-closed `RunRecorder`、请求/结果文件引用、attempt/step/tool 事件；`todo_add` / `reminder_add` 支持同状态提交的 operation 回执，其余写工具为 none | 业务成功而运行结算失败时回执可查询且不重复创建；取消流 partial 不进历史、不重发模型；0.24 worker 和兼容流式入口均创建 recorder |
 | 已发布 · 0.24 Harness 3C 恢复迁移 | transcript v1/v2 与 turns v1/v2/v3 停机显式转换；format-index/manifest 单代权威；重启投影、删除登记/新代重写、停机修复及兼容导出；保留图片引用、参数、完整/部分思考、互动和富文本原文 | 迁移重启、最新轮/整会话硬删、切换失败续作三条最小流程通过；失败进入明确维护态，删除内容、旧代和快照不复活 |
+| 已实现、默认关闭 · Channel P0–P2 | Envelope/HMAC/ACL、持久 Inbox/Outbox、稳定 session mapping、共享 SubmitTurn、Renderer、completion observer、loopback Action client 与一次性 dispatcher | 不改 Harness/runtime/turns；guest/group 不进模型；重复事件只有一个 turn；发送不确定转 unknown 且不重发；假模型/假 OneBot 闭环通过 |
 | 后续 A · 主动陪伴统一 | 可信触发、受限 followup、目标会话、注意力与内容去重；让用户回复接上此前主动话题 | 沉默不花模型费用，触发不重复执行，后台来源不增加写权限，明确提醒不被随机跳过 |
 | 后续 B · Generative UI v2 | 稳定 surface/revision、跨轮更新、必要的组合布局与业务动作；继续复用原生网页 | 本地操作零模型请求；过期/删除来源不能提交；刷新不重做业务；仅在 3C 稳定身份与回执之上扩展 |
 
@@ -91,7 +94,7 @@
 
 ## 低优先级与按需待办
 
-- QQ、微信、B站等第三方 IM/社区接入，后于现有客户端的陪伴体验。
+- QQ owner 私聊已进入 P0–P2 主线；微信、B站、群聊和 AstrBot 多平台网关仍按需评估，不与首个闭环并行扩张。
 - 服务端全文搜索、手动命名、归档、聊天导出、文件问答和资料收藏按需要推进；0.20 已有本地会话标题筛选，已有记忆 Markdown 导出继续保留。
 - SQLite、向量检索、embedding、本地模型和前端框架迁移，仅在检索效果、数据规模或维护成本出现明确瓶颈时评估；现有可选远端重排继续保留。
 
@@ -140,3 +143,5 @@
 0.23 隔离实施记录：[Harness 3B 持久结算](release-0.23.md)。
 
 0.24.0 发布记录：[Harness 3C runtime 迁移与恢复](release-0.24.md)。
+
+0.25.0 发布记录：[OneBot owner 私聊 Channel P0–P2](release-0.25.md)。

@@ -14,7 +14,7 @@
 | 阶段 3B：持久结算 | 已实现并接线 | 原生 Go recorder、operation ID、task create 原子回执；隔离证据见 [0.23 实施记录](release-0.23.md)，API 接线见 [0.24 发布](release-0.24.md) |
 | 阶段 3C：恢复迁移 | 已实现 | 旧格式显式转换、API 规范状态、删除登记/新代重写、停机修复和兼容导出通过最小故障注入 |
 
-当前发布目标为服务端 **0.24.0**（`20261107-runtime-v2-01`），Android 仍为 **0.21.2-debug / versionCode 20**（`android-20261106-02`），见[0.24 发布说明](release-0.24.md)。本版不改 Android 包；旧思考进度继续以 turns v3 语义保留在 manifest 选中的 runtime 代中。
+Harness 3B/3C 的当前生产基线仍由 0.24 建立；最新服务端为 **0.25.0**（`20261108-channel-02`），Android 仍为 **0.21.2-debug / versionCode 20**（`android-20261106-02`），见[0.25 发布说明](release-0.25.md)。0.25 不改 Harness、runtime v2、turns v3 或 Android 包，只在其上增加默认关闭的 Channel Layer。
 
 实现细节见 [阶段 1–2 实施说明](harness-phases-1-2.md)。总体产品方向见 [功能规划](feature-plan.md)。
 

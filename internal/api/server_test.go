@@ -77,6 +77,7 @@ func TestHTTPChatLifecycle(t *testing.T) {
 	status(do("GET", "/api/sessions", "", false), 401)
 	status(do("POST", "/api/sessions/missing/cancel", "", false), 401)
 	status(do("GET", "/healthz", "", false), 200)
+	status(do("POST", "/hooks/onebot/v1/events", `{}`, false), 404)
 	page := do("GET", "/", "", false)
 	html, _ := io.ReadAll(page.Body)
 	page.Body.Close()

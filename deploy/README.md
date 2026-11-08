@@ -1,6 +1,8 @@
 # 单机部署（SSH 隧道）
 
-当前发布（2026-11-07）：服务端 **0.24.0** 为 `20261107-runtime-v2-01`；Android 仍为 **0.21.2-debug / versionCode 20**（`android-20261106-02`）。Harness 3B/3C 的运行结算、显式迁移、恢复与删除防复活已上线；停机备份 `pre-runtime-v2-20261107-01.tar.gz`、迁移后历史、鉴权、监听和 Android 更新清单均通过零模型检查。见[发布记录](../docs/release-0.24.md)。
+当前发布（2026-11-08）：服务端 **0.25.0** 为 `20261108-channel-02`；Android 仍为 **0.21.2-debug / versionCode 20**（`android-20261106-02`）。OneBot v11 owner 私聊 P0–P2 已部署但默认关闭；一致性备份 `pre-channel-20261108-01.tar.gz`、版本/鉴权/历史/关闭态 webhook 和监听均通过零模型检查。见[发布记录](../docs/release-0.25.md)。
+
+历史发布（2026-11-07）：服务端 **0.24.0** 为 `20261107-runtime-v2-01`；Android 仍为 **0.21.2-debug / versionCode 20**（`android-20261106-02`）。Harness 3B/3C 的运行结算、显式迁移、恢复与删除防复活已上线；停机备份 `pre-runtime-v2-20261107-01.tar.gz`、迁移后历史、鉴权、监听和 Android 更新清单均通过零模型检查。见[发布记录](../docs/release-0.24.md)。
 
 历史发布（2026-11-06）：服务端 **0.22.0** 为 `20261106-continuity-ui-01`；Android 仍为 **0.21.2-debug / versionCode 20**（`android-20261106-02`）。陪伴接续、模型消息投影与网页 UI 已上线；一致性备份 `pre-continuity-ui-20261106-01.tar.gz`、线上版本/鉴权/旧会话/静态资源/监听和 Android 清单均通过零模型检查。见[发布记录](../docs/release-0.22.md)。
 
@@ -37,6 +39,34 @@
 同一端口已有隧道时可直接使用。关闭隧道不停止服务器上的服务。当前后台隧道的 PID 记录在 `.cache/pocket-agent-tunnel.pid`，日志位于 `.cache/pocket-agent-tunnel.err`；这些文件不加入 Git。
 
 这条隧道仅绑定电脑回环地址，手机不能直接填写电脑公网地址来访问。当前 Android 新版可直接使用上面的 pocket 地址，不依赖此隧道。USB 调试旧版本时，可针对明确的测试设备执行 `adb -s <设备ID> reverse tcp:19991 tcp:60991`。
+
+## 可选 OneBot / QQ 私聊通道
+
+服务端包含默认关闭的 OneBot v11 owner 私聊通道。未配置 `ONEBOT_ENABLED=true` 时，不注册 webhook、不打开 Channel Store，也不连接 SnowLuma。协议、权限和防重复边界见[Channel 架构](../docs/channel-integration-architecture.md)。
+
+SnowLuma 在本机、chat-agent 在服务器时，运行独立双向隧道并保持终端打开：
+
+```powershell
+.\deploy\Open-OneBot-Tunnel.ps1
+```
+
+它将本机 `127.0.0.1:18080` 转发到服务端 9991，同时把服务端 `127.0.0.1:13000` 反向转发到本机 SnowLuma 3000。SnowLuma HTTP Client URL 填写 `http://127.0.0.1:18080/hooks/onebot/v1/events`；HTTP Server 只监听本机回环。Ingress HMAC secret 与 Action Bearer token 必须分别生成并只写入服务端 root:0600 环境文件和 SnowLuma 对应配置，不提交 Git。
+
+启用前在 `/etc/pocket-agent/pocket-agent.env` 配置：
+
+```text
+ONEBOT_ENABLED=true
+ONEBOT_ACCOUNT_ID=<机器人 QQ 数字 ID>
+ONEBOT_OWNER_QQ_ID=<主人 QQ 数字 ID>
+ONEBOT_INGRESS_SECRET=<至少 32 字符的独立随机值>
+ONEBOT_ACTION_BASE_URL=http://127.0.0.1:13000/
+ONEBOT_ACTION_TOKEN=<至少 32 字符的另一独立随机值>
+ONEBOT_ROLE_ID=companion
+ONEBOT_TIMEOUT=5s
+ONEBOT_MAX_BODY_BYTES=262144
+```
+
+第一版只处理 owner 好友私聊纯文本。guest、群聊、自身消息和非文本段不会进入模型；出站只调用 `send_private_msg`，目标来自已验证映射。超时或断线后的发送状态是 unknown，不自动重发，也不会重新调用模型。
 
 ## 服务布局
 
@@ -97,15 +127,15 @@ go build -trimpath -buildvcs=false -ldflags '-s -w' -o bin/chat-agent-linux-amd6
 
 ## 验证与剩余范围
 
-当前 Agent 版本 `20261107-runtime-v2-01`（0.24.0），Linux SHA-256：`d04d0359a0c29d6d1b5ef03b2409ca46c734b18ef03e3d54190045969f2971a0`。旧版本仍保留，但 runtime 数据不能仅靠切换旧二进制回退。升级前停机备份为 `/opt/pocket-agent/backups/pre-runtime-v2-20261107-01.tar.gz`（root-only），SHA-256 为 `8ceba7a373519c8e1257dd4daae980e985460b04b142e8f03e4a7d29d9818830`。
+当前 Agent 版本 `20261108-channel-02`（0.25.0），Linux SHA-256：`0b2e18c025c50f6f4e10a34af3c7e31a2f7016281462da17358db34489f6d366`。本版不改变 runtime 数据格式；升级前停机备份为 `/opt/pocket-agent/backups/pre-channel-20261108-01.tar.gz`（root-only），SHA-256 为 `48ced08513e85a256b6a1b387acebef4185eaa3a9d3079cda57a57191b312986`。
 
-本次零模型部署检查覆盖健康、鉴权、版本、调度与搜索开关、历史和 turns 投影、9991/9992 监听、Android 更新清单及本机隧道。迁移后 20 条消息、12 轮记录可读，running/queued 均为 0；没有向真实模型发送诊断请求。详见[0.24 发布记录](../docs/release-0.24.md)。
+本次零模型部署检查覆盖健康、鉴权、版本、调度与搜索开关、历史和 turns 投影、OneBot 关闭态、9991/9992 监听及本机隧道。最终有 2 个会话、30 条消息和 15 轮记录可读，active/queued/paused 均为 0；`onebot_enabled=false`，未鉴权 API 为 401，关闭态 webhook 为 404。没有向真实模型或 QQ 发送请求。详见[0.25 发布记录](../docs/release-0.25.md)。
 
 尚未配置公网浏览器 HTTPS、自动备份、日志保留策略和生产速率限制；真实模型已完成一次最小工具循环验收，长期运行尚未验收。文件型存储需要一致性备份：安排短暂维护，正常停止服务后备份 `/var/lib/pocket-agent`，再启动服务；配置文件中的密钥应独立加密备份。不要直接将正在写入的数据当作已验证的可恢复备份。
 
 ## Android 包发布
 
-当前服务版本 `20261107-runtime-v2-01`，Android 包仍为 `0.21.2-debug`（versionCode 20，发布目录 `android-20261106-02`），支持自动登录与应用内更新。发布使用 `deploy/publish-android.ps1`，详情见[自动登录与更新发布说明](../docs/android-updates.md)。服务端 `POCKET_ANDROID_RELEASE_DIR=/opt/pocket-agent/android/current` 已配置；后续发布只切换安装包目录，无需重启服务。
+当前服务版本 `20261108-channel-02`，Android 包仍为 `0.21.2-debug`（versionCode 20，发布目录 `android-20261106-02`），支持自动登录与应用内更新。发布使用 `deploy/publish-android.ps1`，详情见[自动登录与更新发布说明](../docs/android-updates.md)。服务端 `POCKET_ANDROID_RELEASE_DIR=/opt/pocket-agent/android/current` 已配置；后续发布只切换安装包目录，无需重启服务。
 
 语音朗读在同一服务环境文件中显式设置 `POCKET_TTS_MODEL=ecnu-tts` 和 `POCKET_TTS_VOICE=xiayu`，复用服务端网关密钥；聊天模型仍为 `ecnu-max`。取消配置并重启即可关闭，不增加端口、后台推送服务或持久化音频。
 

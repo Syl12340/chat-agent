@@ -59,6 +59,38 @@ func searchEngine(enabled bool) string {
 	return ""
 }
 
+func oneBotConfigFromEnv() (api.OneBotConfig, error) {
+	enabledValue := strings.ToLower(strings.TrimSpace(os.Getenv("ONEBOT_ENABLED")))
+	enabled := enabledValue == "1" || enabledValue == "true" || enabledValue == "yes"
+	if enabledValue != "" && !enabled && enabledValue != "0" && enabledValue != "false" && enabledValue != "no" {
+		return api.OneBotConfig{}, errors.New("invalid ONEBOT_ENABLED")
+	}
+	config := api.OneBotConfig{
+		Enabled:       enabled,
+		AccountID:     strings.TrimSpace(os.Getenv("ONEBOT_ACCOUNT_ID")),
+		OwnerID:       strings.TrimSpace(os.Getenv("ONEBOT_OWNER_QQ_ID")),
+		IngressSecret: os.Getenv("ONEBOT_INGRESS_SECRET"),
+		ActionBaseURL: strings.TrimSpace(os.Getenv("ONEBOT_ACTION_BASE_URL")),
+		ActionToken:   os.Getenv("ONEBOT_ACTION_TOKEN"),
+		RoleID:        strings.TrimSpace(os.Getenv("ONEBOT_ROLE_ID")),
+	}
+	if value := strings.TrimSpace(os.Getenv("ONEBOT_TIMEOUT")); value != "" {
+		timeout, err := time.ParseDuration(value)
+		if err != nil || timeout <= 0 {
+			return api.OneBotConfig{}, errors.New("invalid ONEBOT_TIMEOUT")
+		}
+		config.Timeout = timeout
+	}
+	if value := strings.TrimSpace(os.Getenv("ONEBOT_MAX_BODY_BYTES")); value != "" {
+		limit, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || limit <= 0 {
+			return api.OneBotConfig{}, errors.New("invalid ONEBOT_MAX_BODY_BYTES")
+		}
+		config.MaxBodyBytes = limit
+	}
+	return config, nil
+}
+
 func run() error {
 	c := probe.DefaultConfig()
 	listen := flag.String("listen", "127.0.0.1:8080", "HTTP listen address")
@@ -130,7 +162,11 @@ func run() error {
 			return errors.New("invalid POCKET_THINKING_MAX_OUTPUT")
 		}
 	}
-	app, err := api.New(api.Config{Agent: c, ChatModels: chatModels, ThinkingMaxOutput: thinkingMax, Speech: api.SpeechConfig{Model: os.Getenv("POCKET_TTS_MODEL"), Voice: os.Getenv("POCKET_TTS_VOICE")}, DataDir: *data, RolesDir: *rolesDir, TimeZone: *timeZone, Web: webtools.Config{Enabled: *webEnabled, AllowedHosts: strings.Split(os.Getenv("POCKET_WEB_HOSTS"), ","), SearchURL: searchEngine(*webEnabled)}, AccessToken: os.Getenv("POCKET_ACCESS_TOKEN"), AndroidReleaseDir: os.Getenv("POCKET_ANDROID_RELEASE_DIR"), Semantic: semantic.Config{BaseURL: os.Getenv("POCKET_BASE_URL"), APIKey: os.Getenv("POCKET_API_KEY"), Model: os.Getenv("POCKET_RERANK_MODEL")}})
+	onebotConfig, err := oneBotConfigFromEnv()
+	if err != nil {
+		return err
+	}
+	app, err := api.New(api.Config{Agent: c, ChatModels: chatModels, ThinkingMaxOutput: thinkingMax, Speech: api.SpeechConfig{Model: os.Getenv("POCKET_TTS_MODEL"), Voice: os.Getenv("POCKET_TTS_VOICE")}, DataDir: *data, RolesDir: *rolesDir, TimeZone: *timeZone, Web: webtools.Config{Enabled: *webEnabled, AllowedHosts: strings.Split(os.Getenv("POCKET_WEB_HOSTS"), ","), SearchURL: searchEngine(*webEnabled)}, AccessToken: os.Getenv("POCKET_ACCESS_TOKEN"), AndroidReleaseDir: os.Getenv("POCKET_ANDROID_RELEASE_DIR"), Semantic: semantic.Config{BaseURL: os.Getenv("POCKET_BASE_URL"), APIKey: os.Getenv("POCKET_API_KEY"), Model: os.Getenv("POCKET_RERANK_MODEL")}, OneBot: onebotConfig})
 	if err != nil {
 		return err
 	}

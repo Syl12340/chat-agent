@@ -7,10 +7,8 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 
-	"pocket-agent/internal/companion"
 	"pocket-agent/internal/interactive"
 	"pocket-agent/internal/media"
 	"pocket-agent/internal/probe"
@@ -45,26 +43,12 @@ func (s *Server) enqueueTurn(w http.ResponseWriter, r *http.Request) {
 	d := json.NewDecoder(r.Body)
 	d.DisallowUnknownFields()
 	var extra any
-	if d.Decode(&input) != nil || d.Decode(&extra) != io.EOF || !validID(input.RequestID) || (strings.TrimSpace(input.Content) == "" && len(input.ImageIDs) == 0) || len(input.Content) > 64<<10 || !companion.ValidMode(input.Mode) || len(input.ImageIDs) > 3 {
+	if d.Decode(&input) != nil || d.Decode(&extra) != io.EOF || len(input.ImageIDs) > 3 {
 		fail(w, 400, "消息标识、内容或交流方式无效")
 		return
 	}
 	sess, ok := s.get(w, r)
 	if !ok {
-		return
-	}
-	uiResponse, reserved, responseErr := interactive.ParseResponse(input.Content)
-	if responseErr != nil || (reserved && len(input.ImageIDs) > 0) {
-		fail(w, 400, "互动答案格式无效，不能附带图片")
-		return
-	}
-	choice, err := s.selectChat(input.Model, input.Thinking)
-	if err != nil {
-		fail(w, 400, err.Error())
-		return
-	}
-	if len(input.ImageIDs) > 0 && !choice.Vision {
-		fail(w, 400, "所选模型不支持图片，请选择可看图的模型")
 		return
 	}
 	images := []media.Image{}
@@ -82,60 +66,11 @@ func (s *Server) enqueueTurn(w http.ResponseWriter, r *http.Request) {
 		}
 		images = append(images, image)
 	}
-	// Legacy clients retry their original v1 identity. Explicit selectors or
-	// images opt this submission into the new versioned queue envelope.
-	if input.Model != "" || input.Thinking != "" || len(images) > 0 {
-		input.Model, input.Thinking = choice.Model, choice.Thinking
-	}
 	id := r.PathValue("id")
-	if input.Mode == "" {
-		input.Mode = "auto"
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closing {
-		fail(w, 503, "服务正在关闭")
-		return
-	}
-	if uiResponse != nil {
-		if err := s.validateUIResponse(sess, id, uiResponse); err != nil {
-			fail(w, 409, err.Error())
-			return
-		}
-	}
-	if current := s.runs[id]; current != nil && !current.queued {
-		fail(w, 409, "旧版聊天请求正在生成，请先停止")
-		return
-	}
-	pending, paused, err := s.turns.HasQueued(id)
-	_ = pending
+	turn, duplicate, err := s.SubmitTurn(r.Context(), TurnSubmission{SessionID: id, RequestID: input.RequestID, Content: input.Content, Mode: input.Mode, Model: input.Model, Thinking: input.Thinking, Images: images})
 	if err != nil {
-		turnFailure(w, err)
+		turnSubmissionFailure(w, err)
 		return
-	}
-	// Existing IDs remain queryable even when all model slots are in use.
-	if s.runs[id] == nil && len(s.runs) >= 4 && !paused {
-		existing, _, e := s.turns.List(id)
-		if e != nil {
-			turnFailure(w, e)
-			return
-		}
-		for _, t := range existing {
-			if t.ID == input.RequestID && t.Content == input.Content && t.Mode == input.Mode && t.Model == input.Model && t.Thinking == input.Thinking && sameImages(t.Images, images) {
-				writeJSON(w, 200, t)
-				return
-			}
-		}
-		fail(w, 429, "同时生成的会话过多，请稍后发送")
-		return
-	}
-	turn, duplicate, err := s.turns.EnqueueWithOptions(id, input.RequestID, input.Content, input.Mode, input.Model, input.Thinking, images)
-	if err != nil {
-		turnFailure(w, err)
-		return
-	}
-	if !duplicate && !paused {
-		s.startTurnWorkerLocked(id, sess)
 	}
 	code := http.StatusAccepted
 	if duplicate {
@@ -383,6 +318,17 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 			}
 			if status != "completed" {
 				return
+			}
+			if observer := s.turnObserver; observer != nil {
+				requestIDs := make([]string, 0, len(batch))
+				for _, turn := range batch {
+					requestIDs = append(requestIDs, turn.ID)
+				}
+				if observeErr := observer.TurnCompleted(ctx, TurnCompletion{SessionID: id, RequestID: root, RequestIDs: requestIDs, Text: text, CompletedAt: time.Now().UTC()}); observeErr != nil {
+					log.Printf("turn completion observer failed")
+					_ = s.turns.Pause(id, true)
+					return
+				}
 			}
 			// Serialize exit with enqueues: a newly accepted message cannot lose its worker.
 			s.mu.Lock()

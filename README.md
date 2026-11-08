@@ -1,6 +1,6 @@
 # chat-agent
 
-当前服务端发布为 **0.24.0**（`20261107-runtime-v2-01`）；Android 更新包仍为 **0.21.2-debug（versionCode 20）**。服务端已上线 Harness 3B/3C 运行结算、显式迁移、恢复与删除防复活，Android 原包名、签名和设备身份保留。[本次记录](docs/release-0.24.md)。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
+当前服务端发布为 **0.25.0**（`20261108-channel-02`）；Android 更新包仍为 **0.21.2-debug（versionCode 20）**。服务端已上线默认关闭的 OneBot v11 owner 私聊通道 P0–P2，现有 Harness/runtime、Android 包名、签名和设备身份不变；生产尚未配置 OneBot 凭据。[本次记录](docs/release-0.25.md)。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
 
 0.24.0 以 format index + manifest 选择唯一 runtime 代，聊天/队列规范状态与 attempt/model/tool 运行事实处于同一代。旧 transcript v1/v2、turns v1/v2/v3 只由停机维护命令显式迁移；最新轮/整会话删除先登记再重写或清理，旧代和模型快照不会被读取器自动复活。生产配置仍使用 `ecnu-max`，本地搜索、设备白名单、加密 9992 入口和 Android 0.21.2 更新通道保持不变。
 
@@ -10,11 +10,11 @@
 
 0.21 已合并交付原拟 0.20.1 参数记忆和 0.21 渲染/UI：按模型记住思考档位，Markdown 表格/嵌套列表、LaTeX/MathML、JSON 树、数据表/柱状图/流程图，以及同实例工作台和工具状态排版。普通网页与 Android 共享渲染，Android 新包通过原生存储解决随机代理端口导致的偏好丢失。[实施与边界](docs/rendering-and-ui-plan.md)。
 
-下一步优先统一主动陪伴的可信 followup 与同会话接续，再按需要扩展持久 Generative UI。见[当前规划](docs/feature-plan.md)及[项目现状与架构路线](docs/architecture-roadmap-2026-11.md)。
+Channel P0–P2 已完成独立验签入口、Inbox/Outbox、稳定 session mapping、共享入队和防重复投递；它复用现有 Harness，不建立第二套 Agent Loop。下一步是在具备 SnowLuma 实例和两套独立凭据后做一次隔离 owner 私聊验收，再继续主动陪伴接续和持久 Generative UI。见[Channel 架构](docs/channel-integration-architecture.md)、[当前规划](docs/feature-plan.md)及[项目现状与架构路线](docs/architecture-roadmap-2026-11.md)。
 
 **0.7.0 已交付**：睡前闲聊、一天复盘、共同兴趣和小目标陪伴。共同活动支持手动保存进展、跨会话继续、暂停与结束，只影响明确关联的会话。[使用说明](docs/activities-0.7.md)。原有[连续聊天、事件与关怀](docs/companion-0.6.md)、[陪伴偏好](docs/companion.md)继续保留。
 
-优先在现有 Android/网页改善连续消息、自然分段回复与话题接续；QQ、微信、B站等第三方平台接入保持低优先级。当前已上线能力、实际缺口和后续建议排期统一见[当前规划](docs/feature-plan.md)。
+现有 Android/网页继续作为主要体验面；QQ 仅先实现主人私聊这一条受控入口，微信、B站、群聊和通用多平台网关保持后续优先级。当前已上线能力、实际缺口和后续建议排期统一见[当前规划](docs/feature-plan.md)。
 
 支持手机页面、单用户鉴权、会话列表、流式回答、停止生成、历史恢复、工具过程展示、Markdown/数学/结构渲染、角色切换、记忆审核与上下文压缩。Go 存储保持标准库，记忆使用版本化 JSON 与基础关键词检索，未引入原规格中的 SQLite/FTS5。
 
@@ -23,10 +23,10 @@
 需要 Go 1.26。Windows / PowerShell 7：
 
 ```powershell
-go build -buildvcs=false -o bin/chat-agent-0.24.0.exe ./cmd/server
+go build -buildvcs=false -o bin/chat-agent-0.25.0.exe ./cmd/server
 $env:POCKET_ACCESS_TOKEN = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 $env:POCKET_ACCESS_TOKEN  # 在自己的终端查看，随后输入网页登录框
-.\bin\chat-agent-0.24.0.exe -demo
+.\bin\chat-agent-0.25.0.exe -demo
 ```
 
 在浏览器打开 [本机页面](http://127.0.0.1:8080)，首次通过管理员维护入口批准设备指纹，之后由设备签名自动连接。点击“看看此刻的时间”即可体验完整工具循环。
@@ -51,7 +51,7 @@ Linux 构建：`go build -buildvcs=false -o bin/chat-agent ./cmd/server`。运�
 $env:POCKET_BASE_URL='https://your-api.example/v1'
 $env:POCKET_MODEL='your-model-id'
 # 在自己的终端安全设置 POCKET_API_KEY
-.\bin\chat-agent-0.24.0.exe
+.\bin\chat-agent-0.25.0.exe
 ```
 
 [.env.example](.env.example) 只是模板，程序不会自动加载 `.env`。
