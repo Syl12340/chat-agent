@@ -138,6 +138,9 @@ export function createLifeUI({ state, json, onError, drawer, onOpenSession, onCa
       if (item.content) article.append(element('p','life-content care-content',item.content));
       if (item.error) article.append(element('p','life-meta',item.error));
       const actions = element('div','life-actions');
+      if (item.session_id && onOpenSession) action(actions,'回到这段对话', async () => {
+        ui['care-dialog'].close(); try { await onOpenSession(item.session_id); } catch (error) { report('care',error); }
+      },false);
       if (item.status === 'due') action(actions,'生成问候',() => generateManual(item));
       if (item.status === 'ready') action(actions,'已看过',() => mutate('care',target => json(endpoint(`/api/care/${encodeURIComponent(item.id)}`,target),{method:'PATCH',body:JSON.stringify({revision:item.revision,status:'seen'})})));
       if (['due','ready'].includes(item.status)) action(actions,'取消',() => mutate('care',target => json(endpoint(`/api/care/${encodeURIComponent(item.id)}`,target),{method:'PATCH',body:JSON.stringify({revision:item.revision,status:'canceled'})})));

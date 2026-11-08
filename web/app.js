@@ -62,7 +62,7 @@ const deviceAuth = createDeviceAuth({state,onToken:token=>connect(token,'device'
 const taskUI = createTaskUI({ state, request, json, roleName, drawer, onError: handleError });
 const companionUI = createCompanionUI({ state, json, drawer, onError: handleError });
 const roleProposalsUI = createRoleProposalsUI({state,json,drawer,onError:handleError});
-const topicsUI=createTopicsUI({state,json,drawer,onError:handleError});
+const topicsUI=createTopicsUI({state,json,drawer,onError:handleError,onOpenSession:id=>selectSession(id)});
 const nativeCare = createNativeCare({state});
 const voiceUI = createVoiceUI({ state, request, notice, restoreDraft, onError: handleError });
 const lifeUI = createLifeUI({ state, json, drawer, onError: handleError, onOpenSession: id => selectSession(id), onCareReady: (role,items)=>nativeCare.deliver(role,items) });
@@ -74,6 +74,41 @@ interactiveUI = createUIRenderer({onSubmit:submitUIAnswer,onExpand:(node,meta)=>
 let authEpoch = 0, connectionWork = Promise.resolve(), connectionAbort = null, renewalWork = null;
 const staleAuth = () => new DOMException('认证请求已过期', 'AbortError');
 let sessionSelection = 0;
+let nativeSessionRequest = '';
+let nativeSessionRetry = 0;
+
+function retryNativeSessionRequest() {
+  clearTimeout(nativeSessionRetry);
+  nativeSessionRetry = window.setTimeout(() => {
+    nativeSessionRetry = 0;
+    void openNativeSessionRequest().catch(handleError);
+  }, 250);
+}
+
+async function openNativeSessionRequest() {
+  const id = nativeSessionRequest;
+  if (!id || !state.token || !state.sessions.length) return;
+  if (state.loading || state.submitting || state.compacting || state.imageBusy) {
+    retryNativeSessionRequest();
+    return;
+  }
+  const item = state.sessions.find(value => value.id === id);
+  if (!item || item.unavailable) {
+    nativeSessionRequest = '';
+    notice('通知对应的会话已不可用。');
+    return;
+  }
+  await selectSession(id);
+  if (state.current === id) nativeSessionRequest = '';
+  else retryNativeSessionRequest();
+}
+
+window.addEventListener('pocket-native-open-session', event => {
+  const id = String(event.detail?.session_id || '');
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return;
+  nativeSessionRequest = id;
+  void openNativeSessionRequest().catch(handleError);
+});
 let installPrompt;
 
 function notice(text = '') {
@@ -197,6 +232,7 @@ function handleError(error) {
   else notice(error.message || '连接失败，请稍后重试。');
 }
 function logout() {
+  clearTimeout(nativeSessionRetry); nativeSessionRetry = 0;
   clearInteractiveUI();
   deviceAuth.logout(state.token);
   authEpoch++; connectionAbort?.abort(); connectionAbort = null;
@@ -251,10 +287,12 @@ function connect(token, authKind = 'owner') {
       await step(chatInput.refreshOptions());
       await step(loadRoles());
       await step(refreshSessions());
+      const requested = state.sessions.find(item => item.id === nativeSessionRequest && !item.unavailable);
       const remembered = storage.get('pocket-session');
-      const selected = state.sessions.find(item => item.id === remembered) || state.sessions[0];
+      const selected = requested || state.sessions.find(item => item.id === remembered) || state.sessions[0];
       if (selected && !selected.unavailable) await step(selectSession(selected.id));
       else { updateUI(); taskUI.refresh().catch(handleError); }
+      if (requested) nativeSessionRequest = '';
       await step(refreshMemoryCount());
       await step(lifeUI.refresh({ auto: false }));
       nativeCare.refresh();

@@ -26,7 +26,7 @@ type Config struct {
 	Timeout                                 time.Duration
 	TokenParameter                          string
 	Demo                                    bool
-	SystemPrompt, Reference                 string
+	SystemPrompt, HostPrompt, Reference     string
 	Tools                                   []Tool
 	RoleID, SessionID                       string
 	PrepareStep                             func(context.Context, StepContext) (StepState, error)
@@ -118,7 +118,7 @@ func New(c Config, sess *Session) (*Agent, error) {
 	if (!c.Demo && (strings.TrimSpace(c.Model) == "" || (c.Provider == nil && c.APIKey == ""))) || sess == nil {
 		return nil, errors.New("API key, model and session are required")
 	}
-	if c.MaxTurns < 1 || c.MaxToolCalls < 1 || c.MaxOutputTokens < 0 || c.Timeout <= 0 {
+	if c.MaxTurns < 1 || c.MaxToolCalls < 1 || c.MaxOutputTokens < 0 || c.Timeout <= 0 || len(c.HostPrompt) > 16<<10 {
 		return nil, errors.New("turn, tool and timeout limits must be positive; output tokens cannot be negative (0 uses provider default)")
 	}
 	if c.ContextBytes < 0 || c.KeepRecentTurns < 0 {

@@ -17,6 +17,34 @@ import (
 
 const recentRecallUserMessages = 3
 
+// proactiveTurnContext adds one host-owned trigger to the normal role/session
+// reference and narrows history to a recent, user-anchored window. The trigger
+// remains inside the ephemeral runtime snapshot, never a persisted user turn.
+func proactiveTurnContext(base func(context.Context, probe.StepContext) (probe.StepState, error), sess *probe.Session, trigger string) func(context.Context, probe.StepContext) (probe.StepState, error) {
+	return func(ctx context.Context, step probe.StepContext) (probe.StepState, error) {
+		state, err := base(ctx, step)
+		if err != nil {
+			return probe.StepState{}, err
+		}
+		var reference map[string]any
+		var value any
+		if json.Unmarshal([]byte(state.Reference), &reference) != nil || reference == nil || json.Unmarshal([]byte(trigger), &value) != nil || value == nil {
+			return probe.StepState{}, errors.New("invalid proactive trigger reference")
+		}
+		reference["proactive_trigger"] = value
+		encoded, err := json.Marshal(reference)
+		if err != nil || len(encoded) > 24<<10 {
+			return probe.StepState{}, errors.New("proactive trigger reference exceeds limit")
+		}
+		messages := sess.Messages()
+		floor := max(state.HistoryFloor, len(messages)-12)
+		for floor < len(messages) && messages[floor].Role != "user" {
+			floor++
+		}
+		return probe.StepState{Reference: string(encoded), HistoryFloor: floor}, nil
+	}
+}
+
 // continuityRecallQuery keeps a concrete current subject authoritative. A
 // purely referential follow-up may borrow the nearest visible user subject so
 // approved memories/events can still be found without another model call.

@@ -1,5 +1,5 @@
 // Scheduled public-interest discovery. Reading this drawer never starts a scan.
-export function createTopicsUI({ state, json, onError, drawer }) {
+export function createTopicsUI({ state, json, onError, drawer, onOpenSession }) {
   const $ = id => document.getElementById(id);
   const dialog = $('topics-dialog'), form = $('topics-settings-form'), list = $('topics-list');
   const message = $('topics-message'), tabs = [...dialog.querySelectorAll('[data-topics-view]')];
@@ -105,6 +105,9 @@ export function createTopicsUI({ state, json, onError, drawer }) {
         sources(card, item.sources);
       }
       const actions = element('div', 'life-actions topics-actions');
+      if (item.session_id && onOpenSession) action(actions, '回到这段对话', async () => {
+        dialog.close(); try { await onOpenSession(item.session_id); } catch (error) { onError(error); }
+      });
       if (item.status === 'ready') action(actions, '标为已读', () => void mutate(item, 'seen'));
       if (['scheduled', 'running'].includes(item.status)) action(actions, '取消这次安排', () => void mutate(item, 'canceled'));
       action(actions, '删除记录', () => {

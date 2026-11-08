@@ -22,6 +22,7 @@ type pushItem struct {
 	Title     string    `json:"title"`
 	Content   string    `json:"content"`
 	CreatedAt time.Time `json:"created_at"`
+	SessionID string    `json:"session_id,omitempty"`
 }
 type pushInbox struct {
 	Cursor    string     `json:"cursor"`
@@ -102,7 +103,7 @@ func (s *Server) readPushInbox(now time.Time) (pushInbox, error) {
 			if c.Status != "ready" || c.Content == "" || c.AttemptedAt == nil {
 				continue
 			}
-			out.Items = append(out.Items, pushItem{c.ID, role.ID, "care", c.Title, c.Content, *c.AttemptedAt})
+			out.Items = append(out.Items, pushItem{ID: c.ID, RoleID: role.ID, Kind: "care", Title: c.Title, Content: c.Content, CreatedAt: *c.AttemptedAt, SessionID: c.SessionID})
 		}
 		topics, err := s.topics.Records(role.ID)
 		if err != nil {
@@ -112,7 +113,7 @@ func (s *Server) readPushInbox(now time.Time) (pushInbox, error) {
 			if item.Status != "ready" || item.Content == "" {
 				continue
 			}
-			out.Items = append(out.Items, pushItem{item.ID, role.ID, "topic", "分享给你", item.Content, item.UpdatedAt})
+			out.Items = append(out.Items, pushItem{ID: item.ID, RoleID: role.ID, Kind: "topic", Title: "分享给你", Content: item.Content, CreatedAt: item.UpdatedAt, SessionID: item.SessionID})
 		}
 		reminders, err := s.tasks.List(role.ID, "reminder")
 		if err != nil {
@@ -122,7 +123,7 @@ func (s *Server) readPushInbox(now time.Time) (pushInbox, error) {
 			if item.Status != "due" || item.FiredAt == nil {
 				continue
 			}
-			out.Items = append(out.Items, pushItem{item.ID, role.ID, "reminder", "到期提醒", item.Title, *item.FiredAt})
+			out.Items = append(out.Items, pushItem{ID: item.ID, RoleID: role.ID, Kind: "reminder", Title: "到期提醒", Content: item.Title, CreatedAt: *item.FiredAt})
 		}
 	}
 	sort.Slice(out.Items, func(i, j int) bool {

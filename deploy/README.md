@@ -1,6 +1,8 @@
 # 单机部署（SSH 隧道）
 
-当前发布（2026-11-08）：服务端 **0.25.0** 为 `20261108-channel-02`；Android 仍为 **0.21.2-debug / versionCode 20**（`android-20261106-02`）。OneBot v11 owner 私聊 P0–P2 已部署但默认关闭；一致性备份 `pre-channel-20261108-01.tar.gz`、版本/鉴权/历史/关闭态 webhook 和监听均通过零模型检查。见[发布记录](../docs/release-0.25.md)。
+当前发布（2026-11-08）：服务端 **0.26.0** 为 `20261108-followup-04`；Android 为 **0.26.0-debug / versionCode 21**（`android-20261108-01`）。主动陪伴同会话接续、两阶段投递与通知回跳已上线；一致性备份 `pre-followup-20261108-04.tar.gz`、版本/鉴权/历史/队列/APK/监听均通过零模型检查。OneBot 仍默认关闭。见[发布记录](../docs/release-0.26.md)。
+
+历史发布（2026-11-08）：服务端 **0.25.0** 为 `20261108-channel-02`；Android 为 **0.21.2-debug / versionCode 20**（`android-20261106-02`）。OneBot v11 owner 私聊 P0–P2 已部署但默认关闭；一致性备份 `pre-channel-20261108-01.tar.gz`、版本/鉴权/历史/关闭态 webhook 和监听均通过零模型检查。见[发布记录](../docs/release-0.25.md)。
 
 历史发布（2026-11-07）：服务端 **0.24.0** 为 `20261107-runtime-v2-01`；Android 仍为 **0.21.2-debug / versionCode 20**（`android-20261106-02`）。Harness 3B/3C 的运行结算、显式迁移、恢复与删除防复活已上线；停机备份 `pre-runtime-v2-20261107-01.tar.gz`、迁移后历史、鉴权、监听和 Android 更新清单均通过零模型检查。见[发布记录](../docs/release-0.24.md)。
 
@@ -127,15 +129,15 @@ go build -trimpath -buildvcs=false -ldflags '-s -w' -o bin/chat-agent-linux-amd6
 
 ## 验证与剩余范围
 
-当前 Agent 版本 `20261108-channel-02`（0.25.0），Linux SHA-256：`0b2e18c025c50f6f4e10a34af3c7e31a2f7016281462da17358db34489f6d366`。本版不改变 runtime 数据格式；升级前停机备份为 `/opt/pocket-agent/backups/pre-channel-20261108-01.tar.gz`（root-only），SHA-256 为 `48ced08513e85a256b6a1b387acebef4185eaa3a9d3079cda57a57191b312986`。
+当前 Agent 版本 `20261108-followup-04`（0.26.0），Linux SHA-256：`030760d41981aec036faf302259c5e32c28f4c37e50747eeeaa3d1e9397ba5ea`。runtime v2/turns v3 不变，但 life 写入版本升至 v4、topics 升至 v2；最终切换前备份为 `/opt/pocket-agent/backups/pre-followup-20261108-04.tar.gz`（SHA-256 `144524cefca381655778397d2eabff4bb93035e95ee73c556396c27ed46c2b5e`）。若需回到 0.25，须恢复更早的 `pre-followup-20261108-01.tar.gz`（SHA-256 `a2b56c492df0d57fa92613384ac2d7fa0394665cc0228686ad138a78d87444a8`），不能只切旧二进制。
 
-本次零模型部署检查覆盖健康、鉴权、版本、调度与搜索开关、历史和 turns 投影、OneBot 关闭态、9991/9992 监听及本机隧道。最终有 2 个会话、30 条消息和 15 轮记录可读，active/queued/paused 均为 0；`onebot_enabled=false`，未鉴权 API 为 401，关闭态 webhook 为 404。没有向真实模型或 QQ 发送请求。详见[0.25 发布记录](../docs/release-0.25.md)。
+本次零模型部署检查覆盖健康、鉴权、版本、调度与搜索开关、历史和 turns 投影、OneBot 关闭态、Android 清单/下载、9991/9992/9993 监听。最终有 2 个会话、38 条消息和 19 轮记录可读，active/running/queued/paused/unavailable 均为 0；`onebot_enabled=false`，未鉴权 API 为 401，关闭态 webhook 为 404。没有向真实模型或 QQ 发送请求。详见[0.26 发布记录](../docs/release-0.26.md)。
 
 尚未配置公网浏览器 HTTPS、自动备份、日志保留策略和生产速率限制；真实模型已完成一次最小工具循环验收，长期运行尚未验收。文件型存储需要一致性备份：安排短暂维护，正常停止服务后备份 `/var/lib/pocket-agent`，再启动服务；配置文件中的密钥应独立加密备份。不要直接将正在写入的数据当作已验证的可恢复备份。
 
 ## Android 包发布
 
-当前服务版本 `20261108-channel-02`，Android 包仍为 `0.21.2-debug`（versionCode 20，发布目录 `android-20261106-02`），支持自动登录与应用内更新。发布使用 `deploy/publish-android.ps1`，详情见[自动登录与更新发布说明](../docs/android-updates.md)。服务端 `POCKET_ANDROID_RELEASE_DIR=/opt/pocket-agent/android/current` 已配置；后续发布只切换安装包目录，无需重启服务。
+当前服务版本 `20261108-followup-04`，Android 包为 `0.26.0-debug`（versionCode 21，发布目录 `android-20261108-01`），支持自动登录、通知回到目标会话与应用内更新。APK SHA-256 为 `6b0632b33498a2cf55603dbcdc3deb189256775e886699a86bc7be0e53ef664a`。发布使用 `deploy/publish-android.ps1`，详情见[自动登录与 Android 更新说明](../docs/android-updates.md)。服务端 `POCKET_ANDROID_RELEASE_DIR=/opt/pocket-agent/android/current` 已配置；后续发布只切换安装包目录，无需重启服务。
 
 语音朗读在同一服务环境文件中显式设置 `POCKET_TTS_MODEL=ecnu-tts` 和 `POCKET_TTS_VOICE=xiayu`，复用服务端网关密钥；聊天模型仍为 `ecnu-max`。取消配置并重启即可关闭，不增加端口、后台推送服务或持久化音频。
 

@@ -62,7 +62,7 @@ func TestCareProbabilityLifecycle(t *testing.T) {
 	if _, err = s.ClaimCare("companion", id, true, now, location); !errors.Is(err, ErrCareBlocked) || draws != 1 {
 		t.Fatal("restart redrew a settled opportunity")
 	}
-	if s.state.Version != 2 {
+	if s.state.Version != 4 {
 		t.Fatal("care state version was not upgraded")
 	}
 	// The next day's independent opportunity hits and reserves exactly once.
@@ -125,5 +125,35 @@ func TestCareProbabilityLifecycle(t *testing.T) {
 	followup, err := s.ClaimCare("companion", eventID, true, due, location)
 	if err != nil || followup.Status != "generating" || draws != 2 {
 		t.Fatalf("explicit followup was sampled: %+v %v", followup, err)
+	}
+	prepared, err := s.PrepareCareDelivery("companion", eventID, followup.Revision, "按约定来问问。", "care-session", 4)
+	if err != nil || prepared.Status != "delivering" {
+		t.Fatalf("care delivery was exposed before transcript commit: %+v %v", prepared, err)
+	}
+	visible, _ := s.Care("companion")
+	for _, item := range visible {
+		if item.ID == eventID && (item.Content != "" || item.SessionID != "" || item.MessageIndex != nil) {
+			t.Fatalf("prepared care leaked through the inbox: %+v", item)
+		}
+	}
+	if err = s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = OpenLife(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, _ = s.Care("companion")
+	recovered := false
+	for _, item := range items {
+		if item.ID == eventID {
+			recovered = true
+			if item.Status != "interrupted" || item.SessionID != "" || item.MessageIndex != nil || item.Content != "" {
+				t.Fatalf("prepared delivery survived restart as visible: %+v", item)
+			}
+		}
+	}
+	if !recovered {
+		t.Fatal("prepared care disappeared during recovery")
 	}
 }

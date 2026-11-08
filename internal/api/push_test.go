@@ -207,6 +207,9 @@ func TestBackgroundCareLease(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close(context.Background())
+	if err = s.runtime.Create("background-care-session", "companion"); err != nil {
+		t.Fatal(err)
+	}
 	id, _ := pushDevice(t, s)
 	now := time.Now()
 	p, _ := s.life.Settings("companion")

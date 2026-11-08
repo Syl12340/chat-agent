@@ -154,6 +154,23 @@ func TestLifeAndCareLifecycle(t *testing.T) {
 	if c.Status != "ready" || c.Content == "" || count() != before+1 {
 		t.Fatal("consented care was not delivered")
 	}
+	if c.SessionID != session.ID || c.MessageIndex == nil {
+		t.Fatalf("care was not bound to its conversation: %+v", c)
+	}
+	messages := app.sessions[session.ID].Messages()
+	if *c.MessageIndex >= len(messages) || messages[*c.MessageIndex].Role != "assistant" || messages[*c.MessageIndex].Content != c.Content {
+		t.Fatal("care inbox and conversation diverged")
+	}
+	inbox, err := app.readPushInbox(time.Now())
+	if err != nil || len(inbox.Items) != 1 || inbox.Items[0].SessionID != session.ID {
+		t.Fatalf("care push did not retain its conversation target: %+v %v", inbox.Items, err)
+	}
+	providerMu.Lock()
+	captured = lastContext
+	providerMu.Unlock()
+	if !strings.Contains(captured, "面试在哪里") {
+		t.Fatal("proactive care did not receive recent conversation context")
+	}
 	if code, _ := request("POST", "/api/care/"+c.ID+"/generate", nil, true); code != 409 || count() != before+1 {
 		t.Fatal("completed care generated twice")
 	}

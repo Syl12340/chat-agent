@@ -187,9 +187,10 @@ func (s *Server) sweepTopics(now time.Time) error {
 		if err == nil {
 			result := topics.Result{Status: "silent", Reason: "shared care budget or quiet period blocked this opportunity"}
 			if reserveErr := s.life.ReserveTopicAttempt(p.RoleID, record.ID, now, s.location); reserveErr == nil {
-				result = s.discoverTopic(s.workCtx, record)
+				_, err = s.discoverTopic(s.workCtx, record)
+			} else {
+				_, err = s.topics.Finish(p.RoleID, record.ID, record.Revision, result)
 			}
-			_, err = s.topics.Finish(p.RoleID, record.ID, record.Revision, result)
 		}
 		<-s.careSlots
 		if err != nil && !errors.Is(err, topics.ErrBlocked) && !errors.Is(err, topics.ErrNotFound) && !errors.Is(err, topics.ErrConflict) {
@@ -200,13 +201,23 @@ func (s *Server) sweepTopics(now time.Time) error {
 }
 
 // One bounded pipeline, not an autonomous tool loop: only public source reads
-// and one opt-in, tool-free model decision. Nothing writes user memory/profile.
-func (s *Server) discoverTopic(parent context.Context, record topics.Record) (result topics.Result) {
-	result = topics.Result{Status: "failed", Reason: "discovery did not complete; no automatic retry"}
+// and one opt-in, tool-free model decision. The final text is committed to the
+// selected conversation before it becomes a ready inbox item.
+func (s *Server) discoverTopic(parent context.Context, record topics.Record) (settled topics.Record, runErr error) {
+	result := topics.Result{Status: "failed", Reason: "discovery did not complete; no automatic retry"}
+	settledOK := false
 	defer func() {
 		if recover() != nil {
 			result.Status = "failed"
 			result.Reason = "discovery stopped unexpectedly; no automatic retry"
+		}
+		if !settledOK {
+			item, err := s.topics.Finish(record.RoleID, record.ID, record.Revision, result)
+			if err != nil {
+				runErr = errors.Join(runErr, err)
+				return
+			}
+			settled, settledOK = item, true
 		}
 	}()
 	ctx, cancel := context.WithTimeout(parent, 45*time.Second)
@@ -251,8 +262,8 @@ func (s *Server) discoverTopic(parent context.Context, record topics.Record) (re
 			continue
 		}
 		body := []rune(page.Content)
-		if len(body) > 2000 {
-			body = body[:2000]
+		if len(body) > 1000 {
+			body = body[:1000]
 		}
 		title := []rune(candidate.Title)
 		if len(title) > 200 {
@@ -263,10 +274,6 @@ func (s *Server) discoverTopic(parent context.Context, record topics.Record) (re
 	if len(pages) == 0 {
 		result.Status = "silent"
 		result.Reason = "no new readable source; snippets were not treated as article text"
-		return
-	}
-	role, err := s.roles.Load(record.RoleID)
-	if err != nil {
 		return
 	}
 	prefs, err := s.companion.Get(record.RoleID)
@@ -291,62 +298,92 @@ func (s *Server) discoverTopic(parent context.Context, record topics.Record) (re
 			break
 		}
 	}
-	input, err := json.Marshal(map[string]any{"interest": record.Query, "sources": pages, "communication_preferences": prefs.Preferences, "recent_shares": recent})
-	if err != nil {
-		return
-	}
-	c := s.config.Agent
-	if c.MaxOutputTokens == 0 || c.MaxOutputTokens > 512 {
-		c.MaxOutputTokens = 512
-	}
-	c.Timeout = min(c.Timeout, 20*time.Second)
+	trigger := map[string]any{"origin": "topic", "trigger_id": record.ID, "interest": record.Query, "sources": pages, "communication_preferences": prefs.Preferences, "recent_shares": recent}
+	timeout := min(s.config.Agent.Timeout, 20*time.Second)
 	result.ModelCalls = 1
-	text, err := probe.Generate(ctx, c, "## Rules\n"+role.Rules+"\n## Persona\n"+role.Identity+"\n## Profile\n"+role.Profile+topicDecisionPrompt, string(input))
-	if err != nil {
-		result.Reason = "topic decision did not finish; model attempt is not retried"
-		return
-	}
-	var decision struct {
-		Share   bool   `json:"share"`
-		Text    string `json:"text"`
-		Sources []int  `json:"source_indexes"`
-	}
-	d := json.NewDecoder(strings.NewReader(text))
-	d.DisallowUnknownFields()
-	if d.Decode(&decision) != nil || d.Decode(new(any)) != io.EOF || !utf8.ValidString(decision.Text) || len([]rune(decision.Text)) > 1200 {
-		result.Reason = "topic decision was invalid; nothing was published"
-		return
-	}
-	if !decision.Share {
-		result.Status = "silent"
-		result.Reason = "model selected no share"
-		return
-	}
-	if strings.TrimSpace(decision.Text) == "" || len(decision.Sources) == 0 || len(decision.Sources) > 2 {
-		result.Reason = "topic decision lacked bounded text and source references"
-		return
-	}
-	chosen := map[int]bool{}
-	for _, index := range decision.Sources {
-		if index < 0 || index >= len(pages) || chosen[index] {
-			result.Sources = nil
-			result.Reason = "topic decision referenced an unavailable source"
-			return
+	_, _, persisted, err := s.runProactive(ctx, record.RoleID, "", "topic", record.ID, trigger, topicDecisionPrompt, 512, timeout, func(sessionID string, response probe.Message, messageIndex int) (probe.Message, bool, error) {
+		var decision struct {
+			Share   bool   `json:"share"`
+			Text    string `json:"text"`
+			Sources []int  `json:"source_indexes"`
 		}
-		chosen[index] = true
-		page := pages[index]
-		result.Sources = append(result.Sources, topics.Source{Title: page.Title, URL: page.URL})
+		d := json.NewDecoder(strings.NewReader(response.Content))
+		d.DisallowUnknownFields()
+		if d.Decode(&decision) != nil || d.Decode(new(any)) != io.EOF || !utf8.ValidString(decision.Text) || len([]rune(decision.Text)) > 1200 {
+			result.Reason = "topic decision was invalid; nothing was published"
+		} else if !decision.Share {
+			result.Status = "silent"
+			result.Reason = "model selected no share"
+		} else if strings.TrimSpace(decision.Text) == "" || len(decision.Sources) == 0 || len(decision.Sources) > 2 {
+			result.Reason = "topic decision lacked bounded text and source references"
+		} else {
+			chosen := map[int]bool{}
+			result.Sources = nil
+			valid := true
+			for _, index := range decision.Sources {
+				if index < 0 || index >= len(pages) || chosen[index] {
+					valid = false
+					break
+				}
+				chosen[index] = true
+				page := pages[index]
+				result.Sources = append(result.Sources, topics.Source{Title: page.Title, URL: page.URL})
+			}
+			if !valid {
+				result.Sources = nil
+				result.Reason = "topic decision referenced an unavailable source"
+			} else if ctx.Err() != nil || s.life.TopicStillAllowed(record.RoleID, record.ID, time.Now(), s.location) != nil {
+				result.Status = "silent"
+				result.Reason = "care policy changed before publication"
+				result.Sources = nil
+			} else {
+				result.Status = "ready"
+				result.Reason = "selected from directly read public sources"
+				result.Content = strings.TrimSpace(decision.Text)
+				index := messageIndex
+				result.SessionID = sessionID
+				result.MessageIndex = &index
+			}
+		}
+		var item topics.Record
+		var finishErr error
+		if result.Status == "ready" {
+			item, finishErr = s.topics.PrepareDelivery(record.RoleID, record.ID, record.Revision, result)
+		} else {
+			item, finishErr = s.topics.Finish(record.RoleID, record.ID, record.Revision, result)
+		}
+		if finishErr != nil {
+			return probe.Message{}, false, finishErr
+		}
+		settled, settledOK = item, true
+		if item.Status != "delivering" {
+			return probe.Message{}, false, nil
+		}
+		return probe.Message{Role: "assistant", Content: item.Content}, true, nil
+	})
+	if settledOK {
+		if settled.Status == "delivering" && persisted {
+			item, commitErr := s.topics.CommitDelivery(record.RoleID, record.ID, settled.Revision)
+			if commitErr != nil {
+				return settled, errors.Join(err, commitErr)
+			}
+			settled = item
+		} else if settled.Status == "delivering" {
+			failed, failErr := s.topics.FailDelivery(record.RoleID, record.ID, settled.Revision, "share was generated but could not be committed to its conversation; no automatic retry")
+			if failErr != nil {
+				return settled, errors.Join(err, failErr)
+			}
+			settled = failed
+		}
+		return settled, nil
 	}
-	if ctx.Err() != nil || s.life.TopicStillAllowed(record.RoleID, record.ID, time.Now(), s.location) != nil {
-		result.Status = "silent"
-		result.Reason = "care policy changed before publication"
-		result.Sources = nil
-		return
+	if errors.Is(err, errProactiveUnavailable) {
+		result.ModelCalls = 0
+		result.Reason = "no available conversation; discovery was not sent to a model"
+	} else if err != nil {
+		result.Reason = "topic decision did not finish; model attempt is not retried"
 	}
-	result.Status = "ready"
-	result.Reason = "selected from directly read public sources"
-	result.Content = decision.Text
-	return
+	return topics.Record{}, err
 }
 
 const topicDecisionPrompt = `

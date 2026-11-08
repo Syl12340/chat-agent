@@ -49,8 +49,12 @@ func TestCarePacingLifecycle(t *testing.T) {
 		delta := map[string]any{"content": "按你的节奏来。"}
 		finish := "stop"
 		if len(body.Tools) == 0 {
+			contents := make([]string, 0, len(body.Messages))
+			for _, message := range body.Messages {
+				contents = append(contents, message.Content)
+			}
 			mu.Lock()
-			lastGeneration = last.Content
+			lastGeneration = strings.Join(contents, "\n")
 			mu.Unlock()
 			delta["content"] = "面试准备得怎么样？今天想聊哪一点都可以。"
 		} else if user == snoozeText || user == resumeText {
@@ -124,6 +128,9 @@ func TestCarePacingLifecycle(t *testing.T) {
 		t.Fatal("new care is not opt-in with default pacing")
 	}
 	request("PATCH", "/api/care/settings", map[string]any{"revision": p.Revision, "enabled": true, "daily_limit": 5, "quiet_start": "00:00", "quiet_end": "00:00", "min_interval_minutes": 15}, &p, 200)
+	if err := app.runtime.Create("care-context-session", "companion"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := app.memory.Create("companion", "面试时喜欢提前十分钟到场", "approved", "user", ""); err != nil {
 		t.Fatal(err)
 	}

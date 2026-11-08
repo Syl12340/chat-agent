@@ -67,16 +67,20 @@ type Record struct {
 	SearchCount    int       `json:"search_count"`
 	ReadCount      int       `json:"read_count"`
 	ModelCalls     int       `json:"model_calls,omitempty"`
+	SessionID      string    `json:"session_id,omitempty"`
+	MessageIndex   *int      `json:"message_index,omitempty"`
 }
 
 type Result struct {
-	Status      string   `json:"status"`
-	Reason      string   `json:"reason,omitempty"`
-	Content     string   `json:"content,omitempty"`
-	Sources     []Source `json:"sources,omitempty"`
-	SearchCount int      `json:"search_count"`
-	ReadCount   int      `json:"read_count"`
-	ModelCalls  int      `json:"model_calls,omitempty"`
+	Status       string   `json:"status"`
+	Reason       string   `json:"reason,omitempty"`
+	Content      string   `json:"content,omitempty"`
+	Sources      []Source `json:"sources,omitempty"`
+	SearchCount  int      `json:"search_count"`
+	ReadCount    int      `json:"read_count"`
+	ModelCalls   int      `json:"model_calls,omitempty"`
+	SessionID    string   `json:"session_id,omitempty"`
+	MessageIndex *int     `json:"message_index,omitempty"`
 }
 
 // Day entries survive record deletion: neither opportunity deduplication nor
@@ -135,7 +139,7 @@ func validSettings(p Settings) bool {
 }
 func validStatus(status string) bool {
 	switch status {
-	case "scheduled", "skipped", "running", "ready", "silent", "failed", "interrupted", "expired", "canceled", "seen":
+	case "scheduled", "skipped", "running", "delivering", "ready", "silent", "failed", "interrupted", "expired", "canceled", "seen":
 		return true
 	}
 	return false
@@ -173,6 +177,9 @@ func validResult(r Result) bool {
 	if len(r.Content) > 16000 || !utf8.ValidString(r.Content) || !textOK(r.Reason, 500, true) || r.SearchCount < 0 || r.SearchCount > 1 || r.ReadCount < 0 || r.ReadCount > 2 || r.ModelCalls < 0 || r.ModelCalls > 1 || len(r.Sources) > 2 || r.Status == "ready" && strings.TrimSpace(r.Content) == "" {
 		return false
 	}
+	if (r.SessionID == "") != (r.MessageIndex == nil) || r.SessionID != "" && (!storage.ValidID(r.SessionID) || *r.MessageIndex < 0 || r.Status != "ready") {
+		return false
+	}
 	for _, src := range r.Sources {
 		if !validSource(src) {
 			return false
@@ -196,7 +203,7 @@ func Open(dir string) (_ *Store, err error) {
 		_ = os.Remove(lock)
 		return nil, err
 	}
-	s := &Store{dir: dir, lock: lock, state: snapshot{Version: 1}, now: time.Now, random: func(n int) (int, error) {
+	s := &Store{dir: dir, lock: lock, state: snapshot{Version: 2}, now: time.Now, random: func(n int) (int, error) {
 		v, e := rand.Int(rand.Reader, big.NewInt(int64(n)))
 		if e != nil {
 			return 0, e
@@ -232,7 +239,7 @@ func Open(dir string) (_ *Store, err error) {
 	if err = d.Decode(&s.state); err != nil {
 		return nil, err
 	}
-	if d.Decode(&extra) != io.EOF || s.state.Version != 1 || len(s.state.Records) > 1024 || len(s.state.Settings) > 128 || len(s.state.Days) > 8192 {
+	if d.Decode(&extra) != io.EOF || (s.state.Version != 1 && s.state.Version != 2) || len(s.state.Records) > 1024 || len(s.state.Settings) > 128 || len(s.state.Days) > 8192 {
 		return nil, ErrInvalid
 	}
 	roles := map[string]bool{}
@@ -245,7 +252,7 @@ func Open(dir string) (_ *Store, err error) {
 		roles[p.RoleID] = true
 	}
 	for _, r := range s.state.Records {
-		if !storage.ValidID(r.ID) || !roles[r.RoleID] || ids[r.ID] || r.Revision < 1 || r.PolicyRevision < 1 || !validStatus(r.Status) || r.DueAt.IsZero() || r.CreatedAt.IsZero() || r.UpdatedAt.IsZero() || len(r.Content) > 16000 || !textOK(r.Query, 80, true) || !textOK(r.Reason, 500, true) || r.SearchCount < 0 || r.SearchCount > 1 || r.ReadCount < 0 || r.ReadCount > 2 || r.ModelCalls < 0 || r.ModelCalls > 1 || len(r.Sources) > 2 {
+		if !storage.ValidID(r.ID) || !roles[r.RoleID] || ids[r.ID] || r.Revision < 1 || r.PolicyRevision < 1 || !validStatus(r.Status) || r.DueAt.IsZero() || r.CreatedAt.IsZero() || r.UpdatedAt.IsZero() || len(r.Content) > 16000 || !textOK(r.Query, 80, true) || !textOK(r.Reason, 500, true) || r.SearchCount < 0 || r.SearchCount > 1 || r.ReadCount < 0 || r.ReadCount > 2 || r.ModelCalls < 0 || r.ModelCalls > 1 || len(r.Sources) > 2 || (r.SessionID == "") != (r.MessageIndex == nil) || r.SessionID != "" && (!storage.ValidID(r.SessionID) || *r.MessageIndex < 0 || r.Status != "delivering" && r.Status != "ready" && r.Status != "seen") {
 			return nil, ErrInvalid
 		}
 		for _, src := range r.Sources {
@@ -268,7 +275,13 @@ func Open(dir string) (_ *Store, err error) {
 	changed := false
 	for i := range s.state.Records {
 		r := &s.state.Records[i]
-		if r.Status == "running" {
+		if r.Status == "running" || r.Status == "delivering" {
+			if r.Status == "delivering" {
+				r.Content = ""
+				r.Sources = nil
+				r.SessionID = ""
+				r.MessageIndex = nil
+			}
 			change(r, "interrupted", "process restarted; opportunity will not replay", s.now())
 			changed = true
 		}
@@ -308,10 +321,15 @@ func (s *Store) clone() snapshot {
 	}
 	for i := range n.Records {
 		n.Records[i].Sources = append([]Source(nil), n.Records[i].Sources...)
+		if n.Records[i].MessageIndex != nil {
+			index := *n.Records[i].MessageIndex
+			n.Records[i].MessageIndex = &index
+		}
 	}
 	return n
 }
 func (s *Store) commit(n snapshot) error {
+	n.Version = 2
 	data, err := json.MarshalIndent(n, "", "  ")
 	if err != nil {
 		return err
@@ -355,6 +373,10 @@ func change(r *Record, status, reason string, now time.Time) {
 }
 func copyRecord(r Record) Record {
 	r.Sources = append([]Source(nil), r.Sources...)
+	if r.MessageIndex != nil {
+		index := *r.MessageIndex
+		r.MessageIndex = &index
+	}
 	return r
 }
 func (s *Store) UpdateSettings(role string, p Settings) (Settings, error) {
@@ -601,10 +623,126 @@ func (s *Store) Finish(role, id string, revision int, result Result) (Record, er
 		r.SearchCount = result.SearchCount
 		r.ReadCount = result.ReadCount
 		r.ModelCalls = result.ModelCalls
+		r.SessionID = ""
+		r.MessageIndex = nil
+		if status == "ready" && result.MessageIndex != nil {
+			r.SessionID = result.SessionID
+			index := *result.MessageIndex
+			r.MessageIndex = &index
+		}
 		if status != "canceled" {
 			r.Content = result.Content
 			r.Sources = append([]Source(nil), result.Sources...)
 		}
+		if err := s.commit(n); err != nil {
+			return Record{}, err
+		}
+		return copyRecord(*r), nil
+	}
+	return Record{}, ErrNotFound
+}
+
+// PrepareDelivery records a non-visible delivery intent after the model
+// decision and final policy check. The caller must append the assistant message
+// before CommitDelivery makes the share eligible for inbox and push delivery.
+func (s *Store) PrepareDelivery(role, id string, revision int, result Result) (Record, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.check(role); err != nil {
+		return Record{}, err
+	}
+	if !validResult(result) || result.Status != "ready" || result.SessionID == "" || result.MessageIndex == nil {
+		return Record{}, ErrInvalid
+	}
+	n := s.clone()
+	for i := range n.Records {
+		r := &n.Records[i]
+		if r.RoleID != role || r.ID != id {
+			continue
+		}
+		if r.Revision != revision || r.Status != "running" {
+			return Record{}, ErrConflict
+		}
+		p := setting(n, role)
+		status, reason := "delivering", result.Reason
+		if !p.Enabled || p.Revision != r.PolicyRevision {
+			status = "canceled"
+			reason = "discovery settings changed"
+		}
+		change(r, status, reason, s.now())
+		r.SearchCount = result.SearchCount
+		r.ReadCount = result.ReadCount
+		r.ModelCalls = result.ModelCalls
+		r.Content = ""
+		r.Sources = nil
+		r.SessionID = ""
+		r.MessageIndex = nil
+		if status == "delivering" {
+			r.Content = result.Content
+			r.Sources = append([]Source(nil), result.Sources...)
+			r.SessionID = result.SessionID
+			index := *result.MessageIndex
+			r.MessageIndex = &index
+		}
+		if err := s.commit(n); err != nil {
+			return Record{}, err
+		}
+		return copyRecord(*r), nil
+	}
+	return Record{}, ErrNotFound
+}
+
+func (s *Store) CommitDelivery(role, id string, revision int) (Record, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.check(role); err != nil {
+		return Record{}, err
+	}
+	n := s.clone()
+	for i := range n.Records {
+		r := &n.Records[i]
+		if r.RoleID != role || r.ID != id {
+			continue
+		}
+		if r.Status != "delivering" || r.Revision != revision {
+			return Record{}, ErrConflict
+		}
+		r.Status = "ready"
+		r.UpdatedAt = s.now()
+		r.Revision++
+		if err := s.commit(n); err != nil {
+			return Record{}, err
+		}
+		return copyRecord(*r), nil
+	}
+	return Record{}, ErrNotFound
+}
+
+// FailDelivery clears a prepared or ready share if committing its assistant
+// message failed. Search/model charges remain part of the run.
+func (s *Store) FailDelivery(role, id string, revision int, reason string) (Record, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.check(role); err != nil {
+		return Record{}, err
+	}
+	if strings.TrimSpace(reason) == "" {
+		return Record{}, ErrInvalid
+	}
+	n := s.clone()
+	for i := range n.Records {
+		r := &n.Records[i]
+		if r.RoleID != role || r.ID != id {
+			continue
+		}
+		if r.Status != "delivering" && r.Status != "ready" || r.Revision != revision {
+			return Record{}, ErrConflict
+		}
+		change(r, "failed", reason, s.now())
+		r.Content = ""
+		r.Sources = nil
+		r.SessionID = ""
+		r.MessageIndex = nil
 		if err := s.commit(n); err != nil {
 			return Record{}, err
 		}
@@ -621,8 +759,13 @@ func (s *Store) Records(role string) ([]Record, error) {
 	out := []Record{}
 	for _, r := range s.state.Records {
 		if r.RoleID == role {
-			r.Sources = append([]Source(nil), r.Sources...)
-			out = append(out, r)
+			if r.Status == "delivering" {
+				r.Content = ""
+				r.Sources = nil
+				r.SessionID = ""
+				r.MessageIndex = nil
+			}
+			out = append(out, copyRecord(r))
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
@@ -669,7 +812,7 @@ func (s *Store) DeleteRecord(role, id string, revision int) error {
 			if r.Revision != revision {
 				return ErrConflict
 			}
-			if r.Status == "running" {
+			if r.Status == "running" || r.Status == "delivering" {
 				return ErrBlocked
 			}
 			n.Records = append(n.Records[:i], n.Records[i+1:]...)

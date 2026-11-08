@@ -1,6 +1,6 @@
 # Harness 3A：持久运行与删除契约
 
-更新：2026-11-07，设计基线 `harness-storage/1`。0.24 已实现 3C：停机显式迁移 transcript v1/v2 与 turns v1/v2/v3、manifest 选代、API 接线、删除登记、新代重写及兼容导出；0.23 的事件 writer、snapshot/payload 和 task create 回执同时接入聊天运行。生产切换记录见 [0.24 发布](release-0.24.md)，总体依据见[项目现状与架构路线](architecture-roadmap-2026-11.md)。
+更新：2026-11-08，设计基线 `harness-storage/1`。0.24 已实现 3C：停机显式迁移 transcript v1/v2 与 turns v1/v2/v3、manifest 选代、API 接线、删除登记、新代重写及兼容导出；0.23 的事件 writer、snapshot/payload 和 task create 回执同时接入聊天运行。0.26 在同一代内增加受限 host followup 与两阶段业务投递，见[发布记录](release-0.26.md)。总体依据见[项目现状与架构路线](architecture-roadmap-2026-11.md)。
 
 设计借鉴 DeepSeek Harness（MIT，固定参考 `8bd073392eef6f54e921a093b95076248eb08cbb`）对 turn/step、请求快照和持久事件的区分，Go 侧独立实现；许可见 [THIRD_PARTY_NOTICES](../THIRD_PARTY_NOTICES.md)。本契约不引入 Cordis、数据库依赖或新的模型调用。
 
@@ -9,6 +9,8 @@
 当前 `probe.RunMessages` 先保存真实用户输入；工具执行完毕后才保存完整 assistant/tool batch。业务写入成功后会话保存仍可能失败。`turns.Progress` 约一秒保存进度、重启将 running 改为 interrupted，但台账文本不是业务成功凭据。`Session` 严格读取 transcript v1/v2；0.21.2 在 v2 中保存完整回答的 reasoning，turns v3 另保存思考进度；末尾缺换行仍拒绝继续追加。`storage.Replace` 同目录替换且同步文件，尚不承诺目录断电持久性。
 
 0.24 将权威边界收敛为**manifest 明确选中的单个 runtime 代**。该代中的 `history.json` 与 `turns.json` 是聊天/队列的规范持久状态，`events.jsonl` 是 attempt/model/tool 的追加式运行与结算事实；业务结果仍以业务存储中的回执为准。这里修订了 3A 的“所有聊天都必须仅由事件重放”草案：当前 Go 会话与队列本来就是各自原子提交，强行双写全量事件会制造另一个不真实的跨文件事务。读取器只认同一 manifest 代，旧 transcript/turns 在切换后移除，因此没有两套在线权威。以后若改为完整 event sourcing，必须另做格式版本，不得把当前规范状态伪称为可从现有事件完整重建。
+
+0.26 的后台 followup 不制造用户 turn：可信触发只进入临时 runtime snapshot，assistant 消息写入 `history.json`，attempt/model 事实仍进入同代 `events.jsonl`。关怀/话题业务记录先进入不可见 `delivering`，会话 fsync 成功后才转 ready；重启将未完成的 delivering 转 interrupted、清空绑定且不重放。这样不声称跨文件全局原子性，同时避免业务收件箱在会话消息落盘前对外宣告送达。
 
 ## 2. 标识与作用域
 

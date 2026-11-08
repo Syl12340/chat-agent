@@ -90,6 +90,7 @@ class MainActivity : Activity() {
     private var updateBusy = false
     private var autoUpdateChecked = false
     private var pendingInstall: File? = null
+    private var pendingSessionID: String? = null
     // Resolved from resources so values-night can switch the shell to true black.
     private val paper by lazy { getColor(R.color.pocket_paper) }
     private val primary by lazy { getColor(R.color.pocket_primary) }
@@ -101,6 +102,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        captureNotificationIntent(intent)
         buildLayout()
         makeWebView()
         if (Build.VERSION.SDK_INT >= 33) {
@@ -202,7 +204,7 @@ class MainActivity : Activity() {
             override fun onPageFinished(view: WebView, url: String?) {
                 progress.visibility = View.GONE
                 if (!pageFailed && server?.contains(url) == true) {
-                    errorPanel.visibility = View.GONE; web.visibility = View.VISIBLE; attachExportChannel()
+                    errorPanel.visibility = View.GONE; web.visibility = View.VISIBLE; attachExportChannel(); dispatchPendingSession()
                 }
             }
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
@@ -308,6 +310,23 @@ class MainActivity : Activity() {
             pageFailed = false; errorPanel.visibility = View.GONE; web.visibility = View.VISIBLE
             web.loadUrl(server!!.origin + "/")
         } catch (_: Exception) { showError("无法启动本地加密连接。\n请检查服务器配置并重试。") }
+    }
+
+    private fun captureNotificationIntent(value: Intent?) {
+        val id = value?.getStringExtra("session_id") ?: return
+        if (id.matches(Regex("[A-Za-z0-9_-]{1,128}"))) pendingSessionID = id
+    }
+
+    private fun dispatchPendingSession() {
+        val id = pendingSessionID ?: return
+        if (!::web.isInitialized || server?.contains(web.url) != true) return
+        pendingSessionID = null
+        web.evaluateJavascript("window.dispatchEvent(new CustomEvent('pocket-native-open-session',{detail:{session_id:${JSONObject.quote(id)}}}));", null)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent); captureNotificationIntent(intent); dispatchPendingSession()
     }
     private fun showError(message: String) { pageFailed = true; closePort(); errorText.text = message; errorPanel.visibility = View.VISIBLE; errorPanel.bringToFront(); if (::web.isInitialized) web.visibility = View.INVISIBLE; progress.visibility = View.GONE }
     private fun openExternal(uri: Uri) {
@@ -586,6 +605,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume(); activityVisible = true
         if (::web.isInitialized) web.onResume()
+        dispatchPendingSession()
         completeCarePermission()
         configuredServer?.origin?.let { PushReceiverService.resume(this, it) }
     }

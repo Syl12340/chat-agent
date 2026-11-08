@@ -299,6 +299,9 @@ func (s *Server) agentForTurn(sess *probe.Session, inputs []string, sessionID st
 		return nil, err
 	}
 	prompt.Add("companion", 30, policy)
+	if strings.TrimSpace(c.HostPrompt) != "" {
+		prompt.Add("host-trigger", 35, c.HostPrompt)
+	}
 	c.HistoryFloor, err = s.life.Floor(role.ID, sessionID)
 	if err != nil {
 		return nil, err
@@ -314,6 +317,9 @@ func (s *Server) agentForTurn(sess *probe.Session, inputs []string, sessionID st
 	prompt.Add("interactive", 60, interactivePolicy)
 	c.RoleID, c.SessionID = role.ID, sessionID
 	c.PrepareStep = s.turnContext(sess, role.ID, sessionID, strings.Join(inputs, "\n"))
+	if strings.TrimSpace(c.Reference) != "" {
+		c.PrepareStep = proactiveTurnContext(c.PrepareStep, sess, c.Reference)
+	}
 	if len(uiResponses) > 0 {
 		// Feedback must not summarize away its own source before validation.
 		// Ordinary chat and explicit compaction retain their existing policy.

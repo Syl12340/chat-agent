@@ -13,8 +13,9 @@
 | 阶段 3A：事件格式与删除契约 | 设计及 0.23 容量已冻结 | [harness-storage/1](harness-storage-contract.md) 明确权威日志、标识、回执、清理和迁移；事件/快照/payload 上限已与当前正文和思考对齐 |
 | 阶段 3B：持久结算 | 已实现并接线 | 原生 Go recorder、operation ID、task create 原子回执；隔离证据见 [0.23 实施记录](release-0.23.md)，API 接线见 [0.24 发布](release-0.24.md) |
 | 阶段 3C：恢复迁移 | 已实现 | 旧格式显式转换、API 规范状态、删除登记/新代重写、停机修复和兼容导出通过最小故障注入 |
+| 受限 host followup | 0.26 已实现 | 复用 Prompt/PrepareStep/Provider/RunRecorder，已有会话内一次响应且不暴露工具；可信触发不持久化为用户消息 |
 
-Harness 3B/3C 的当前生产基线仍由 0.24 建立；最新服务端为 **0.25.0**（`20261108-channel-02`），Android 仍为 **0.21.2-debug / versionCode 20**（`android-20261106-02`），见[0.25 发布说明](release-0.25.md)。0.25 不改 Harness、runtime v2、turns v3 或 Android 包，只在其上增加默认关闭的 Channel Layer。
+Harness 3B/3C 的生产基线仍由 0.24 建立；最新服务端为 **0.26.0**（`20261108-followup-04`），Android 为 **0.26.0-debug / versionCode 21**（`android-20261108-01`），见[0.26 发布说明](release-0.26.md)。0.26 不另建 Agent Loop：主动触发只增加受限 followup 入口，runtime v2、turns v3 和普通聊天工具循环保持不变。
 
 实现细节见 [阶段 1–2 实施说明](harness-phases-1-2.md)。总体产品方向见 [功能规划](feature-plan.md)。
 
@@ -152,10 +153,10 @@ Harness 3B/3C 的当前生产基线仍由 0.24 建立；最新服务端为 **0.2
 
 用户提供的 speak-up、soul-md、bili-whale 调研已另列为[陪伴机制借鉴计划](companion-mechanism-plan.md)：前两项已随 0.16.0 发布；用户随后要求继续第三项，内容作息/漏斗已随 0.17 部署，见[机制说明](topics-0.17.md)与[发布记录](release-0.17.md)。这些是基于现有 Harness 的业务功能，不并入阶段 3 的存储恢复范围，也未安装 DSH 插件。
 
-当前关怀/话题仍分别做一次无工具生成。后续借鉴 followup 与 inbox 时，增加宿主控制的来源、目标会话和预算，先只开放受限只读工具；沿用已有概率/安静/未读约束。完整持久接入排在 3C 之后。GenUI 的稳定 message/surface 身份可消费同一套投影，不能另建第二套权威聊天日志。
+0.26 已将关怀/话题接入宿主控制的来源、已有目标会话和预算：复用同一 Prompt/PrepareStep/Provider/RunRecorder，只允许一次响应且不声明工具；概率、安静、未读和写入授权约束不变。GenUI 的稳定 message/surface 身份可继续消费同一套投影，不能另建第二套权威聊天日志。
 
 ## 暂缓范围
 
 Cordis、动态插件/市场/HMR、PTC/run_code、Shell、计算机控制、自动子代理/Agent Teams、通用目标无限续跑继续暂缓。MCP 通用接入、第三方 IM、关闭应用后的可靠触达、实时语音是独立产品方向，不捆绑迁移。provider 专有缓存优化只在有实测依据后适配；当前不承诺 ECNU 缓存或费用收益。
 
-后续迁移顺序：直接进入 3C 的显式迁移、投影、删除和回退；继续依靠实际陪伴使用反馈调整表达，不把架构迁移本身等同于“像真人”。
+Harness 1–3C 与受限 followup 已交付；后续继续依靠实际陪伴使用反馈调整表达，并在同一稳定投影上推进 GenUI v2，不把架构迁移本身等同于“像真人”。

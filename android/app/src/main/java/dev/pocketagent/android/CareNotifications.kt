@@ -65,7 +65,7 @@ class CareNotifications private constructor(private val context: Context) {
         return status(origin).put("request_permission", requestPermission)
     }
 
-    private data class Item(val id: String, val title: String, val content: String, val at: Instant?)
+    private data class Item(val id: String, val title: String, val content: String, val at: Instant?, val sessionID: String)
 
     private fun timestamp(item: JSONObject): Instant? {
         val value = item.optString("attempted_at").ifBlank { item.optString("created_at") }
@@ -86,7 +86,9 @@ class CareNotifications private constructor(private val context: Context) {
             val content = item.getString("content")
             require(id.matches(Regex("[A-Za-z0-9_-]{1,128}")) && title.length <= 256 && content.length <= 4096)
             require(title.none { it.isISOControl() })
-            Item(id, title, content, timestamp(item))
+            val sessionID = item.optString("session_id")
+            require(sessionID.isBlank() || sessionID.matches(Regex("[A-Za-z0-9_-]{1,128}")))
+            Item(id, title, content, timestamp(item), sessionID)
         }
         val currentPrefix = prefix(origin)
         val roles = JSONObject(preferences.getString(currentPrefix + "roles", "{}") ?: "{}")
@@ -141,7 +143,9 @@ class CareNotifications private constructor(private val context: Context) {
             require(role.matches(Regex("[A-Za-z0-9_-]{1,128}")) && id.matches(Regex("[A-Za-z0-9_-]{1,128}")))
             require(kind in listOf("care", "topic", "reminder") && title.codePointCount(0, title.length) <= 256 && content.codePointCount(0, content.length) <= 4096 && title.none { it.isISOControl() })
             val identity = hash(role + "\u0000" + (if (kind == "care") id else "$kind:$id"))
-            Delivery(identity, Item(id, title, content, timestamp(value)))
+            val sessionID = value.optString("session_id")
+            require(sessionID.isBlank() || sessionID.matches(Regex("[A-Za-z0-9_-]{1,128}")))
+            Delivery(identity, Item(id, title, content, timestamp(value), sessionID))
         }.sortedWith(compareBy<Delivery> { it.item.at ?: Instant.MIN }.thenBy { it.identity })
         val p = prefix(origin)
         val seeded = preferences.getBoolean(p + "push_seeded", false)
@@ -176,8 +180,12 @@ class CareNotifications private constructor(private val context: Context) {
     }
 
     private fun post(scope: String, identity: String, item: Item) {
-        val intent = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        val pending = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val intent = Intent(context, MainActivity::class.java)
+            .setAction("dev.pocketagent.android.OPEN_${identity}")
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        if (item.sessionID.isNotBlank()) intent.putExtra("session_id", item.sessionID)
+        val requestCode = identity.take(8).toLong(16).toInt()
+        val pending = PendingIntent.getActivity(context, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val public = Notification.Builder(context, CHANNEL).setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle("chat-agent").setContentText("有新的陪伴消息").build()
         val title = truncate(item.title.ifBlank { "一条新的陪伴消息" }, 80)
         val body = truncate(item.content, 600)
