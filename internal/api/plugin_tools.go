@@ -33,18 +33,24 @@ func (h pluginHost) Allowed(permission string) bool {
 	return h.allowed[permission]
 }
 
-// newPluginHost builds the host for one plugin, creating its storage directory
-// only when the manifest asked for one.
-func newPluginHost(manifest pluginapi.Manifest, dataDir string) pluginapi.Host {
+// newPluginHost builds the host for one plugin. Storage exists only when the
+// manifest asked for it and the host actually granted that namespace: a declared
+// permission is a request, not a directory.
+func newPluginHost(manifest pluginapi.Manifest, dataDir string, policy pluginapi.Policy) pluginapi.Host {
 	host := pluginHost{
 		id:      manifest.Metadata.ID,
 		logger:  log.New(os.Stderr, "plugin["+manifest.Metadata.ID+"] ", log.LstdFlags),
 		allowed: map[string]bool{},
 	}
+	grantedStorage := false
 	for _, namespace := range manifest.Spec.Permissions.Filesystem {
+		if !policy.Grant(manifest.Metadata.ID, "filesystem:"+namespace) {
+			continue
+		}
 		host.allowed["filesystem:"+namespace] = true
+		grantedStorage = true
 	}
-	if len(manifest.Spec.Permissions.Filesystem) > 0 && dataDir != "" {
+	if grantedStorage && dataDir != "" {
 		dir := filepath.Join(dataDir, "plugins", manifest.Metadata.ID)
 		if err := os.MkdirAll(dir, 0o700); err == nil {
 			host.dir = dir
@@ -93,11 +99,13 @@ func (s *Server) pluginTools(enable pluginapi.Enablement) []probe.Tool {
 	return out
 }
 
-// toolCapabilities names what the current deployment may expose. Until roles carry
-// per-capability grants, a built-in plugin is available to every turn that can use
-// tools at all; the indirection exists so that decision has one home.
+// toolCapabilities names what the current deployment may expose. The host policy
+// decides: a plugin the operator switched off contributes no capability, and a
+// plugin the host never granted a permission cannot open one. A zero policy (no
+// configuration) exposes what the build ships, which keeps an unconfigured
+// deployment working while still routing the decision through one place.
 func (s *Server) toolCapabilities() pluginapi.Enablement {
-	return pluginapi.AllowAll()
+	return s.pluginPolicy.Enablement(s.plugins)
 }
 
 // imageGenerator picks the image backend: a tunnelled remote bridge wins over the

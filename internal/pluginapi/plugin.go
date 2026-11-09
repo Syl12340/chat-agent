@@ -158,8 +158,12 @@ type entry struct {
 // Unavailable records a plugin that was installed but not loaded, and why. This
 // replaces "startup failure": a missing dependency disables one plugin, not the
 // process, which is how Cordis behaves (DeepSeek Harness, MIT).
+//
+// The manifest travels with the record so the settings page can name what is
+// missing instead of showing a bare id.
 type Unavailable struct {
 	PluginID string
+	Manifest Manifest
 	Reason   string
 }
 
@@ -225,9 +229,17 @@ func (c *Catalog) Tool(name string) (LoadedTool, bool) {
 // carry this safely — version skew and unload behaviour make it a poor base.
 type Loader struct {
 	plugins []Plugin
+	// policy decides what may load and what is really granted. The zero value
+	// enables every installed plugin and grants no permission.
+	policy Policy
 }
 
 func NewLoader() *Loader { return &Loader{} }
+
+// SetPolicy installs the host's decision before Load. A plugin the host switched
+// off is recorded as unavailable rather than loaded; its published services are
+// not advertised either, so nothing can depend on a plugin that will not run.
+func (l *Loader) SetPolicy(policy Policy) { l.policy = policy }
 
 // Add registers a plugin for the next Load.
 //
@@ -258,6 +270,7 @@ func (l *Loader) Load() (*Catalog, error) {
 	// whose dependencies are unmet is recorded and skipped instead of aborting.
 	manifests := make([]Manifest, 0, len(l.plugins))
 	available := map[string]bool{}
+	disabled := map[string]bool{}
 	owner := map[string]string{}
 	for _, plugin := range l.plugins {
 		manifest := plugin.Manifest()
@@ -268,6 +281,14 @@ func (l *Loader) Load() (*Catalog, error) {
 			return nil, fmt.Errorf("插件 %s 重复加载", manifest.Metadata.ID)
 		}
 		owner[manifest.Metadata.ID] = manifest.Metadata.ID
+		if !l.policy.PluginEnabled(manifest.Metadata.ID) {
+			// A switched-off plugin must not advertise services either, or another
+			// plugin would consider its dependency satisfied and start against a
+			// provider that never loads.
+			disabled[manifest.Metadata.ID] = true
+			manifests = append(manifests, manifest)
+			continue
+		}
 		for _, service := range manifest.Spec.Provides {
 			if existing, taken := catalog.services[service]; taken && existing != manifest.Metadata.ID {
 				return nil, fmt.Errorf("服务 %s 同时由 %s 和 %s 提供", service, existing, manifest.Metadata.ID)
@@ -279,11 +300,22 @@ func (l *Loader) Load() (*Catalog, error) {
 
 	provides := map[string]bool{}
 	for _, manifest := range manifests {
+		if disabled[manifest.Metadata.ID] {
+			continue
+		}
 		for _, service := range manifest.Spec.Provides {
 			provides[service] = true
 		}
 	}
 	for _, manifest := range manifests {
+		if disabled[manifest.Metadata.ID] {
+			catalog.unavailable = append(catalog.unavailable, Unavailable{
+				PluginID: manifest.Metadata.ID,
+				Manifest: manifest,
+				Reason:   "宿主已停用",
+			})
+			continue
+		}
 		missing := make([]string, 0, len(manifest.Spec.Dependencies))
 		for _, service := range manifest.Spec.Dependencies {
 			if !provides[service] {
@@ -293,6 +325,7 @@ func (l *Loader) Load() (*Catalog, error) {
 		if len(missing) > 0 {
 			catalog.unavailable = append(catalog.unavailable, Unavailable{
 				PluginID: manifest.Metadata.ID,
+				Manifest: manifest,
 				Reason:   "缺少依赖服务：" + strings.Join(missing, ", "),
 			})
 			continue

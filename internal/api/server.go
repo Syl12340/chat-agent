@@ -59,6 +59,10 @@ type Config struct {
 	ThinkingMaxOutput      int
 	TurnCompletionObserver TurnCompletionObserver
 	OneBot                 OneBotConfig
+	// Plugins is the host's decision about installed plugins: which load, and
+	// which declared permissions are really granted. The zero value enables
+	// everything and grants nothing.
+	Plugins pluginapi.Policy
 }
 
 type runState struct {
@@ -96,6 +100,10 @@ type Server struct {
 	decision        *decision.Client
 	imagegen        imagegen.Generator
 	plugins         *pluginapi.Catalog
+	// pluginPolicy is the host's grant for the loaded catalog. Capability
+	// admission and host permissions both read it, so "declared" never silently
+	// becomes "authorized".
+	pluginPolicy pluginapi.Policy
 	// approvals holds host-issued, single-use authorizations. It is the only
 	// source of consent for a call that could not be assessed.
 	approvals       *probe.ApprovalStore
@@ -255,17 +263,19 @@ func New(c Config) (*Server, error) {
 	// whose dependencies are missing lands in Catalog.Unavailable instead of
 	// failing the process, so one missing capability never blacks out the rest.
 	loader := pluginapi.NewLoader()
+	loader.SetPolicy(c.Plugins)
 	loader.Add(search.New(webClient))
 	pluginCatalog, err := loader.Load()
 	if err != nil {
 		return nil, err
 	}
 	if err := pluginCatalog.StartAll(workCtx, func(manifest pluginapi.Manifest) pluginapi.Host {
-		return newPluginHost(manifest, c.DataDir)
+		return newPluginHost(manifest, c.DataDir, c.Plugins)
 	}); err != nil {
 		return nil, err
 	}
 	s.plugins = pluginCatalog
+	s.pluginPolicy = c.Plugins
 
 	s.speechSlots = make(chan struct{}, 1)
 	s.topics = topicStore
@@ -296,6 +306,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/hooks/", func(w http.ResponseWriter, r *http.Request) { fail(w, http.StatusNotFound, "接口不存在") })
 	mux.HandleFunc("GET /api/status", s.status)
 	mux.HandleFunc("POST /api/approvals", s.approveCall)
+	mux.HandleFunc("GET /api/plugins", s.listPlugins)
 	mux.HandleFunc("GET /api/chat/options", s.chatOptions)
 	mux.HandleFunc("POST /api/sessions/{id}/images", s.uploadImage)
 	mux.HandleFunc("GET /api/sessions/{id}/images/{image}", s.readImage)
@@ -393,7 +404,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // version is the service version reported by /api/status.
-const version = "0.29.3"
+const version = "0.29.4"
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model

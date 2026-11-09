@@ -54,7 +54,7 @@ Android 的 Gradle 默认值不是发布版本。统一用 `ORG_GRADLE_PROJECT_p
 
 统一四种状态：未配置、被策略禁止、已配置但暂时不可用、当前可用。前两种不开放执行；已配置的图像桥断线等情况保留健康解释，执行时明确失败且不自动重复生成。健康检查不得触发模型加载或推理。
 
-插件 Manifest 声明请求的能力，宿主配置授予能力。当前 `toolCapabilities()` 为 `AllowAll()`，且 `newPluginHost` 从 manifest 填充文件系统允许集合；这还不是独立的权限决策。接入有副作用的新插件前补齐宿主授予集合与逐轮交集，不能将声明直接升级为授权。进程内 Go 插件是受信代码，Host 接口不是操作系统沙箱。
+插件 Manifest 声明请求的能力，宿主配置授予能力。`toolCapabilities()` 已改为由 `pluginapi.Policy` 推导（停用插件不贡献能力），`newPluginHost` 只授予显式批准的命名空间；声明不再直接变成授权。角色级逐轮准入仍未做——角色还没有能力字段，等 M3 的消息身份一起改；执行端权限交集要等 M2。进程内 Go 插件是受信代码，Host 接口不是操作系统沙箱。
 
 先以搜索插件证明注册、准入、结果和关闭生命周期，随后迁图像、决策、Clock/Media，再逐步迁 Provider、Memory、Activities、Companion 与 UI 能力。完整业务插件化是目标；每批随功能交付，不把全部迁移作为 GenUI 或聊天改进的前置。
 

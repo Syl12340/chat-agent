@@ -19,6 +19,7 @@ import (
 	"pocket-agent/internal/api"
 	"pocket-agent/internal/decision"
 	"pocket-agent/internal/imagegen"
+	"pocket-agent/internal/pluginapi"
 	"pocket-agent/internal/probe"
 	"pocket-agent/internal/runlog"
 	"pocket-agent/internal/securewire"
@@ -190,7 +191,17 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	app, err := api.New(api.Config{Agent: c, ChatModels: chatModels, ThinkingMaxOutput: thinkingMax, Speech: api.SpeechConfig{Model: os.Getenv("POCKET_TTS_MODEL"), Voice: os.Getenv("POCKET_TTS_VOICE")}, DataDir: *data, RolesDir: *rolesDir, TimeZone: *timeZone, Web: webtools.Config{Enabled: *webEnabled, AllowedHosts: strings.Split(os.Getenv("POCKET_WEB_HOSTS"), ","), SearchURL: searchEngine(*webEnabled)}, AccessToken: os.Getenv("POCKET_ACCESS_TOKEN"), AndroidReleaseDir: os.Getenv("POCKET_ANDROID_RELEASE_DIR"), Semantic: semantic.Config{BaseURL: os.Getenv("POCKET_BASE_URL"), APIKey: os.Getenv("POCKET_API_KEY"), Model: os.Getenv("POCKET_RERANK_MODEL")}, Decision: decision.Config{BaseURL: os.Getenv("POCKET_BASE_URL"), APIKey: os.Getenv("POCKET_API_KEY"), Model: decisionModel()}, ImageRemote: imagegen.RemoteConfig{BaseURL: os.Getenv("POCKET_IMAGE_REMOTE"), Token: os.Getenv("POCKET_IMAGE_TOKEN")}, Images: imagegen.Config{Python: os.Getenv("POCKET_IMAGE_PYTHON"), Script: os.Getenv("POCKET_IMAGE_BRIDGE"), Profiles: splitList(os.Getenv("POCKET_IMAGE_PROFILES")), DefaultProfile: os.Getenv("POCKET_IMAGE_PROFILE")}, OneBot: onebotConfig})
+	// Installed plugins are compiled in, but loading and permissions stay a host
+	// decision: POCKET_PLUGINS_DISABLED switches a plugin off entirely, and
+	// POCKET_PLUGIN_GRANTS grants the declared permissions one by one.
+	pluginPolicy, err := pluginapi.NewPolicy(
+		splitList(os.Getenv("POCKET_PLUGINS_DISABLED")),
+		splitList(os.Getenv("POCKET_PLUGIN_GRANTS")),
+	)
+	if err != nil {
+		return err
+	}
+	app, err := api.New(api.Config{Agent: c, ChatModels: chatModels, ThinkingMaxOutput: thinkingMax, Speech: api.SpeechConfig{Model: os.Getenv("POCKET_TTS_MODEL"), Voice: os.Getenv("POCKET_TTS_VOICE")}, DataDir: *data, RolesDir: *rolesDir, TimeZone: *timeZone, Web: webtools.Config{Enabled: *webEnabled, AllowedHosts: strings.Split(os.Getenv("POCKET_WEB_HOSTS"), ","), SearchURL: searchEngine(*webEnabled)}, AccessToken: os.Getenv("POCKET_ACCESS_TOKEN"), AndroidReleaseDir: os.Getenv("POCKET_ANDROID_RELEASE_DIR"), Semantic: semantic.Config{BaseURL: os.Getenv("POCKET_BASE_URL"), APIKey: os.Getenv("POCKET_API_KEY"), Model: os.Getenv("POCKET_RERANK_MODEL")}, Decision: decision.Config{BaseURL: os.Getenv("POCKET_BASE_URL"), APIKey: os.Getenv("POCKET_API_KEY"), Model: decisionModel()}, ImageRemote: imagegen.RemoteConfig{BaseURL: os.Getenv("POCKET_IMAGE_REMOTE"), Token: os.Getenv("POCKET_IMAGE_TOKEN")}, Images: imagegen.Config{Python: os.Getenv("POCKET_IMAGE_PYTHON"), Script: os.Getenv("POCKET_IMAGE_BRIDGE"), Profiles: splitList(os.Getenv("POCKET_IMAGE_PROFILES")), DefaultProfile: os.Getenv("POCKET_IMAGE_PROFILE")}, OneBot: onebotConfig, Plugins: pluginPolicy})
 	if err != nil {
 		return err
 	}
