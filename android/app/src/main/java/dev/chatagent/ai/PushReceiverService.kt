@@ -1,4 +1,4 @@
-package dev.pocketagent.android
+package dev.chatagent.ai
 
 import android.Manifest
 import android.app.Notification
@@ -169,7 +169,7 @@ class PushReceiverService : Service() {
     companion object {
         private const val CHANNEL = "background-messages"
         private const val NOTICE_ID = 812
-        private const val STOP = "dev.pocketagent.android.STOP_RECEIVER"
+        private const val STOP = "dev.chatagent.ai.STOP_RECEIVER"
         @Volatile private var runningService: PushReceiverService? = null
         private val subscriptionMutationLock = Any()
         private fun preferences(context: Context) = context.getSharedPreferences("push-receiver", Context.MODE_PRIVATE)

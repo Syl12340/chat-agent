@@ -1,4 +1,4 @@
-package dev.pocketagent.android
+package dev.chatagent.ai
 
 import android.annotation.SuppressLint
 import android.app.Activity

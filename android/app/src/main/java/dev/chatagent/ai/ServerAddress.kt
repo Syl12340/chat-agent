@@ -1,4 +1,4 @@
-package dev.pocketagent.android
+package dev.chatagent.ai
 
 import java.net.URI
 import java.util.Locale

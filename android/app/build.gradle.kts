@@ -1,14 +1,14 @@
 plugins { id("com.android.application") }
 
 android {
-    namespace = "dev.pocketagent.android"
+    namespace = "dev.chatagent.ai"
     compileSdk = 36
     defaultConfig {
-        applicationId = "dev.pocketagent.android"
+        applicationId = "dev.chatagent.ai"
         minSdk = 26
         targetSdk = 36
-        versionCode = providers.gradleProperty("chatVersionCode").orElse("21").get().toInt()
-        versionName = providers.gradleProperty("chatVersionName").orElse("0.26.0").get()
+        versionCode = providers.gradleProperty("chatVersionCode").orElse("1").get().toInt()
+        versionName = providers.gradleProperty("chatVersionName").orElse("0.1.0").get()
     }
     buildFeatures { buildConfig = true }
     buildTypes {

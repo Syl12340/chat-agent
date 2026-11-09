@@ -51,6 +51,6 @@ Android 顶部点“更新”，安装 **chat-agent 0.6.1-debug（versionCode 6�
 - Android 发布 `android-20261103-01`，900,880 字节，SHA-256 `07d72855a4ff4fde4f4668b3b2fa1b9ebf4ac5c8b606ff3ea3fa224d37662fa3`。原签名、公钥和自动登录机制保持一致。
 - 改名后仅补跑现有 HTTP 页面/鉴权、Android 下载发布两项检查，均通过；API 35 模拟器覆盖安装 0.6.1 后，公网加密连接自动登录、网页新名称、三个功能入口和两个角色关怀默认关闭均通过只读验收。APK 应用标签确认为 `chat-agent`。
 
-兼容标识继续使用 `dev.pocketagent.android.debug`、`chat://`、`CHAT_*` 与服务器 `chat-agent.service`、原数据路径；这些标识保留旧客户端覆盖升级、密钥与数据兼容。新构建产物使用 `bin/chat-agent.exe`、`bin/chat-agent-linux-amd64` 和 `bin/chat-agent-android-debug.apk`。
+0.1.0 起包名换成 `dev.chatagent.ai.debug`，这是一个**新应用**：旧包仍留在手机上，需要手动卸载；新包不继承旧包的服务器地址、凭据保险箱和输入偏好，服务端会话记录不受影响。`chat://`、`CHAT_*` 与服务器 `chat-agent.service` 沿用。新构建产物使用 `bin/chat-agent.exe`、`bin/chat-agent-linux-amd64` 和 `bin/chat-agent-android-debug.apk`。
 
 升级前正常停止服务并备份生产会话到服务器 root-only 文件 `/opt/chat-agent/backups/pre-unified-20261102-01.tar.gz`。验证数据与生产聊天分离。未做真实手机、多设备矩阵、断电恢复或长期运行验收。

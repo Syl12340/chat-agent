@@ -1,4 +1,4 @@
-package dev.pocketagent.android
+package dev.chatagent.ai
 
 import android.Manifest
 import android.app.Notification
@@ -181,7 +181,7 @@ class CareNotifications private constructor(private val context: Context) {
 
     private fun post(scope: String, identity: String, item: Item) {
         val intent = Intent(context, MainActivity::class.java)
-            .setAction("dev.pocketagent.android.OPEN_${identity}")
+            .setAction("dev.chatagent.ai.OPEN_${identity}")
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         if (item.sessionID.isNotBlank()) intent.putExtra("session_id", item.sessionID)
         val requestCode = identity.take(8).toLong(16).toInt()

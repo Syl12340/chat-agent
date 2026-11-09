@@ -1,4 +1,4 @@
-package dev.pocketagent.android
+package dev.chatagent.ai
 
 import android.content.ContentProvider
 import android.content.ContentValues

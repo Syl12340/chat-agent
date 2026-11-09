@@ -47,7 +47,7 @@ func openAndroidRelease(dir string) (androidRelease, *os.File, error) {
 		return release, nil, err
 	}
 	hash, err := hex.DecodeString(release.SHA256)
-	if err != nil || len(hash) != sha256.Size || release.SHA256 != hex.EncodeToString(hash) || release.VersionCode < 1 || release.VersionCode > 2100000000 || len(release.VersionName) == 0 || len(release.VersionName) > 64 || (release.PackageName != "dev.pocketagent.android.debug" && release.PackageName != "dev.pocketagent.android") || release.Size < 1 || release.Size > 64<<20 {
+	if err != nil || len(hash) != sha256.Size || release.SHA256 != hex.EncodeToString(hash) || release.VersionCode < 1 || release.VersionCode > 2100000000 || len(release.VersionName) == 0 || len(release.VersionName) > 64 || (release.PackageName != "dev.chatagent.ai.debug" && release.PackageName != "dev.chatagent.ai") || release.Size < 1 || release.Size > 64<<20 {
 		return release, nil, errors.New("invalid release metadata")
 	}
 	apk, err := os.Open(filepath.Join(resolved, "app.apk"))

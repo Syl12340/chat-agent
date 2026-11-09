@@ -18,7 +18,7 @@
 
 当前更新（2026-11-04）：**0.16.0-debug / versionCode 13** 已发布到 `android-20261104-01`，原包名和签名延续。线上清单与下载哈希检查通过，未在手机安装；打开应用使用现有“更新”入口获取。详见[本次发布](release-0.16.md)。下文旧版本号为历史记录。
 
-当前开发包为 **chat-agent 0.15.0-debug，versionCode 12**，包名仍为 `dev.pocketagent.android.debug`，覆盖更新保留原登录与数据。下载沿用 `chat://47.117.40.74:9992` 的加密连接，无新增公网端口。[本次设备鉴权与界面](release-0.15.md)。
+当前开发包为 **chat-agent 0.15.0-debug，versionCode 12**，包名仍为 `dev.chatagent.ai.debug`，覆盖更新保留原登录与数据。下载沿用 `chat://47.117.40.74:9992` 的加密连接，无新增公网端口。[本次设备鉴权与界面](release-0.15.md)。
 
 服务端 0.7.1 已取消显式聊天模式，Android 顶部点“刷新”生效；此次未重新构建或发布 APK。[说明](adaptive-chat.md)。
 

@@ -20,7 +20,7 @@ func TestAndroidUpdatePublication(t *testing.T) {
 	dir := t.TempDir()
 	body := []byte("test APK bytes; Android validates real package signatures")
 	hash := sha256.Sum256(body)
-	release := androidRelease{VersionCode: 3, VersionName: "0.3.0-debug", PackageName: "dev.pocketagent.android.debug", SHA256: hex.EncodeToString(hash[:]), Size: int64(len(body))}
+	release := androidRelease{VersionCode: 3, VersionName: "0.3.0-debug", PackageName: "dev.chatagent.ai.debug", SHA256: hex.EncodeToString(hash[:]), Size: int64(len(body))}
 	metadata, _ := json.Marshal(release)
 	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), metadata, 0600); err != nil {
 		t.Fatal(err)

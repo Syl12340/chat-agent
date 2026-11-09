@@ -20,15 +20,22 @@ read the layout afterwards.
 | WebView bridge | `PocketAndroid*`, `pocket-native-ready` | `ChatAndroid*`, `chat-native-ready` |
 | User agent | `PocketAgentAndroid/<v>` | `ChatAgentAndroid/<v>` |
 | Service worker | `pocket-shell-vN` | `chat-shell-vN` |
+| Android package | `dev.pocketagent.android.debug` | `dev.chatagent.ai.debug` |
+| Version baseline | 0.29.x | 0.1.0 |
 
-## What deliberately did not change
+## The new application id
 
-`dev.pocketagent.android` stays as the Android application id.
+`dev.chatagent.ai` is a different application, not a renamed one. The old install
+stays on the phone until it is removed by hand, and the new one starts with empty
+local state: no saved server address, no credential vault, no composer
+preferences. Server-side conversations are unaffected — they live with the
+server, not the package.
 
-That identifier names the installed application. Changing it does not rename the
-app — it installs a *different* app alongside the old one, leaving the previous
-icon behind and starting the new one with empty local state. Everything a reader
-sees now says chat; this one string remains a compatibility fact.
+Because the package id changed, the version baseline resets to 0.1.0 with
+`versionCode` 1. That is correct across packages and wrong within one:
+`deploy/publish-android.sh` still refuses to publish a lower `versionCode` for the
+same package, and only skips that ordering check when the package id itself
+changes, printing which id replaced which.
 
 The system accounts `pocket-agent` and `pocket-search` are left in place but no
 longer used. Owned files moved to `chat-agent`/`chat-search`; deleting an account

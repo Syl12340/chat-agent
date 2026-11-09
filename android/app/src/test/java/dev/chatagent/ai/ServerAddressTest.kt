@@ -1,4 +1,4 @@
-package dev.pocketagent.android
+package dev.chatagent.ai
 
 import org.junit.Assert.*
 import org.junit.Test
