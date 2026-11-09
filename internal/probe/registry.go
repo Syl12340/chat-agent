@@ -69,11 +69,12 @@ type ToolSet struct {
 // selection quality falls as the list grows, not because of a storage cost, so
 // raising it needs a reason beyond "one more capability arrived".
 //
-// It sat at 24 until the image job controls pushed a live turn to 25 and every
-// chat failed with an unhelpful "temporarily unavailable". The fix here is the
-// headroom plus a diagnosable message; the real answer is exposing fewer tools
-// per turn, which the role-scoped admission work will do.
-const MaxTools = 28
+// It has now been raised twice for the second kind of reason: the host tools
+// (diagnostics plus the confined workspace) are only admitted to conversations
+// the operator named, so the larger ceiling applies to a narrow case rather than
+// to every turn. The real answer is still per-turn scoping; until then the bound
+// is generous for a scoped session and the refusal names every tool it saw.
+const MaxTools = 36
 
 func NewToolRegistry(definitions []Tool) (*ToolRegistry, error) {
 	if len(definitions) > MaxTools {

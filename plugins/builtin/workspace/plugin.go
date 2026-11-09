@@ -75,6 +75,9 @@ func (p *Plugin) Manifest() pluginapi.Manifest {
 	if len(p.actions) > 0 && canExecute() {
 		tools = append(tools, "workspace_exec")
 	}
+	if sandboxReady() {
+		tools = append(tools, "workspace_shell")
+	}
 	return pluginapi.Manifest{
 		APIVersion: pluginapi.APIVersion, Kind: pluginapi.Kind,
 		Metadata: pluginapi.Metadata{ID: ID, Name: "服务器工作区", Version: "0.1.0"},
@@ -115,6 +118,16 @@ func (p *Plugin) Register(registry *pluginapi.Registry) error {
 		enum, _ := json.Marshal(names)
 		schema := `{"type":"object","properties":{"workspace":{"type":"string","enum":["server"]},"action":{"type":"string","enum":` + string(enum) + `},"require_sandbox":{"type":"boolean"}},"required":["workspace","action"],"additionalProperties":false}`
 		tools = append(tools, pluginapi.Tool{Name: "workspace_exec", Description: "Run a fixed operator-configured action in the trusted workspace. Process restrictions are not a security sandbox.", Usage: "use only when the user explicitly requests the configured action.", Parameters: json.RawMessage(schema), Handler: p.execute})
+	}
+	if sandboxReady() {
+		shell := `{"type":"object","properties":{"workspace":{"type":"string","enum":["server"]},"command":{"type":"string","minLength":1,"maxLength":4096},"cwd":{"type":"string","maxLength":256}},"required":["workspace","command"],"additionalProperties":false}`
+		tools = append(tools, pluginapi.Tool{
+			Name:        "workspace_shell",
+			Description: "Run a shell command on the server inside a confined workspace. Only the workspace is writable; system directories are readable and cannot be changed; there is no outbound TCP. Report failures as failures.",
+			Usage:       "use for inspecting or changing the workspace, or reading host state. It is not a general root shell and cannot reach the open internet.",
+			Parameters:  json.RawMessage(shell),
+			Handler:     p.shell,
+		})
 	}
 	for i, tool := range tools {
 		tool.Capability, tool.Order, tool.Timeout = "workspace.server", 710+i, 12*time.Second
@@ -278,4 +291,43 @@ func (p *Plugin) execute(ctx context.Context, raw json.RawMessage) (pluginapi.Re
 func encoded(value any) (pluginapi.Result, error) {
 	data, err := json.Marshal(value)
 	return pluginapi.Result{Output: string(data)}, err
+}
+
+// shell runs one command line inside the confined workspace.
+//
+// The point of the capability is a terminal on the server, so the command is
+// free-form and reaches /bin/sh. What constrains it is the filesystem policy:
+// read-only system directories, one writable workspace, no TCP. When that
+// policy cannot be enforced the command does not run and the caller is told
+// SANDBOX_UNAVAILABLE, because running unconfined would be a different promise.
+func (p *Plugin) shell(ctx context.Context, raw json.RawMessage) (pluginapi.Result, error) {
+	var args struct {
+		Workspace, Command string
+		Cwd                string `json:"cwd"`
+	}
+	if json.Unmarshal(raw, &args) != nil || args.Workspace != "server" {
+		return pluginapi.Result{}, errors.New("invalid workspace")
+	}
+	command := strings.TrimSpace(args.Command)
+	if command == "" || len(command) > 4096 {
+		return pluginapi.Result{}, errors.New("command must be between 1 and 4096 bytes")
+	}
+	dir := p.path
+	if cwd := strings.TrimSpace(args.Cwd); cwd != "" && cwd != "." {
+		if !allowedPath(cwd) {
+			return pluginapi.Result{}, errors.New("cwd must be a relative path inside the workspace")
+		}
+		if _, err := p.root.Stat(cwd); err != nil {
+			return pluginapi.Result{}, errors.New("cwd is not a directory in the workspace")
+		}
+		dir = filepath.Join(p.path, filepath.Clean(cwd))
+	}
+	output, status, err := runShell(ctx, p.path, dir, command)
+	if err != nil {
+		return pluginapi.Result{}, err
+	}
+	return encoded(map[string]any{
+		"status": status, "output": output, "cwd": strings.TrimPrefix(dir, p.path),
+		"writable": "workspace only", "network": "no outbound TCP", "sandbox": sandboxStatus(),
+	})
 }

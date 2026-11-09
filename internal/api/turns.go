@@ -226,6 +226,11 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 					c.RequestID = root
 					c.Recorder = recorder
 				})
+				if err != nil {
+					// Assembly failures (role, memory, tools) look identical from
+					// the queue, so the operator gets the reason here.
+					log.Printf("turn agent unavailable: %v", err)
+				}
 			}
 			if selectionErr != nil {
 				err = selectionErr

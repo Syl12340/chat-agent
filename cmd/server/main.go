@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"context"
@@ -19,6 +19,7 @@ import (
 	"chat-agent/internal/api"
 	"chat-agent/internal/decision"
 	"chat-agent/internal/imagegen"
+	"chat-agent/internal/sandbox"
 	"chat-agent/internal/pluginapi"
 	"chat-agent/internal/probe"
 	"chat-agent/internal/runlog"
@@ -28,6 +29,22 @@ import (
 )
 
 func main() {
+	// The confinement has to be applied by the process being confined, so the
+	// sandbox runs as this same binary re-executed with a reserved first
+	// argument. It is checked before flags are parsed and before any state is
+	// opened: a mistaken invocation then fails as a sandbox problem rather than
+	// starting a second server.
+	if len(os.Args) > 1 && os.Args[1] == sandbox.Marker {
+		policy, argv, err := sandbox.ParseArgs(os.Args[2:])
+		if err == nil {
+			err = sandbox.Run(policy, argv)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(70)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		log.Print(err)
 		os.Exit(1)
