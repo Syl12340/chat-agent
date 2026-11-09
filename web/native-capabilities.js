@@ -24,8 +24,25 @@ export const Features = Object.freeze({
 
 let cached = null;
 
+// bridgeOpened reports whether the injected script has actually run. The shell
+// injects it on page finished, which is after the page's modules have evaluated,
+// so "no bridge object yet" is a timing state and not a capability answer.
+function bridgeOpened(version) {
+	if (version > 0) return true;
+	return Boolean(
+		window.PocketAndroidDevice || window.PocketAndroidAuth ||
+		window.PocketAndroidPreferences || window.PocketAndroidCare ||
+		window.PocketAndroidVoice || window.PocketAndroidExports ||
+		window.PocketAndroidShell
+	);
+}
+
 // capabilities() returns { version, features }. version 0 means an older shell
 // that only exposes objects; the feature list is then inferred from what exists.
+//
+// While the injected script has not run the result is deliberately not cached.
+// Caching an empty list there would tell the page forever that this client cannot
+// upload images, even after the bridge arrives a moment later.
 export function capabilities() {
 	if (cached) return cached;
 	let version = 0;
@@ -53,6 +70,9 @@ export function capabilities() {
 		// host implements onShowFileChooser. Inferring it from the newer capability
 		// list alone would tell older APKs they cannot upload, which is false.
 		if (features.length) features.push(Features.filePicker);
+	}
+	if (inNativeShell && !bridgeOpened(version)) {
+		return Object.freeze({ version: 0, features: Object.freeze([]), pending: true });
 	}
 	cached = { version, features: Object.freeze([...new Set(features)]) };
 	return cached;
@@ -91,6 +111,8 @@ export function describeGap(feature) {
 			return '这台客户端还不能记住输入框偏好。';
 		case Features.exports:
 			return '这台客户端还不能直接保存文件。';
+		case Features.filePicker:
+			return '这台客户端还不能上传图片。';
 		default:
 			return '这台客户端缺少一项可选能力。';
 	}

@@ -71,9 +71,13 @@ export function createChatInput({state,request,json,createSession,notice,onChang
   let historyScope = '', boundRole = state.roleID, boundSession = state.current;
   let preferences=null, preferenceScope='', preferenceLoad=0, fallbackNotice='';
   const nativeShell=/PocketAgentAndroid\//.test(navigator.userAgent);
-  // Image upload needs the native file chooser; ask what the shell supports
-  // instead of comparing version strings.
-  const oldNative=nativeShell && !supports(Features.filePicker);
+  // Image upload needs the native file chooser. Ask what the shell supports rather
+  // than comparing version strings, and re-ask once the bridge opens: the shell
+  // injects it on page finished, which is later than this module runs.
+  const canPickImages=()=>!nativeShell || supports(Features.filePicker);
+  // The bridge arrives after this module runs, so refresh the picker state once it
+  // does instead of leaving the first (pessimistic) answer in place.
+  if(nativeShell) window.addEventListener('pocket-native-ready',()=>{try{lock();}catch{/* nothing rendered yet */}},{once:true});
   const cache = new Map();
   const pendingImages = new WeakMap();
   const observer = window.IntersectionObserver ? new IntersectionObserver(entries => {
@@ -112,16 +116,21 @@ export function createChatInput({state,request,json,createSession,notice,onChang
   }
   function lock() {
     const locked = !state.token || state.loading || state.compacting || state.submitting || state.submitUnknown || selecting || state.imageBusy;
+    const model = selectedModel();
+    const noPicker = !canPickImages();
+    const noVision = Boolean(model) && !model.vision;
     picker.disabled = locked || !options;
     thinking.disabled = locked || !options;
-    add.disabled = locked || oldNative || !selectedModel()?.vision || drafts.length >= 3;
-    add.title=oldNative?'这台客户端还不能上传图片':'添加 JPEG 或 PNG 图片';
+    add.disabled = locked || noPicker || noVision || !model || drafts.length >= 3;
+    add.title = noPicker ? '这台客户端还不能上传图片' : noVision ? '当前模型不支持图片' : '添加 JPEG 或 PNG 图片';
     files.disabled = add.disabled;
     strip.querySelectorAll('button').forEach(button => { button.disabled = locked; });
     if (state.imageBusy) hint.textContent = '正在上传图片…';
     else if (selecting) hint.textContent = '正在处理图片…';
     else if (drafts.length) hint.textContent = `${drafts.length}/3 张图片 · 点击发送后上传并交给所选模型理解`;
-    else hint.textContent = oldNative && state.token?'这台客户端还不能上传图片，可以先发文字。':'';
+    else if (noPicker && state.token) hint.textContent = '这台客户端还不能上传图片，可以先发文字。';
+    else if (noVision && state.token) hint.textContent = '当前模型还不能看图，换一个支持图片的模型即可。';
+    else hint.textContent = '';
     hint.hidden = !hint.textContent;
   }
   function renderDrafts() {
