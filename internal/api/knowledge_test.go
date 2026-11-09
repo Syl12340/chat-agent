@@ -134,6 +134,9 @@ func TestRoleMemoryLifecycle(t *testing.T) {
 		return data
 	}
 	create := func(role string) string {
+		if role != "companion" {
+			return legacySession(t, app, role)
+		}
 		var info sessionInfo
 		_ = json.Unmarshal(do("POST", "/api/sessions", map[string]string{"role_id": role}, 201), &info)
 		return info.ID
@@ -152,6 +155,7 @@ func TestRoleMemoryLifecycle(t *testing.T) {
 	if roles := do("GET", "/api/roles", nil, 200); !strings.Contains(string(roles), "companion") || !strings.Contains(string(roles), "planner") {
 		t.Fatal("default roles missing")
 	}
+	do("POST", "/api/sessions", map[string]string{"role_id": "planner"}, 400)
 	companion := create("companion")
 	chat(companion, "提议记忆")
 	entries := list("companion")

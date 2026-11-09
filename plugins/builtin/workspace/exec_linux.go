@@ -7,7 +7,6 @@ import (
 	"errors"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -20,18 +19,21 @@ import (
 func canExecute() bool { return os.Geteuid() != 0 }
 
 // sandboxReady reports whether real confinement is available.
-func sandboxReady() bool { return sandbox.Probe().ABI >= 1 }
+func sandboxReady() bool { return sandbox.Probe().ABI >= 4 }
 
 // readOnlyPaths are the system directories a confined command may read. Writes
 // are granted only for the workspace, so a command that needs to change
 // something outside it fails instead of succeeding quietly.
-var readOnlyPaths = []string{"/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/proc", "/sys"}
+var readOnlyPaths = []string{"/usr", "/bin", "/sbin", "/lib", "/lib64"}
 
 func openText(root *os.Root, path string) (*os.File, error) {
 	return root.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW, 0)
 }
 
-type cappedOutput struct{ limit int; buf []byte }
+type cappedOutput struct {
+	limit int
+	buf   []byte
+}
 
 func (b *cappedOutput) Write(p []byte) (int, error) {
 	room := b.limit - len(b.buf)
@@ -78,9 +80,9 @@ func runAction(ctx context.Context, dir string, argv []string) (string, string) 
 // capability useful, and the boundary is the filesystem policy, not the
 // characters in the string. If confinement is unavailable the command does not
 // run at all -- an unconfined shell would be a different product.
-func runShell(ctx context.Context, root, dir, command string) (string, string, error) {
+func runShell(ctx context.Context, root, dir, command, mode string) (string, string, error) {
 	status := sandbox.Probe()
-	if status.ABI < 1 {
+	if status.ABI < 4 {
 		return "", "SANDBOX_UNAVAILABLE", nil
 	}
 	if !canExecute() {
@@ -90,20 +92,33 @@ func runShell(ctx context.Context, root, dir, command string) (string, string, e
 	if err != nil {
 		return "", "SANDBOX_UNAVAILABLE", err
 	}
-	// A private temp directory inside the workspace keeps two sessions from
-	// sharing scratch files and keeps /tmp out of the writable set.
-	tmp := filepath.Join(root, ".tmp")
-	if err := os.MkdirAll(tmp, 0o700); err != nil {
+	// A private scratch directory is the only write sink in read-only mode. The
+	// exact directory, not all of /tmp, is admitted to Landlock and is removed
+	// after the command exits.
+	tmp, err := os.MkdirTemp("", "chat-agent-sandbox-")
+	if err != nil {
 		return "", "SANDBOX_UNAVAILABLE", err
 	}
+	defer os.RemoveAll(tmp)
 	argv := []string{self, sandbox.Marker}
 	for _, path := range readOnlyPaths {
-		argv = append(argv, "--ro", path)
+		// Minimal distributions do not always have /sbin or /lib64. Missing
+		// optional system roots must not make an otherwise enforceable sandbox
+		// unavailable.
+		if info, statErr := os.Stat(path); statErr == nil && info.IsDir() {
+			argv = append(argv, "--ro", path)
+		}
 	}
+	argv = append(argv, "--ro", root)
 	// /dev/null is a write sink that every shell expects; writing existing device
 	// files has to work even though nothing under /dev may be created.
-	argv = append(argv, "--rwfile", "/dev")
-	argv = append(argv, "--rw", root, "--no-tcp", "--", "/bin/sh", "-c", command)
+	argv = append(argv, "--rwfile", "/dev", "--rw", tmp)
+	if mode == "workspace-write" {
+		argv = append(argv, "--rw", root)
+	} else if mode != "read-only" {
+		return "", "SANDBOX_UNAVAILABLE", errors.New("unsupported sandbox mode")
+	}
+	argv = append(argv, "--no-network", "--", "/bin/sh", "-c", command)
 
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = dir

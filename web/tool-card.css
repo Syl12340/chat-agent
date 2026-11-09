@@ -141,3 +141,28 @@
 	color: var(--green);
 	text-underline-offset: 2px;
 }
+
+.tool-download {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 10px 0;
+	color: var(--on-surface-variant);
+	font-size: var(--text-xs);
+}
+
+.tool-download button {
+	border: 1px solid var(--outline-variant);
+	border-radius: 999px;
+	background: var(--surface);
+	color: var(--primary);
+	padding: 7px 12px;
+	font: inherit;
+	cursor: pointer;
+}
+
+.tool-download button:disabled {
+	cursor: wait;
+	opacity: .65;
+}

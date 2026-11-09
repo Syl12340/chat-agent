@@ -105,6 +105,9 @@ func TestCompanionPreferencesLifecycle(t *testing.T) {
 	}
 	create := func(role string) string {
 		t.Helper()
+		if role != "companion" {
+			return legacySession(t, app, role)
+		}
 		code, b := request("POST", "/api/sessions", `{"role_id":"`+role+`"}`, true)
 		if code != 201 {
 			t.Fatalf("create: %d %s", code, b)

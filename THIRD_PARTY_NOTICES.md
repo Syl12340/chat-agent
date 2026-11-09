@@ -33,11 +33,48 @@ Additional design reference: DeepSeek Harness commit
 - `packages/core/tools/src/presentation.ts` and `contracts.ts` inform
   `internal/probe/presentation.go` and the host tool-card projection.
 - `packages/sandbox/sandbox` informs the unavailable-state contract for
-  `plugins/builtin/workspace`. That runner has process-level restrictions.
+  `plugins/builtin/workspace`, its explicit read-only/workspace-write modes and
+  its fail-closed behavior. The CA implementation is Go code: it combines
+  Landlock filesystem rules, a seccomp socket-creation denial, resource limits
+  and a per-call scratch directory; it does not copy or embed the upstream
+  TypeScript sandbox runtime.
 - `packages/jobs/tool-jobs/src/index.ts` informs the separation of job
   submission, observation and cancellation in `internal/api/image_jobs.go`.
+- `packages/llm/llm/src/api-key.ts` and
+  `packages/llm/llm-deepseek-api-key/src/{config,index}.ts` inform the printable
+  API-key validation and per-request route snapshot used by
+  `internal/modelconfig` and `internal/api/model_configs.go`. Credentials remain
+  server-side, mutations affect subsequent requests, and a missing/deleted route
+  fails explicitly instead of silently falling back.
 
 These are Go and JavaScript adaptations of the cited contracts.
+
+## Aurabot QQ
+
+Source: https://github.com/aureth-labs/dsh-aurabot-qq
+
+Reference revision: `0a0ccb1cc401dee00ce0faac2cffbf57d0efecda`.
+
+Copyright (c) 2026 Aurabot contributors. Licensed under the MIT License; the
+complete notice is retained in
+[licenses/Aurabot-MIT.txt](licenses/Aurabot-MIT.txt).
+
+The optional `|||` conversational-bubble convention and the rule that the
+model, rather than a user-facing mode switch, chooses when a casual answer
+benefits from several bubbles are adapted from `src/chat/reply.js` and the
+reply pipeline in `src/chat/hub.js`. chat-agent keeps Markdown-heavy answers
+atomic, caps a reply at three bubbles, adds no artificial delivery delay, and
+does not embed the DSH/Cordis or QQ runtimes.
+
+## AstrBot
+
+Source: https://github.com/AstrBotDevs/AstrBot
+
+Reference revision: `6b10af75e118714335aff3aab047bf7689fa1388`.
+
+AstrBot is licensed under AGPL-3.0. Its provider-management, durable task and
+typed media designs were inspected as architectural references only. No
+AstrBot source code or assets are copied into chat-agent.
 
 ## KaTeX 0.19.1
 

@@ -27,6 +27,7 @@ import (
 	"chat-agent/internal/interactive"
 	"chat-agent/internal/media"
 	"chat-agent/internal/memory"
+	"chat-agent/internal/modelconfig"
 	"chat-agent/internal/pluginapi"
 	"chat-agent/internal/probe"
 	"chat-agent/internal/roles"
@@ -115,6 +116,7 @@ type Server struct {
 	push           *pushStore
 	pushSlots      chan struct{}
 	images         *media.Store
+	modelConfigs   *modelconfig.Store
 	mediaMu        sync.Mutex
 	activeImageJob imageWork // protected by mediaMu
 	onebot         *oneBotIntegration
@@ -265,7 +267,14 @@ func New(c Config) (*Server, error) {
 		webClient.Close()
 		return nil, errors.Join(err, push.close(), topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
 	}
+	modelConfigs, err := modelconfig.Open(filepath.Join(path, "model-configs"))
+	if err != nil {
+		workCancel()
+		webClient.Close()
+		return nil, errors.Join(err, images.Close(), push.close(), topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
+	}
 	s := &Server{decision: decision.New(c.Decision), imagegen: imageGenerator(c), approvals: probe.NewApprovalStore(), devices: deviceStore, activities: activityStore, life: lifeStore, turns: turnStore, runtime: runtimeStore, workCtx: workCtx, workCancel: workCancel, careSlots: make(chan struct{}, 1), config: c, tokenHash: sha256.Sum256([]byte(c.AccessToken)), sessions: map[string]*probe.Session{}, runs: map[string]*runState{}, roles: roleManager, memory: mem, companion: companionStore, tasks: taskStore, web: webClient, location: location}
+	s.modelConfigs = modelConfigs
 	// Built-in plugins: each one is a Go value registered statically. A plugin
 	// whose dependencies are missing lands in Catalog.Unavailable instead of
 	// failing the process, so one missing capability never blacks out the rest.
@@ -319,11 +328,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/approvals", s.approveCall)
 	mux.HandleFunc("GET /api/plugins", s.listPlugins)
 	mux.HandleFunc("GET /api/chat/options", s.chatOptions)
+	mux.HandleFunc("GET /api/models", s.listModelConfigs)
+	mux.HandleFunc("POST /api/models", s.createModelConfig)
+	mux.HandleFunc("PUT /api/models/{id}", s.updateModelConfig)
+	mux.HandleFunc("DELETE /api/models/{id}", s.deleteModelConfig)
 	mux.HandleFunc("POST /api/sessions/{id}/images", s.uploadImage)
 	mux.HandleFunc("GET /api/sessions/{id}/images/{image}", s.readImage)
 	mux.HandleFunc("DELETE /api/sessions/{id}/images/{image}", s.deleteImage)
 	mux.HandleFunc("GET /api/sessions/{id}/image-jobs/{job}", s.imageJobHTTP)
 	mux.HandleFunc("POST /api/sessions/{id}/image-jobs/{job}/cancel", s.imageJobHTTP)
+	mux.HandleFunc("GET /api/sessions/{id}/workspace-files/{sha}", s.workspaceFile)
 	mux.HandleFunc("GET /api/push/settings", s.getPushSettings)
 	mux.HandleFunc("PATCH /api/push/settings", s.updatePushSettings)
 	mux.HandleFunc("GET /api/push/inbox", s.pushInbox)
@@ -417,7 +431,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // version is the service version reported by /api/status.
-const version = "0.3.1"
+const version = "0.4.0"
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model
@@ -551,6 +565,10 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 	}
 	if input.RoleID == "" {
 		input.RoleID = "companion"
+	}
+	if input.RoleID != "companion" {
+		fail(w, 400, "新会话统一使用当前助手；旧角色会话仅保留读取")
+		return
 	}
 	if _, err := s.roles.Load(input.RoleID); err != nil {
 		fail(w, 400, "角色不存在或配置无效")

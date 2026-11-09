@@ -9,16 +9,17 @@ import { createActivitiesUI } from '/activities.js';
 import { createNativeCare } from '/native-care.js';
 import { createVoiceUI } from '/voice.js';
 import { createDeviceAuth } from '/device-auth.js';
+import { createModelConfigs } from '/model-configs.js';
 import { createChatInput } from '/chat-input.js';
 import { createShellBridge } from '/shell-bridge.js';
 import { attachGeneratedImage, watchImageJob } from '/generated-image.js';
-import { describeTool, searchResults } from '/tool-view.js';
+import { describeTool, searchResults, workspaceFileResult } from '/tool-view.js';
 import { createUIRenderer } from '/ui/render.js';
 import { createDesktopWorkspace } from '/desktop-workspace.js';
 import { createMarkdownRenderer } from '/markdown.js';
 const $ = id => document.getElementById(id);
 const ui = Object.fromEntries(['sidebar','drawer-scrim','menu','new-chat','sessions','session-count','logout','chat-title','connection-label','demo-badge','conversation','welcome','messages','prompt','composer','send','stop','notice','model-label','login-overlay','login-form','access-token','login-button','login-error','settings','settings-dialog','close-settings','connection-info','reset-chat','delete-session','offline-banner','install'].map(id => [id, $(id)]));
-for (const id of ['role-picker','memory-open','memory-count','role-open','memory-dialog','memory-close','memory-role-name','memory-list','memory-form','memory-content','memory-status','memory-save','memory-cancel-edit','memory-form-label','memory-export','memory-message','role-dialog','role-close','role-id-label','role-title','role-form','role-file','role-content','role-save','role-skills','role-message','compact-context','compact-message','summary-details','summary-content']) ui[id] = $(id);
+for (const id of ['memory-open','memory-count','role-open','memory-dialog','memory-close','memory-role-name','memory-list','memory-form','memory-content','memory-status','memory-save','memory-cancel-edit','memory-form-label','memory-export','memory-message','role-dialog','role-close','role-id-label','role-title','role-form','role-file','role-content','role-save','role-skills','role-message','compact-context','compact-message','summary-details','summary-content']) ui[id] = $(id);
 const storage = {
   get(key) { try { return sessionStorage.getItem(key); } catch { return null; } },
   set(key, value) { try { sessionStorage.setItem(key, value); } catch {} },
@@ -62,6 +63,7 @@ const richMessages = new Map();
 const reasoningViews = new Map();
 Object.assign(state, { roles: [], roleID: 'companion', memories: [], memoryFilter: 'pending', memoryEditing: null, roleDocument: null, summary: null, compacting: false });
 const deviceAuth = createDeviceAuth({state,onToken:token=>connect(token,'device'),onError:handleError,adminRequest:json});
+const modelConfigs = createModelConfigs({state,json,onChanged:()=>chatInput.refreshOptions(),onError:handleError});
 const taskUI = createTaskUI({ state, request, json, roleName, drawer, onError: handleError });
 const companionUI = createCompanionUI({ state, json, drawer, onError: handleError });
 const roleProposalsUI = createRoleProposalsUI({state,json,drawer,onError:handleError});
@@ -139,7 +141,7 @@ function updateUI() {
   ui['reset-chat'].disabled = navigationLocked || Boolean(state.queuedCount) || !state.current;
   ui['delete-session'].disabled = navigationLocked || Boolean(state.queuedCount) || !state.current;
   ui.logout.disabled = state.submitting || state.loading;
-  for (const id of ['role-picker','memory-open','role-open']) ui[id].disabled = navigationLocked;
+  for (const id of ['memory-open','role-open']) ui[id].disabled = navigationLocked;
   $('tasks-open').disabled = navigationLocked;
   $('companion-open').disabled = navigationLocked;
   $('role-proposals-open').disabled = navigationLocked;
@@ -254,6 +256,7 @@ function logout() {
   forgetToken();
   storage.remove('chat-session');
   state.token = ''; state.authKind = ''; state.current = null; state.config = null; state.external = false; state.loading = false; state.compacting = false; state.stopping = false;
+  modelConfigs.clear();
   state.roles = []; state.roleID = 'companion'; state.memories = []; state.roleDocument = null; state.memoryEditing = null; state.summary = null;
   for (const id of ['memory-dialog','role-dialog','settings-dialog']) ui[id].close();
   ui['memory-list'].replaceChildren(); ui['role-content'].value = ''; ui['memory-content'].value = ''; ui['role-skills'].replaceChildren(); ui['memory-count'].hidden = true;
@@ -346,7 +349,6 @@ function renderSessions() {
     const label = document.createElement('span'); label.className = 'session-text'; label.textContent = item.title;
     const date = document.createElement('span'); date.className = 'session-date'; date.textContent = item.active ? '生成中' : sessionDate(item.updated_at);
     button.append(icon, label, date);
-    const role = document.createElement('span'); role.className = 'session-role'; role.textContent = roleName(item.role_id || 'companion'); button.insertBefore(role, date);
     button.addEventListener('click', () => selectSession(item.id).catch(handleError));
     const remove = document.createElement('button');
     remove.className = 'session-delete'; remove.type = 'button';
@@ -504,7 +506,7 @@ function toolLog(message, data, pending = false) {
   log.output.textContent = view.detail;
   log.output.hidden = view.empty;
   log.results?.remove();
-  log.results = searchResults(data);
+  log.results = searchResults(data) || workspaceDownload(data);
   log.output.hidden = view.empty || Boolean(log.results);
   if (log.results) log.output.after(log.results);
   // A call that only lacked an assessment can be authorized by the person who is
@@ -522,6 +524,23 @@ function toolLog(message, data, pending = false) {
       return cancel ? json(path + '/cancel', {method:'POST'}) : json(path);
     }, attach);
   }
+}
+
+function workspaceDownload(data) {
+  const file=workspaceFileResult(data);
+  if(!file)return null;
+  const row=document.createElement('div');row.className='tool-download';
+  const copy=document.createElement('span');copy.textContent=`${file.name} · ${Math.max(1,Math.ceil(file.bytes/1024))} KB`;
+  const button=document.createElement('button');button.type='button';button.textContent='下载文件';
+  button.addEventListener('click',async()=>{
+    button.disabled=true;button.textContent='正在下载…';
+    try{
+      const response=await request(file.download_url),blob=await response.blob(),href=URL.createObjectURL(blob),anchor=document.createElement('a');
+      anchor.href=href;anchor.download=file.name;document.body.append(anchor);anchor.click();anchor.remove();
+      setTimeout(()=>URL.revokeObjectURL(href),30_000);button.textContent='已开始下载';
+    }catch(error){button.disabled=false;button.textContent='重新下载';handleError(error);}
+  });
+  row.append(copy,button);return row;
 }
 
 // toolApproval renders the single human confirmation a refused call may offer.
@@ -705,7 +724,7 @@ async function applyTurnHistory(history) {
   if (!state.token || history.id !== state.current) return;
   const revision=++historyRevision, epoch=authEpoch, session=state.current;
   if (state.roleID !== (history.role_id || 'companion')) { roleProposalsUI.clear(); topicsUI.clear(); state.memories = []; ui['memory-count'].hidden = true; }
-  state.roleID = history.role_id || 'companion'; state.summary = history.summary; ui['role-picker'].value = state.roleID; showSummary();
+  state.roleID = history.role_id || 'companion'; state.summary = history.summary; showSummary();
   chatInput.syncScope();
   interactiveUI.syncScope(state.roleID,state.current);
   uiFloor=history.ui_context_floor || 0;
@@ -746,9 +765,10 @@ async function selectSession(id) {
   } finally { if (selected === sessionSelection) { state.loading = false; updateUI(); } }
 }
 async function createRemoteSession() {
-  const targetRole = state.roleID, auth = state.token;
+  const targetRole = 'companion', auth = state.token;
   const item = await json('/api/sessions',{method:'POST',body:JSON.stringify({role_id:targetRole})});
-  if (state.token !== auth || state.roleID !== targetRole) throw new Error('连接或角色已变化，请重新打开会话。');
+  if (state.token !== auth) throw new Error('连接已变化，请重新打开会话。');
+  state.roleID = item.role_id || targetRole;
   state.current = item.id; state.external = false; state.summary = null; showSummary(); storage.set('chat-session',item.id);
   state.sessions.unshift(item); renderSessions(); return item;
 }
@@ -770,6 +790,7 @@ async function newChat() {
 
 async function openActivityChat(activity) {
   if (!state.token || state.loading || state.streaming || state.external || state.compacting || state.submitting || state.submitUnknown || state.queuedCount) throw new Error('请先停止生成并处理当前队列，再开始活动聊天。');
+  if (state.roleID !== 'companion') throw new Error('旧角色会话只保留查看；请先开始一个新的统一会话。');
   if (ui.prompt.value.trim() || chatInput.hasUnsentImages()) throw new Error('输入框里还有草稿，请先发送或清空，再开始活动聊天。');
   if (activity.role_id !== state.roleID || activity.status !== 'active') throw new Error('请在当前角色下恢复活动，再接着聊。');
   voiceUI.clear();
@@ -850,6 +871,7 @@ ui.settings.addEventListener('click', () => {
     const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = label; dd.textContent = value; ui['connection-info'].append(dt, dd);
   }
   ui['settings-dialog'].showModal(); deviceAuth.refreshManagement();
+  modelConfigs.refresh();
 });
 ui['close-settings'].addEventListener('click', () => ui['settings-dialog'].close());
 window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); installPrompt = event; ui.install.hidden = false; });
@@ -870,10 +892,9 @@ restoreConnection();
 
 function roleName(id = state.roleID) { return state.roles.find(role => role.id === id)?.name || id; }
 async function loadRoles() {
-  state.roles = await json('/api/roles');
-  ui['role-picker'].replaceChildren();
-  for (const role of state.roles) { const option = document.createElement('option'); option.value = role.id; option.textContent = role.name; ui['role-picker'].append(option); }
-  ui['role-picker'].value = state.roleID;
+  const roles = await json('/api/roles');
+  state.roles = roles.filter(role => role.id === 'companion');
+  if (!state.roles.length) throw new Error('统一角色配置不可用');
 }
 function dialogMessage(id, message = '') { ui[id].textContent = message; ui[id].hidden = !message; }
 function memoryURL(id = '') { return `/api/memory${id ? `/${encodeURIComponent(id)}` : ''}?role_id=${encodeURIComponent(state.roleID)}`; }
@@ -938,15 +959,6 @@ for (const button of document.querySelectorAll('[data-memory-filter]')) button.a
 ui['memory-export'].addEventListener('click', async () => {
   try { const role = state.roleID; const response = await request(memoryURL('export')); saveMarkdown(await response.text(), `${role}-memory.md`); }
   catch (error) { dialogMessage('memory-message', error.message); }
-});
-ui['role-picker'].addEventListener('change', async () => {
-  const previous = state.roleID; roleProposalsUI.clear(); topicsUI.clear(); state.roleID = ui['role-picker'].value;
-  state.memories = []; ui['memory-count'].hidden = true;
-  if (!await newChat()) { state.roleID = previous; ui['role-picker'].value = previous; return; }
-  notice(`已和“${roleName()}”开启新会话，旧会话与其他角色的记忆保持独立。`);
-  taskUI.refresh().catch(handleError);
-  lifeUI.refresh().catch(handleError);
-  refreshMemoryCount().catch(handleError);
 });
 const documentKeys = { 'IDENTITY.md': 'identity', 'RULES.md': 'rules', 'PROFILE.md': 'profile' };
 function showRoleDocument() { if (state.roleDocument) ui['role-content'].value = state.roleDocument[documentKeys[ui['role-file'].value]]; }

@@ -40,8 +40,8 @@ func open(t *testing.T) (*Plugin, string) {
 // granted is a host that approves exactly the workspace permission.
 type granted struct{}
 
-func (granted) Logger() *log.Logger     { return log.New(io.Discard, "", 0) }
-func (granted) DataDir() string         { return "" }
+func (granted) Logger() *log.Logger            { return log.New(io.Discard, "", 0) }
+func (granted) DataDir() string                { return "" }
 func (granted) Allowed(permission string) bool { return permission == Permission }
 
 func call(t *testing.T, handler pluginapi.Handler, args string) (pluginapi.Result, error) {
@@ -129,6 +129,25 @@ func TestReadEnforcesTextLimits(t *testing.T) {
 	}
 	if _, err := call(t, plugin.read, `{"workspace":"server","path":"bin.txt"}`); err == nil {
 		t.Fatal("non-UTF-8 content must be refused")
+	}
+}
+
+func TestDownloadReceiptBindsExactBytes(t *testing.T) {
+	_, root := open(t)
+	path := filepath.Join(root, "report.bin")
+	if err := os.WriteFile(path, []byte{1, 2, 3, 4}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file, info, _, digest, err := OpenDownload(root, "report.bin", "")
+	if err != nil || info == nil || info.Size() != 4 || len(digest) != 64 {
+		t.Fatalf("offer failed: info=%v digest=%q err=%v", info, digest, err)
+	}
+	_ = file.Close()
+	if err = os.WriteFile(path, []byte{4, 3, 2, 1}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, _, err = OpenDownload(root, "report.bin", digest); err == nil || !strings.Contains(err.Error(), "changed") {
+		t.Fatalf("changed file reused an old receipt: %v", err)
 	}
 }
 

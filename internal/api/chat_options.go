@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"chat-agent/internal/modelconfig"
 )
 
 // This is an explicit server allowlist. The browser cannot choose an endpoint,
@@ -20,22 +22,42 @@ type ChatModel struct {
 }
 
 func (s *Server) chatModels() []ChatModel {
-	if len(s.config.ChatModels) > 0 {
-		return s.config.ChatModels
+	models := s.staticChatModels()
+	seen := make(map[string]bool, len(models))
+	for _, model := range models {
+		seen[model.ID] = true
 	}
-	u, _ := url.Parse(s.config.Agent.BaseURL)
-	if u != nil && u.Scheme == "https" && strings.EqualFold(u.Host, "chat.ecnu.edu.cn") && strings.TrimRight(u.Path, "/") == "/open/api/v1" {
-		models := []ChatModel{{"ecnu-max", "ECNU Max", true, []string{"off", "medium", "high", "ultra"}}, {"ecnu-plus", "ECNU Plus", true, []string{"off", "medium", "high", "ultra"}}}
-		if id := s.config.Agent.Model; id != "" && id != "ecnu-max" && id != "ecnu-plus" {
-			models = append(models, ChatModel{id, id, false, []string{"off"}})
+	if s.modelConfigs != nil {
+		for _, route := range s.modelConfigs.List() {
+			if !seen[route.ID] {
+				models = append(models, ChatModel{ID: route.ID, Label: route.Label, Vision: route.Vision, Thinking: route.Thinking})
+				seen[route.ID] = true
+			}
 		}
-		return models
 	}
-	id := s.config.Agent.Model
-	if id == "" {
-		id = "demo"
+	return models
+}
+
+func (s *Server) staticChatModels() []ChatModel {
+	var models []ChatModel
+	if len(s.config.ChatModels) > 0 {
+		models = append(models, s.config.ChatModels...)
+	} else {
+		u, _ := url.Parse(s.config.Agent.BaseURL)
+		if u != nil && u.Scheme == "https" && strings.EqualFold(u.Host, "chat.ecnu.edu.cn") && strings.TrimRight(u.Path, "/") == "/open/api/v1" {
+			models = []ChatModel{{"ecnu-max", "ECNU Max", true, []string{"off", "medium", "high", "ultra"}}, {"ecnu-plus", "ECNU Plus", true, []string{"off", "medium", "high", "ultra"}}}
+			if id := s.config.Agent.Model; id != "" && id != "ecnu-max" && id != "ecnu-plus" {
+				models = append(models, ChatModel{id, id, false, []string{"off"}})
+			}
+		} else {
+			id := s.config.Agent.Model
+			if id == "" {
+				id = "demo"
+			}
+			models = []ChatModel{{id, id, false, []string{"off"}}}
+		}
 	}
-	return []ChatModel{{id, id, false, []string{"off"}}}
+	return models
 }
 
 func (s *Server) chatOptions(w http.ResponseWriter, r *http.Request) {
@@ -47,8 +69,8 @@ func (s *Server) chatOptions(w http.ResponseWriter, r *http.Request) {
 }
 
 type chatSelection struct {
-	Model, Thinking, Effort, ProviderThinking string
-	Vision                                    bool
+	Model, WireModel, BaseURL, APIKey, Thinking, Effort, ProviderThinking string
+	Vision                                                                bool
 }
 
 func (s *Server) selectChat(model, thinking string) (chatSelection, error) {
@@ -61,7 +83,12 @@ func (s *Server) selectChat(model, thinking string) (chatSelection, error) {
 	if thinking == "" {
 		thinking = "off"
 	}
-	for _, candidate := range s.chatModels() {
+	candidates := s.staticChatModels()
+	dynamic, dynamicOK := s.modelRoute(model)
+	if dynamicOK {
+		candidates = []ChatModel{{ID: dynamic.ID, Label: dynamic.Label, Vision: dynamic.Vision, Thinking: dynamic.Thinking}}
+	}
+	for _, candidate := range candidates {
 		if candidate.ID != model {
 			continue
 		}
@@ -72,12 +99,15 @@ func (s *Server) selectChat(model, thinking string) (chatSelection, error) {
 		if !allowed {
 			return chatSelection{}, errors.New("所选模型不支持这个思考档位，请重新选择")
 		}
-		choice := chatSelection{Model: model, Thinking: thinking, Vision: candidate.Vision}
-		if (model == "ecnu-max" || model == "ecnu-plus") && len(candidate.Thinking) > 1 {
+		choice := chatSelection{Model: model, WireModel: model, BaseURL: s.config.Agent.BaseURL, APIKey: s.config.Agent.APIKey, Thinking: thinking, Vision: candidate.Vision}
+		if dynamicOK {
+			choice.WireModel, choice.BaseURL, choice.APIKey = dynamic.Model, dynamic.BaseURL, dynamic.APIKey
+		}
+		if (choice.WireModel == "ecnu-max" || choice.WireModel == "ecnu-plus") && len(candidate.Thinking) > 1 {
 			choice.ProviderThinking = "disabled"
 			if thinking != "off" {
 				choice.ProviderThinking = "enabled"
-				if model == "ecnu-max" {
+				if choice.WireModel == "ecnu-max" {
 					choice.Effort = map[string]string{"medium": "low", "high": "high", "ultra": "max"}[thinking]
 				} else {
 					choice.Effort = map[string]string{"medium": "low", "high": "medium", "ultra": "xhigh"}[thinking]
@@ -89,6 +119,13 @@ func (s *Server) selectChat(model, thinking string) (chatSelection, error) {
 		return choice, nil
 	}
 	return chatSelection{}, errors.New("模型未在服务器的对话允许列表中")
+}
+
+func (s *Server) modelRoute(id string) (modelconfig.Route, bool) {
+	if s.modelConfigs == nil {
+		return modelconfig.Route{}, false
+	}
+	return s.modelConfigs.Get(id)
 }
 
 func (s *Server) chatTimeout(choice chatSelection) time.Duration {

@@ -19,7 +19,7 @@ func runAction(context.Context, string, []string) (string, string) {
 	return "", "SANDBOX_UNAVAILABLE"
 }
 
-func runShell(context.Context, string, string, string) (string, string, error) {
+func runShell(context.Context, string, string, string, string) (string, string, error) {
 	return "", "SANDBOX_UNAVAILABLE", nil
 }
 

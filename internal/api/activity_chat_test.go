@@ -202,6 +202,9 @@ func TestActivityChatControl(t *testing.T) {
 		}
 	}
 	createSession := func(role string) sessionInfo {
+		if role != "companion" {
+			return sessionInfo{ID: legacySession(t, app, role), RoleID: role}
+		}
 		var item sessionInfo
 		request("POST", "/api/sessions", map[string]string{"role_id": role}, &item, 201)
 		return item

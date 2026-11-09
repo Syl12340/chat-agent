@@ -26,8 +26,9 @@ type Policy struct {
 	// write sink like /dev/null is expected to work, while nothing under /dev
 	// should become creatable.
 	WritableFiles []string
-	// DenyTCP refuses outbound and listening TCP even to allowed paths.
-	DenyTCP bool
+	// DenyNetwork refuses creating network and local IPC sockets. Existing
+	// descriptors are not inherited by the sandbox runner.
+	DenyNetwork bool
 }
 
 // Status describes what this host can enforce.

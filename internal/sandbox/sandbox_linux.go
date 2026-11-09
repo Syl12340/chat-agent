@@ -127,7 +127,7 @@ func Restrict(policy Policy) error {
 
 	attr := rulesetAttr{HandledAccessFS: rightsFor(abi)}
 	size := uintptr(unsafe.Sizeof(attr.HandledAccessFS))
-	if policy.DenyTCP && abi >= 4 {
+	if policy.DenyNetwork && abi >= 4 {
 		attr.HandledAccessNet = accessNetBindTCP | accessNetConnectTCP
 		size = uintptr(unsafe.Sizeof(attr))
 	}
@@ -174,6 +174,11 @@ func Restrict(policy Policy) error {
 	if _, err := syscall3(sysLandlockRestrictSelf, fd, 0, 0); err != nil {
 		return fmt.Errorf("应用 Landlock 规则失败：%w", err)
 	}
+	if policy.DenyNetwork {
+		if err := denySockets(); err != nil {
+			return fmt.Errorf("应用网络隔离失败：%w", err)
+		}
+	}
 	return nil
 }
 
@@ -189,6 +194,20 @@ func Run(policy Policy, argv []string) error {
 	if err := Restrict(policy); err != nil {
 		return err
 	}
+	// These process limits complement the filesystem boundary. They do not make
+	// Landlock a VM, but they stop a normal shell task from leaving giant files,
+	// core dumps or an unbounded descriptor table behind.
+	for resource, limit := range map[int]syscall.Rlimit{
+		syscall.RLIMIT_CORE:   {Cur: 0, Max: 0},
+		syscall.RLIMIT_FSIZE:  {Cur: 32 << 20, Max: 32 << 20},
+		syscall.RLIMIT_NOFILE: {Cur: 64, Max: 64},
+		syscall.RLIMIT_CPU:    {Cur: 15, Max: 15},
+	} {
+		if err := syscall.Setrlimit(resource, &limit); err != nil {
+			return fmt.Errorf("设置沙箱资源限制失败：%w", err)
+		}
+	}
+	syscall.Umask(0o077)
 	binary, err := exec.LookPath(argv[0])
 	if err != nil {
 		return fmt.Errorf("找不到命令 %q：%w", argv[0], err)
@@ -198,7 +217,7 @@ func Run(policy Policy, argv []string) error {
 
 // ParseArgs reads the internal re-exec form:
 //
-//	__sandbox [--ro DIR]... [--rw DIR]... [--rwfile DIR]... [--no-tcp] -- COMMAND [ARG]...
+//	__sandbox [--ro DIR]... [--rw DIR]... [--rwfile DIR]... [--no-network] -- COMMAND [ARG]...
 func ParseArgs(args []string) (Policy, []string, error) {
 	policy := Policy{}
 	i := 0
@@ -223,8 +242,8 @@ func ParseArgs(args []string) (Policy, []string, error) {
 				policy.Writable = append(policy.Writable, args[i+1])
 			}
 			i++
-		case "--no-tcp":
-			policy.DenyTCP = true
+		case "--no-network":
+			policy.DenyNetwork = true
 		default:
 			return policy, nil, fmt.Errorf("无法识别的沙箱参数：%q", args[i])
 		}
@@ -238,6 +257,5 @@ func Describe() string {
 	if status.ABI < 1 {
 		return "不可用：" + status.Reason
 	}
-	return "Landlock ABI " + strconv.Itoa(status.ABI)
+	return "Landlock ABI " + strconv.Itoa(status.ABI) + "，seccomp 拒绝套接字"
 }
-

@@ -86,6 +86,8 @@ func (s *Server) pluginTools(enable pluginapi.Enablement, sessionID string) []pr
 			Present:     tool.Present,
 			Order:       tool.Order,
 			Timeout:     tool.Timeout,
+			Decision:    probe.DecisionRequirement(tool.Decision),
+			Risk:        probe.RiskLevel(tool.Risk),
 			Parameters:  tool.Parameters,
 			Execute: func(ctx context.Context, data json.RawMessage) (probe.ToolResult, error) {
 				result, err := tool.Handler(ctx, data)

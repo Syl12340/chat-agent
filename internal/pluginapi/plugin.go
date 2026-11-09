@@ -53,6 +53,11 @@ type Tool struct {
 	Order      int
 	Parameters json.RawMessage
 	Timeout    time.Duration
+	// Decision and Risk are enforced by the host executor before the plugin is
+	// entered. A plugin cannot downgrade them at run time or treat a model choice
+	// as authorization.
+	Decision string
+	Risk     string
 	// Capability is the manifest capability this tool needs. The core exposes the
 	// tool only when that capability is enabled for the current turn.
 	Capability string
@@ -112,6 +117,12 @@ func (r *Registry) Tool(tool Tool) error {
 	}
 	if tool.Timeout < 0 {
 		return fmt.Errorf("工具 %s 的超时不能为负", tool.Name)
+	}
+	if tool.Decision != "" && tool.Decision != "never" && tool.Decision != "advisory" && tool.Decision != "required" {
+		return fmt.Errorf("工具 %s 的决策要求无效", tool.Name)
+	}
+	if tool.Risk != "" && tool.Risk != "none" && tool.Risk != "low" && tool.Risk != "medium" && tool.Risk != "high" && tool.Risk != "critical" {
+		return fmt.Errorf("工具 %s 的风险等级无效", tool.Name)
 	}
 	if len(tool.Prompt) > 4096 {
 		return fmt.Errorf("工具 %s 的提示分区过长", tool.Name)

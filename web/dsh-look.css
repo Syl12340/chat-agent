@@ -137,7 +137,11 @@ body{width:100%;overflow-x:hidden}
 
 /* 侧栏底部提示与状态 */
 .sidebar-note{font-size:11px;line-height:1.7;color:var(--on-surface-variant);border-top:1px solid var(--outline-variant);margin-top:auto}
-.sidebar-footer{border-top:1px solid var(--outline-variant)}
+.sidebar-footer{
+  border-top:1px solid var(--outline-variant);
+  background:var(--sidebar);
+  color-scheme:inherit;
+}
 .offline-banner,.notice{border-radius:var(--dsh-radius-md);font-size:12px}
 
 /* 移动端：DSH 的 816px 阅读列只在宽屏有意义，窄屏要贴着视口走。

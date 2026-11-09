@@ -5,7 +5,7 @@ import (
 	"net/http"
 )
 
-//go:embed index.html app.js theme.js tasks.js companion.js life.js turns.js activities.js native.js native-care.js voice.js device-auth.js role-proposals.js topics.js shell-bridge.js native-capabilities.js generated-image.js tool-view.js tool-card.css chat-input.js composer-preferences.js markdown.js math-render.js richtext.css dsh-look.css tokens.css vendor/katex/katex.mjs vendor/katex/LICENSE.txt chat-ui.css desktop-workspace.js desktop-workspace.css ui/*.js ui/ui.css style.css sw.js manifest.webmanifest icon-192.png icon-512.png apple-touch-icon.png
+//go:embed index.html app.js theme.js tasks.js companion.js life.js turns.js activities.js native.js native-care.js voice.js device-auth.js model-configs.js role-proposals.js topics.js shell-bridge.js native-capabilities.js generated-image.js tool-view.js tool-card.css chat-input.js composer-preferences.js markdown.js math-render.js richtext.css dsh-look.css tokens.css vendor/katex/katex.mjs vendor/katex/LICENSE.txt chat-ui.css desktop-workspace.js desktop-workspace.css ui/*.js ui/ui.css style.css sw.js manifest.webmanifest icon-192.png icon-512.png apple-touch-icon.png
 var assets embed.FS
 
 func Handler() http.Handler {
@@ -15,6 +15,7 @@ func Handler() http.Handler {
 	allowed["/native-care.js"] = true
 	allowed["/voice.js"] = true
 	allowed["/device-auth.js"] = true
+	allowed["/model-configs.js"] = true
 	allowed["/role-proposals.js"] = true
 	allowed["/topics.js"] = true
 	allowed["/shell-bridge.js"] = true

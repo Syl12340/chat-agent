@@ -54,9 +54,18 @@ func DefaultConfig() Config {
 }
 
 type toolCallKey struct{}
+type toolSessionKey struct{}
 
 // ToolCallID lets a tool scope an idempotency key to the current invocation.
 func ToolCallID(ctx context.Context) string { id, _ := ctx.Value(toolCallKey{}).(string); return id }
+
+// ToolSessionID exposes only the already-authorized opaque conversation scope
+// to a tool. It is useful for issuing a same-session download receipt and does
+// not grant access to the session store.
+func ToolSessionID(ctx context.Context) string {
+	id, _ := ctx.Value(toolSessionKey{}).(string)
+	return id
+}
 
 type FunctionCall struct {
 	Name      string `json:"name"`

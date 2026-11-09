@@ -35,10 +35,16 @@ export function createDeviceAuth({state, onToken, onError, adminRequest}) {
   const $=id=>document.getElementById(id);
   const native=/ChatAgentAndroid\//.test(navigator.userAgent);
   let identityPromise=null, identity=null, pair=null, cached=null, flight=null, epoch=0, controller=null;
-  let maintenance=false, paused=false;
+  let maintenance=false, paused=false, retryTimer=0;
   try{paused=localStorage.getItem('chat-agent-device-paused')==='1';}catch{}
   const say=text=>{if($('device-auth-state'))$('device-auth-state').textContent=text;};
   const setPaused=value=>{paused=value;try{localStorage.setItem('chat-agent-device-paused',value?'1':'0');}catch{}};
+  const stopRetry=()=>{clearTimeout(retryTimer);retryTimer=0;};
+  const retryPending=()=>{
+    if(paused||retryTimer)return;
+    say('设备已登记，等待管理员授权；批准后会自动连接。');
+    retryTimer=setTimeout(()=>{retryTimer=0;login(true);},30000);
+  };
   const valid=stamp=>{if(stamp!==epoch)throw new DOMException('设备连接已取消','AbortError');};
   async function publicJSON(path,body,signal) {
     const response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store',signal});
@@ -87,7 +93,7 @@ export function createDeviceAuth({state, onToken, onError, adminRequest}) {
       valid(stamp);
       const result=await publicJSON('/api/device/verify',{device_id:id.device_id,challenge_id:challenge.challenge_id,signature},signal);valid(stamp);
       if(!result.token?.startsWith('dvc1_')||result.server_id!==challenge.server_id)throw new Error('设备会话无效');
-      cached=result;setPaused(false);say('设备已授权，正在连接…');return result.token;
+      cached=result;setPaused(false);stopRetry();say('设备已授权，正在连接…');return result.token;
     })().finally(()=>{if(stamp===epoch){flight=null;controller=null;}});
     return flight;
   }
@@ -99,10 +105,10 @@ export function createDeviceAuth({state, onToken, onError, adminRequest}) {
       const id=await getIdentity();valid(stamp);
       if(automatic&&(paused||id.suspended)){say('此设备已退出。点击连接即可重新进入。');return;}
       say('正在登记设备…');const token=await issue();valid(stamp);await onToken(token);
-    }catch(error){if(stamp===epoch)showError(error);}
+    }catch(error){if(stamp===epoch){showError(error);if(error.code==='device_pending')retryPending();}}
     finally{if(stamp===epoch)$('device-connect').disabled=false;}
   }
-  function cancel(){epoch++;controller?.abort();controller=null;flight=null;cached=null;if($('device-connect'))$('device-connect').disabled=false;}
+  function cancel(){epoch++;stopRetry();controller?.abort();controller=null;flight=null;cached=null;if($('device-connect'))$('device-connect').disabled=false;}
   function logout(token) {
     cancel();setPaused(true);
     if(token?.startsWith('dvc1_'))fetch('/api/device/logout',{method:'POST',headers:{Authorization:`Bearer ${token}`},cache:'no-store',keepalive:true}).catch(()=>{});

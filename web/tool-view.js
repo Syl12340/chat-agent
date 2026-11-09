@@ -26,6 +26,7 @@ const labels = {
 	workspace_list: '查看工作区',
 	workspace_read: '读取文件',
 	workspace_search: '搜索工作区',
+	workspace_share: '发送文件',
 	workspace_shell: '沙箱命令',
 	image_generate: '生成图片',
 	image_health: '图像能力检查',
@@ -117,4 +118,16 @@ export function searchResults(data) {
 		list.append(item);
 	}
 	return list;
+}
+
+export function workspaceFileResult(data) {
+	if (data.name !== 'workspace_share' || !data.output) return null;
+	try {
+		const value = JSON.parse(data.output);
+		if (value?.kind !== 'workspace_file' || typeof value.name !== 'string' || !value.name ||
+			typeof value.download_url !== 'string' || !value.download_url.startsWith('/api/sessions/') ||
+			!Number.isSafeInteger(value.bytes) || value.bytes < 0 || value.bytes > 32 * 1024 * 1024 ||
+			typeof value.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(value.sha256)) return null;
+		return value;
+	} catch { return null; }
 }

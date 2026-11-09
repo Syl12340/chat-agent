@@ -216,7 +216,9 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 			}
 			if err == nil {
 				agent, err = s.agentForTurn(sess, query, id, func(c *probe.Config) {
-					c.Model = choice.Model
+					c.Model = choice.WireModel
+					c.BaseURL = choice.BaseURL
+					c.APIKey = choice.APIKey
 					c.Thinking = choice.ProviderThinking
 					c.ReasoningEffort = choice.Effort
 					c.Timeout = s.chatTimeout(choice)

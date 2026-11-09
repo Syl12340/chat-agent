@@ -1,6 +1,6 @@
 # chat-agent
 
-当前服务端发布为 **0.26.0**（`20261108-followup-04`）；Android 更新包为 **0.26.0-debug（versionCode 21）**。自动关怀和共同话题现在通过零工具、一次响应的 Harness followup 写入已有同角色会话，收件箱与通知可回到原对话；后台触发不伪装成用户授权。默认关闭的 OneBot owner 私聊保持关闭。[本次记录](docs/release-0.26.md)。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
+当前源码版本为 **0.4.0**；Android 更新包为 **0.4.0-debug（versionCode 7）**，沿用重置后的新包名 `dev.chatagent.ai.debug`。本版统一为单一助手入口，增加设备指纹 challenge 自动连接、服务器模型/API Key 管理、受限工作区 shell 与内容绑定文件下载，并吸收 DSH、Aurabot 的可复用契约和对话节奏设计。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
 
 0.24.0 以 format index + manifest 选择唯一 runtime 代，聊天/队列规范状态与 attempt/model/tool 运行事实处于同一代。旧 transcript v1/v2、turns v1/v2/v3 只由停机维护命令显式迁移；最新轮/整会话删除先登记再重写或清理，旧代和模型快照不会被读取器自动复活。生产配置仍使用 `ecnu-max`，本地搜索、设备白名单和加密 9992 入口保持不变。
 
@@ -16,17 +16,17 @@ Channel P0–P2 已完成独立验签入口、Inbox/Outbox、稳定 session mapp
 
 现有 Android/网页继续作为主要体验面；QQ 仅先实现主人私聊这一条受控入口，微信、B站、群聊和通用多平台网关保持后续优先级。当前已上线能力、实际缺口和后续建议排期统一见[当前规划](docs/feature-plan.md)。
 
-支持手机页面、单用户鉴权、会话列表、流式回答、停止生成、历史恢复、工具过程展示、Markdown/数学/结构渲染、角色切换、记忆审核与上下文压缩。Go 存储保持标准库，记忆使用版本化 JSON 与基础关键词检索，未引入原规格中的 SQLite/FTS5。
+支持手机页面、设备白名单鉴权、会话列表、流式回答、停止生成、历史恢复、工具过程展示、Markdown/数学/结构渲染、统一助手人格、记忆审核与上下文压缩。Go 存储保持标准库，记忆使用版本化 JSON 与基础关键词检索，未引入原规格中的 SQLite/FTS5。
 
 ## 快速体验
 
 需要 Go 1.26。Windows / PowerShell 7：
 
 ```powershell
-go build -buildvcs=false -o bin/chat-agent-0.26.0.exe ./cmd/server
+go build -buildvcs=false -o bin/chat-agent-0.4.0.exe ./cmd/server
 $env:CHAT_ACCESS_TOKEN = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 $env:CHAT_ACCESS_TOKEN  # 在自己的终端查看，随后输入网页登录框
-.\bin\chat-agent-0.26.0.exe -demo
+.\bin\chat-agent-0.4.0.exe -demo
 ```
 
 在浏览器打开 [本机页面](http://127.0.0.1:8080)，首次通过管理员维护入口批准设备指纹，之后由设备签名自动连接。点击“看看此刻的时间”即可体验完整工具循环。
@@ -51,7 +51,7 @@ Linux 构建：`go build -buildvcs=false -o bin/chat-agent ./cmd/server`。运�
 $env:CHAT_BASE_URL='https://your-api.example/v1'
 $env:CHAT_MODEL='your-model-id'
 # 在自己的终端安全设置 CHAT_API_KEY
-.\bin\chat-agent-0.26.0.exe
+.\bin\chat-agent-0.4.0.exe
 ```
 
 [.env.example](.env.example) 只是模板，程序不会自动加载 `.env`。
@@ -85,7 +85,7 @@ Android 当前可以填写 `chat://47.117.40.74:9992`，通过固定服务器公
 
 ## 角色、Rules、Skills 与记忆
 
-首次启动会在 `<data>/roles` 初始化“小伴”和“计划伙伴”两个角色，已有文档不会被覆盖。下拉选择角色会创建一个新会话；打开旧会话会恢复它原来绑定的角色，不改变角色归属或串用记忆。
+新会话统一使用 `companion` 助手，不再向用户提供“小伴 / 计划伙伴”选择。升级前已有的旧角色会话仍可读取，避免破坏历史记录，但只读提示会引导用户新建统一会话；角色隔离字段暂时保留，供数据兼容和安全边界使用。
 
 “角色设置”可分别编辑人格 `IDENTITY.md`、规则 `RULES.md`、风格 `PROFILE.md`，也能查看当前角色的 Skills。文档更新用于之后的新请求。可用 `-roles <目录>` 指定工作区；添加 Skill 时在角色的 `skills/<名称>/SKILL.md` 放入 Markdown，之后按需读取，不执行代码或授予工具权限。
 

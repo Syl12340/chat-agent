@@ -2,7 +2,13 @@
 export function splitReply(text) {
   // Keep block markup, references, and math in one render so parser context
   // never changes when the same reply is copied or reopened.
-  if (!text || text.length > 600 || /[`$\\\[\]<>|~]|^(?:\t| {4}|\s*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|[-*_]{3,}\s*$))/m.test(text)) return [text];
+	if (!text) return [text];
+	const explicit=text.includes('|||'), visible=explicit ? text.replaceAll('|||','') : text;
+	if (explicit && text.length <= 1200 && !/[`$\\\[\]<>~]|^(?:\t| {4}|\s*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|[-*_]{3,}\s*$))/m.test(visible)) {
+		const bubbles=text.split('|||').map(part=>part.trim()).filter(Boolean);
+		if (bubbles.length>=2 && bubbles.length<=3 && bubbles.every(part=>part.length<=600)) return bubbles;
+	}
+	if (text.length > 600 || /[`$\\\[\]<>|~]|^(?:\t| {4}|\s*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|[-*_]{3,}\s*$))/m.test(text)) return [text];
   const paragraphs = text.split(/\n\s*\n/).map(part => part.trim()).filter(Boolean);
   if (paragraphs.length <= 1) return [text];
   if (paragraphs.length <= 3) return paragraphs;
