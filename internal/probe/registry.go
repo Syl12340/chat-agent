@@ -65,9 +65,23 @@ type ToolSet struct {
 	byName  map[string]registeredTool
 }
 
+// MaxTools bounds the catalog offered to one step. The limit exists because
+// selection quality falls as the list grows, not because of a storage cost, so
+// raising it needs a reason beyond "one more capability arrived".
+//
+// It sat at 24 until the image job controls pushed a live turn to 25 and every
+// chat failed with an unhelpful "temporarily unavailable". The fix here is the
+// headroom plus a diagnosable message; the real answer is exposing fewer tools
+// per turn, which the role-scoped admission work will do.
+const MaxTools = 28
+
 func NewToolRegistry(definitions []Tool) (*ToolRegistry, error) {
-	if len(definitions) > 24 {
-		return nil, errors.New("too many tools")
+	if len(definitions) > MaxTools {
+		names := make([]string, 0, len(definitions))
+		for _, tool := range definitions {
+			names = append(names, tool.Name)
+		}
+		return nil, fmt.Errorf("too many tools: %d registered, limit %d: %s", len(definitions), MaxTools, strings.Join(names, ", "))
 	}
 	r := &ToolRegistry{}
 	names := map[string]bool{}

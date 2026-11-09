@@ -417,7 +417,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // version is the service version reported by /api/status.
-const version = "0.29.6"
+const version = "0.29.7"
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model
@@ -677,6 +677,10 @@ func (s *Server) message(w http.ResponseWriter, r *http.Request) {
 		c.Recorder = recorder
 	})
 	if err != nil {
+		// The client gets a fixed sentence, but an operator needs the reason: this
+		// path covers role, memory, activity and tool assembly failures, and they
+		// look identical from the outside.
+		log.Printf("session agent unavailable: %v", err)
 		recorder.Close()
 		s.mu.Unlock()
 		cancel()
