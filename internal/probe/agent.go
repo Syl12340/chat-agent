@@ -31,6 +31,13 @@ type Config struct {
 	RoleID, SessionID                       string
 	PrepareStep                             func(context.Context, StepContext) (StepState, error)
 	Guards                                  []ToolGuard
+	// DecisionGate is the mandatory checkpoint for tools that declare a
+	// decision requirement. Nil means no gating, which is correct when no tool
+	// asks for it.
+	DecisionGate DecisionGate
+	// Approvals holds host-issued single-use authorizations for calls that were
+	// refused only because no verdict could be obtained. Nil authorizes nothing.
+	Approvals                               *ApprovalStore
 	Provider                                ModelProvider
 	ContextBytes, KeepRecentTurns           int
 	HistoryFloor                            int
@@ -91,6 +98,9 @@ type ToolResult struct {
 	DurationMS int64            `json:"duration_ms,omitempty"`
 	Truncated  bool             `json:"truncated,omitempty"`
 	Receipt    *BusinessReceipt `json:"receipt,omitempty"`
+	// Decision is the gate trace: what was asked, what came back, and why the call
+	// was allowed or refused. Absent when the tool needs no evaluation.
+	Decision *DecisionRecord `json:"decision,omitempty"`
 }
 type Event struct {
 	Type     EventType
@@ -141,7 +151,7 @@ func New(c Config, sess *Session) (*Agent, error) {
 	if provider == nil {
 		provider = &ChatCompletionsProvider{endpoint: strings.TrimRight(c.BaseURL, "/") + "/chat/completions", key: c.APIKey, client: &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 	}
-	return &Agent{config: c, session: sess, registry: registry, executor: ToolExecutor{guards: append([]ToolGuard(nil), c.Guards...)}, provider: provider}, nil
+	return &Agent{config: c, session: sess, registry: registry, executor: ToolExecutor{guards: append([]ToolGuard(nil), c.Guards...), gate: c.DecisionGate, approvals: c.Approvals}, provider: provider}, nil
 }
 
 func clock() Tool {

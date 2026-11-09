@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"pocket-agent/internal/api"
+	"pocket-agent/internal/decision"
+	"pocket-agent/internal/imagegen"
 	"pocket-agent/internal/probe"
 	"pocket-agent/internal/runlog"
 	"pocket-agent/internal/securewire"
@@ -29,6 +31,28 @@ func main() {
 		log.Print(err)
 		os.Exit(1)
 	}
+}
+
+// splitList parses a comma-separated allow-list, dropping blanks so an unset
+// variable disables the capability instead of inventing entries.
+func splitList(raw string) []string {
+	var out []string
+	for _, item := range strings.Split(raw, ",") {
+		if trimmed := strings.TrimSpace(item); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
+// decisionModel names the structured-decision model used by the decide tool.
+// It is separate from the chat model and refuses to inherit it: asking a chat
+// model to answer a decision request is a misconfiguration, not a fallback.
+func decisionModel() string {
+	if value := strings.TrimSpace(os.Getenv("POCKET_DECISION_MODEL")); value != "" {
+		return value
+	}
+	return "ecnu-decision"
 }
 
 // utilityModel picks the model that summarizes history. Summaries are validated
@@ -166,7 +190,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	app, err := api.New(api.Config{Agent: c, ChatModels: chatModels, ThinkingMaxOutput: thinkingMax, Speech: api.SpeechConfig{Model: os.Getenv("POCKET_TTS_MODEL"), Voice: os.Getenv("POCKET_TTS_VOICE")}, DataDir: *data, RolesDir: *rolesDir, TimeZone: *timeZone, Web: webtools.Config{Enabled: *webEnabled, AllowedHosts: strings.Split(os.Getenv("POCKET_WEB_HOSTS"), ","), SearchURL: searchEngine(*webEnabled)}, AccessToken: os.Getenv("POCKET_ACCESS_TOKEN"), AndroidReleaseDir: os.Getenv("POCKET_ANDROID_RELEASE_DIR"), Semantic: semantic.Config{BaseURL: os.Getenv("POCKET_BASE_URL"), APIKey: os.Getenv("POCKET_API_KEY"), Model: os.Getenv("POCKET_RERANK_MODEL")}, OneBot: onebotConfig})
+	app, err := api.New(api.Config{Agent: c, ChatModels: chatModels, ThinkingMaxOutput: thinkingMax, Speech: api.SpeechConfig{Model: os.Getenv("POCKET_TTS_MODEL"), Voice: os.Getenv("POCKET_TTS_VOICE")}, DataDir: *data, RolesDir: *rolesDir, TimeZone: *timeZone, Web: webtools.Config{Enabled: *webEnabled, AllowedHosts: strings.Split(os.Getenv("POCKET_WEB_HOSTS"), ","), SearchURL: searchEngine(*webEnabled)}, AccessToken: os.Getenv("POCKET_ACCESS_TOKEN"), AndroidReleaseDir: os.Getenv("POCKET_ANDROID_RELEASE_DIR"), Semantic: semantic.Config{BaseURL: os.Getenv("POCKET_BASE_URL"), APIKey: os.Getenv("POCKET_API_KEY"), Model: os.Getenv("POCKET_RERANK_MODEL")}, Decision: decision.Config{BaseURL: os.Getenv("POCKET_BASE_URL"), APIKey: os.Getenv("POCKET_API_KEY"), Model: decisionModel()}, ImageRemote: imagegen.RemoteConfig{BaseURL: os.Getenv("POCKET_IMAGE_REMOTE"), Token: os.Getenv("POCKET_IMAGE_TOKEN")}, Images: imagegen.Config{Python: os.Getenv("POCKET_IMAGE_PYTHON"), Script: os.Getenv("POCKET_IMAGE_BRIDGE"), Profiles: splitList(os.Getenv("POCKET_IMAGE_PROFILES")), DefaultProfile: os.Getenv("POCKET_IMAGE_PROFILE")}, OneBot: onebotConfig})
 	if err != nil {
 		return err
 	}

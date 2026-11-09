@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -21,11 +21,15 @@ import (
 	"time"
 
 	"pocket-agent/internal/companion"
+	"pocket-agent/internal/decision"
+	"pocket-agent/internal/imagegen"
 	"pocket-agent/internal/deviceauth"
 	"pocket-agent/internal/interactive"
 	"pocket-agent/internal/media"
 	"pocket-agent/internal/memory"
+	"pocket-agent/internal/pluginapi"
 	"pocket-agent/internal/probe"
+	"pocket-agent/plugins/builtin/search"
 	"pocket-agent/internal/roles"
 	"pocket-agent/internal/runlog"
 	"pocket-agent/internal/semantic"
@@ -46,6 +50,11 @@ type Config struct {
 	AndroidReleaseDir      string
 	Speech                 SpeechConfig
 	Semantic               semantic.Config
+	Decision               decision.Config
+	Images                 imagegen.Config
+	// ImageRemote, when set, replaces Images: the GPU lives on another machine
+	// and is reached through a tunnel.
+	ImageRemote imagegen.RemoteConfig
 	ChatModels             []ChatModel
 	ThinkingMaxOutput      int
 	TurnCompletionObserver TurnCompletionObserver
@@ -84,6 +93,12 @@ type Server struct {
 	schedulerOK     atomic.Bool
 	speechSlots     chan struct{}
 	speechAttempt   time.Time
+	decision        *decision.Client
+	imagegen        imagegen.Generator
+	plugins         *pluginapi.Catalog
+	// approvals holds host-issued, single-use authorizations. It is the only
+	// source of consent for a call that could not be assessed.
+	approvals       *probe.ApprovalStore
 	topics          *topics.Store
 	topicSource     topicGateway
 	topicSweepMu    sync.Mutex
@@ -235,7 +250,23 @@ func New(c Config) (*Server, error) {
 		webClient.Close()
 		return nil, errors.Join(err, push.close(), topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
 	}
-	s := &Server{devices: deviceStore, activities: activityStore, life: lifeStore, turns: turnStore, runtime: runtimeStore, workCtx: workCtx, workCancel: workCancel, careSlots: make(chan struct{}, 1), config: c, tokenHash: sha256.Sum256([]byte(c.AccessToken)), sessions: map[string]*probe.Session{}, runs: map[string]*runState{}, roles: roleManager, memory: mem, companion: companionStore, tasks: taskStore, web: webClient, location: location}
+	s := &Server{decision: decision.New(c.Decision), imagegen: imageGenerator(c), approvals: probe.NewApprovalStore(), devices: deviceStore, activities: activityStore, life: lifeStore, turns: turnStore, runtime: runtimeStore, workCtx: workCtx, workCancel: workCancel, careSlots: make(chan struct{}, 1), config: c, tokenHash: sha256.Sum256([]byte(c.AccessToken)), sessions: map[string]*probe.Session{}, runs: map[string]*runState{}, roles: roleManager, memory: mem, companion: companionStore, tasks: taskStore, web: webClient, location: location}
+	// Built-in plugins: each one is a Go value registered statically. A plugin
+	// whose dependencies are missing lands in Catalog.Unavailable instead of
+	// failing the process, so one missing capability never blacks out the rest.
+	loader := pluginapi.NewLoader()
+	loader.Add(search.New(webClient))
+	pluginCatalog, err := loader.Load()
+	if err != nil {
+		return nil, err
+	}
+	if err := pluginCatalog.StartAll(workCtx, func(manifest pluginapi.Manifest) pluginapi.Host {
+		return newPluginHost(manifest, c.DataDir)
+	}); err != nil {
+		return nil, err
+	}
+	s.plugins = pluginCatalog
+
 	s.speechSlots = make(chan struct{}, 1)
 	s.topics = topicStore
 	s.topicSource = webClient
@@ -264,6 +295,7 @@ func (s *Server) Handler() http.Handler {
 	}
 	mux.HandleFunc("/hooks/", func(w http.ResponseWriter, r *http.Request) { fail(w, http.StatusNotFound, "接口不存在") })
 	mux.HandleFunc("GET /api/status", s.status)
+	mux.HandleFunc("POST /api/approvals", s.approveCall)
 	mux.HandleFunc("GET /api/chat/options", s.chatOptions)
 	mux.HandleFunc("POST /api/sessions/{id}/images", s.uploadImage)
 	mux.HandleFunc("GET /api/sessions/{id}/images/{image}", s.readImage)
@@ -360,13 +392,16 @@ func (s *Server) Handler() http.Handler {
 	})
 }
 
+// version is the service version reported by /api/status.
+const version = "0.29.3"
+
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model
 	if s.config.Agent.Demo {
 		model = "chat-agent Demo"
 	}
 	identity := currentAuth(r)
-	writeJSON(w, 200, map[string]any{"name": "chat-agent", "version": "0.26.0", "auth_method": identity.Method, "device_id": identity.Device.ID, "device_admin": identity.Method == "owner" || identity.Device.Admin, "speech_enabled": s.speechEnabled(), "speech_max_chars": 1200, "model": model, "demo": s.config.Agent.Demo, "max_output": s.config.Agent.MaxOutputTokens, "thinking_max_output": s.config.ThinkingMaxOutput, "timeout_seconds": s.config.Agent.Timeout.Seconds(), "time_zone": s.location.String(), "web_fetch": s.web.FetchEnabled(), "web_search": s.web.SearchEnabled(), "reminder_delivery": "inbox", "scheduler_ok": s.schedulerOK.Load(), "onebot_enabled": s.onebot != nil})
+	writeJSON(w, 200, map[string]any{"name": "chat-agent", "version": version, "auth_method": identity.Method, "device_id": identity.Device.ID, "device_admin": identity.Method == "owner" || identity.Device.Admin, "speech_enabled": s.speechEnabled(), "speech_max_chars": 1200, "model": model, "demo": s.config.Agent.Demo, "max_output": s.config.Agent.MaxOutputTokens, "thinking_max_output": s.config.ThinkingMaxOutput, "timeout_seconds": s.config.Agent.Timeout.Seconds(), "time_zone": s.location.String(), "web_fetch": s.web.FetchEnabled(), "web_search": s.web.SearchEnabled(), "image_generation": s.imageAvailable(), "image_reason": s.imageUnavailableReason(), "reminder_delivery": "inbox", "scheduler_ok": s.schedulerOK.Load(), "onebot_enabled": s.onebot != nil})
 }
 
 func validID(id string) bool {
@@ -655,7 +690,13 @@ func (s *Server) message(w http.ResponseWriter, r *http.Request) {
 		case probe.EventToolCallStart:
 			send("tool_start", map[string]string{"id": ev.ToolCall.ID, "name": ev.ToolCall.Function.Name})
 		case probe.EventToolResult:
-			send("tool_result", map[string]any{"id": ev.ToolCall.ID, "name": ev.ToolCall.Function.Name, "output": ev.Result.Output, "error": ev.Result.Error})
+			payload := map[string]any{"id": ev.ToolCall.ID, "name": ev.ToolCall.Function.Name, "output": ev.Result.Output, "error": ev.Result.Error, "code": ev.Result.Code}
+			// The decision trace is only useful to the client when it can offer a
+			// human confirmation, so it travels with the result that needs one.
+			if ev.Result.Decision != nil {
+				payload["decision"] = ev.Result.Decision
+			}
+			send("tool_result", payload)
 		case probe.EventCompactionStart:
 			send("compaction_start", map[string]bool{"active": true})
 		case probe.EventCompactionDone:

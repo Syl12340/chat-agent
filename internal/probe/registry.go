@@ -30,7 +30,12 @@ type Tool struct {
 	Validate    func(json.RawMessage) error                                `json:"-"`
 	Guard       ToolGuard                                                  `json:"-"`
 	Receipt     ReceiptCapability                                          `json:"-"`
-	Execute     func(context.Context, json.RawMessage) (ToolResult, error) `json:"-"`
+	// Decision is the host's requirement, not a suggestion: the executor enforces
+	// it even when the model never asks. Empty means DecisionNever.
+	Decision DecisionRequirement `json:"-"`
+	// Risk describes the cost of a wrong or failed call. Metadata only.
+	Risk    RiskLevel                                                      `json:"-"`
+	Execute func(context.Context, json.RawMessage) (ToolResult, error) `json:"-"`
 }
 
 type ToolExecution struct {
@@ -66,6 +71,12 @@ func NewToolRegistry(definitions []Tool) (*ToolRegistry, error) {
 	for _, tool := range definitions {
 		if tool.Receipt == "" {
 			tool.Receipt = ReceiptNone
+		}
+		if tool.Decision != "" && !tool.Decision.Valid() {
+			return nil, fmt.Errorf("tool %s has an unknown decision requirement %q", tool.Name, tool.Decision)
+		}
+		if !tool.Risk.Valid() {
+			return nil, fmt.Errorf("tool %s has an unknown risk level %q", tool.Name, tool.Risk)
 		}
 		if tool.Name == "" || tool.Execute == nil || tool.Timeout < 0 || names[tool.Name] || tool.Receipt != ReceiptNone && tool.Receipt != ReceiptAtomic {
 			return nil, errors.New("invalid or duplicate tool definition")

@@ -553,6 +553,32 @@ func (r *Recorder) ToolFinished(_ context.Context, step int, call probe.ToolCall
 	return nil
 }
 
+// DecisionEvaluated records a gate refusal that never reached dispatch. Passing
+// decisions already travel inside the tool result payload.
+func (r *Recorder) DecisionEvaluated(_ context.Context, step int, call probe.ToolCall, record *probe.DecisionRecord) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.active || record == nil {
+		return nil
+	}
+	stepID := r.steps[step]
+	if stepID == "" {
+		return nil
+	}
+	ref, err := r.writeDocumentLocked("payloads", "decision", record, MaxPayloadBytes)
+	if err != nil {
+		return err
+	}
+	return r.appendLocked(Event{
+		Type:           "tool.decision",
+		AttemptID:      r.attemptID,
+		StepID:         stepID,
+		CallID:         call.ID,
+		ProviderCallID: call.ID,
+		Reference:      ref,
+	})
+}
+
 func (r *Recorder) AttemptFinished(_ context.Context, finish probe.AttemptFinish) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

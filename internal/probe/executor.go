@@ -11,7 +11,19 @@ import (
 // ToolExecutor borrows DSH's guarded pipeline design (MIT), not its runtime.
 // It is serial, never retries, and never abandons a running tool goroutine.
 // Business handlers must forward cancellation and keep their own atomic guards.
-type ToolExecutor struct{ guards []ToolGuard }
+type ToolExecutor struct {
+	guards []ToolGuard
+	// gate is the host's mandatory decision checkpoint. Nil disables gating, which
+	// is what demo mode and tests want; it must never be nil in a deployment that
+	// declares required tools.
+	gate DecisionGate
+	// approvals holds host-issued, single-use authorizations. It is nil unless a
+	// caller wires one; nothing is authorized by default.
+	approvals *ApprovalStore
+}
+
+// SetDecisionGate wires the gate. Called once during assembly, before any step runs.
+func (e *ToolExecutor) SetDecisionGate(gate DecisionGate) { e.gate = gate }
 
 func (e *ToolExecutor) Execute(ctx context.Context, set *ToolSet, call ToolCall, recorder RunRecorder, step int) (result ToolResult, recordErr error) {
 	started := time.Now()
@@ -68,6 +80,24 @@ func (e *ToolExecutor) Execute(ctx context.Context, set *ToolSet, call ToolCall,
 	if ctx.Err() != nil {
 		return toolFailure("TOOL_CANCELED", "tool canceled before dispatch"), nil
 	}
+	// The gate sits after every static check and before the durable start record:
+	// a refusal must leave no trace of a dispatched call, and it must not be
+	// skippable by the model's own judgement.
+	decision, decisionErr := e.gateDecision(ctx, invocation, tool.definition)
+	if decisionErr != nil {
+		code := "DECISION_REFUSED"
+		if errors.Is(decisionErr, ErrNeedsApproval) {
+			code = "DECISION_NEEDS_APPROVAL"
+		}
+		failure := toolFailure(code, decisionErr.Error())
+		attachDecision(&failure, decision)
+		// The call never dispatched, so no tool.finished event will carry the
+		// decision. Record it directly, or a refusal leaves no audit trail.
+		if record, ok := recorder.(DecisionRecorder); ok && decision != nil {
+			_ = record.DecisionEvaluated(context.WithoutCancel(ctx), step, call, decision)
+		}
+		return failure, nil
+	}
 	if recorder != nil {
 		operationID, err = recorder.ToolStarted(ctx, step, call, canonical, tool.definition.Receipt)
 		if err != nil {
@@ -85,6 +115,7 @@ func (e *ToolExecutor) Execute(ctx context.Context, set *ToolSet, call ToolCall,
 	}
 	defer cancel()
 	result, err = tool.definition.Execute(execCtx, canonical)
+	attachDecision(&result, decision)
 	if err != nil {
 		code := "TOOL_FAILED"
 		if errors.Is(err, context.DeadlineExceeded) {
