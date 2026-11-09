@@ -29,6 +29,25 @@ DSH 采用 MIT 许可，允许在合适条件下借鉴、改写和复用其设�
 - 仍须保留出站边界：仅 HTTPS、拒绝私有/保留地址、固定已校验 IP、限制体积与时长、不跟随重定向到内网。
 - 解析失败要有明确回退与报错，不静默返回空结果。
 
+## 部署约定
+
+用户说“部署”时，指的是**两件事一起做**，不要只做一半：
+
+1. **服务器推送部署**：构建 linux/amd64 二进制，备份 `var/lib/pocket-agent` 与 `/etc/pocket-agent`，
+   上传后用 `install.sh` 发布新 release，切换 `current`，确认服务 active、`NRestarts=0`、health 正常。
+2. **APK 打包发布**：构建 debug APK 时自增 `versionCode`，发布到 `/opt/pocket-agent/android/releases/android-<日期>-<序号>/`，
+   写 `app.apk` 与 `manifest.json`（version_code、version_name、package_name、size、sha256），
+   再用软链把 `/opt/pocket-agent/android/current` 指过去，属主设为 `pocket-agent`。
+
+补充要求：
+
+- 构建 APK 用环境变量传版本号（`ORG_GRADLE_PROJECT_pocketVersionCode` / `..._pocketVersionName`），
+  `-P` 形式在当前 Gradle 版本会被当成任务名而失败。
+- 两端版本号要对得上，并在汇报里给出两个版本标识与校验和。
+- 部署前先跑 `go build ./...`、`go vet ./...` 和受影响包的测试；全绿才推。
+- 每次部署前做数据备份，汇报中给出回退命令。
+- 若某一端这次没有变化（例如只改前端资源），仍要说明 APK 是否重新发布，不要默认跳过。
+
 ## 子代理使用范围
 
 - 仅在用户明确指定，或项目确实需要高并行开发时使用。
