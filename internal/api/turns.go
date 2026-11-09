@@ -9,11 +9,11 @@ import (
 	"net/http"
 	"time"
 
-	"pocket-agent/internal/interactive"
-	"pocket-agent/internal/media"
-	"pocket-agent/internal/probe"
-	"pocket-agent/internal/runlog"
-	"pocket-agent/internal/turns"
+	"chat-agent/internal/interactive"
+	"chat-agent/internal/media"
+	"chat-agent/internal/probe"
+	"chat-agent/internal/runlog"
+	"chat-agent/internal/turns"
 )
 
 func turnFailure(w http.ResponseWriter, err error) {

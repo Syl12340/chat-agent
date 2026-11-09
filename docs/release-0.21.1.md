@@ -29,12 +29,12 @@
 
 | 项目 | 记录 |
 | --- | --- |
-| 服务目录 | `/opt/pocket-agent/releases/20261106-reply-01` |
-| 上一版本 | `/opt/pocket-agent/releases/20261105-rich-01` |
-| 一致性备份 | `/opt/pocket-agent/backups/pre-reply-20261106-01.tar.gz`，root:0600 |
+| 服务目录 | `/opt/chat-agent/releases/20261106-reply-01` |
+| 上一版本 | `/opt/chat-agent/releases/20261105-rich-01` |
+| 一致性备份 | `/opt/chat-agent/backups/pre-reply-20261106-01.tar.gz`，root:0600 |
 | 源码提交 | `d8bcd18da1f6f1ecb2b2794d5f66f6322c11ae44` |
 | Linux SHA-256 | `7713b35074a4895e3ad5cf6ccc34f3b83cdc9e7d55787f9a6f56080c6152bbd2` |
-| Android 更新目录 | `/opt/pocket-agent/android/releases/android-20261106-01` |
+| Android 更新目录 | `/opt/chat-agent/android/releases/android-20261106-01` |
 | APK 版本 / 字节 | `0.21.1-debug` / versionCode `19` / 947300 字节 |
 | APK SHA-256 | `ba6afe104ba9a17d51de8d22ad7be85a90f8f82b3e6725265e1648d218b99624` |
 | 原签名证书 SHA-256 | `4905b966d06c53d22da462b9ef3e36ff27b54994829950a610f92a6bab68b24a` |

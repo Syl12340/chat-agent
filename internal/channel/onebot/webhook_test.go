@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"pocket-agent/internal/channel"
+	"chat-agent/internal/channel"
 )
 
 func TestOwnerPrivateTextNormalization(t *testing.T) {

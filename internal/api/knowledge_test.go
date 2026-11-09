@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"pocket-agent/internal/memory"
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/memory"
+	"chat-agent/internal/probe"
 )
 
 func TestRoleMemoryLifecycle(t *testing.T) {

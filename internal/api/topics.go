@@ -12,9 +12,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"pocket-agent/internal/probe"
-	"pocket-agent/internal/topics"
-	"pocket-agent/internal/webtools"
+	"chat-agent/internal/probe"
+	"chat-agent/internal/topics"
+	"chat-agent/internal/webtools"
 )
 
 type topicGateway interface {

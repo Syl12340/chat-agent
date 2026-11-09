@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"pocket-agent/internal/webtools"
+	"chat-agent/internal/webtools"
 )
 
 func newService(token string, ttl time.Duration, perMinute int) *Service {
@@ -67,7 +67,7 @@ func (s *Service) Handler() http.Handler {
 			auth := r.Header.Get("Authorization")
 			digest := sha256.Sum256([]byte(strings.TrimPrefix(auth, "Bearer ")))
 			if !strings.HasPrefix(auth, "Bearer ") || subtle.ConstantTimeCompare(digest[:], s.tokenHash[:]) != 1 {
-				w.Header().Set("WWW-Authenticate", `Bearer realm="pocket-search"`)
+				w.Header().Set("WWW-Authenticate", `Bearer realm="chat-search"`)
 				send(w, 401, map[string]string{"error": "search token required"})
 				return
 			}
@@ -172,7 +172,7 @@ func (s *Service) mcp(w http.ResponseWriter, r *http.Request) {
 		if input.ProtocolVersion == "2025-03-26" {
 			negotiated = input.ProtocolVersion
 		}
-		result(map[string]any{"protocolVersion": negotiated, "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]string{"name": "pocket-local-search", "version": "0.1.0"}})
+		result(map[string]any{"protocolVersion": negotiated, "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]string{"name": "chat-local-search", "version": "0.1.0"}})
 	case "ping":
 		result(map[string]any{})
 	case "tools/list":

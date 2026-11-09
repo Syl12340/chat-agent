@@ -6,8 +6,8 @@ import (
 	"os"
 	"testing"
 
-	"pocket-agent/internal/imagegen"
-	"pocket-agent/internal/runlog"
+	"chat-agent/internal/imagegen"
+	"chat-agent/internal/runlog"
 )
 
 type cancelRecorder struct {

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"sync"
 
-	"pocket-agent/internal/storage"
+	"chat-agent/internal/storage"
 )
 
 //go:embed defaults

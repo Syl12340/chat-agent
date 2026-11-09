@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/probe"
 )
 
 type interruptedReasoningFixture struct{ entered chan struct{} }

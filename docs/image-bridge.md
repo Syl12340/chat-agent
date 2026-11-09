@@ -12,7 +12,7 @@ CA 在派发前为每轮请求保存一个作业 ID，返回后从会话内查�
 
 ```
 [服务器] chat-agent
-   │  POCKET_IMAGE_REMOTE=http://127.0.0.1:18190
+   │  CHAT_IMAGE_REMOTE=http://127.0.0.1:18190
    ▼
 127.0.0.1:18190            ← SSH 反向隧道（-R）
    ▼
@@ -89,21 +89,21 @@ POST /generate
 3. 本机与服务器两侧各探测一次
 4. 任一进程退出就重连
 
-服务器（`/etc/pocket-agent/pocket-agent.env`）：
+服务器（`/etc/chat-agent/chat-agent.env`）：
 
 ```
-POCKET_IMAGE_REMOTE=http://127.0.0.1:18190
-POCKET_IMAGE_PROFILE=wai_v17
+CHAT_IMAGE_REMOTE=http://127.0.0.1:18190
+CHAT_IMAGE_PROFILE=wai_v17
 ```
 
-改完 `systemctl restart pocket-agent`。
+改完 `systemctl restart chat-agent`。
 
 ## 5. 后端选择
 
 | 环境变量 | 效果 |
 | --- | --- |
-| `POCKET_IMAGE_REMOTE` | 走隧道到本机 bridge（GPU 在别处） |
-| `POCKET_IMAGE_PYTHON` + `POCKET_IMAGE_BRIDGE` | 走本地 CLI（chat-agent 和 GPU 同机） |
+| `CHAT_IMAGE_REMOTE` | 走隧道到本机 bridge（GPU 在别处） |
+| `CHAT_IMAGE_PYTHON` + `CHAT_IMAGE_BRIDGE` | 走本地 CLI（chat-agent 和 GPU 同机） |
 | 都不设 | 没有图像能力，工具不注册 |
 
 远程优先：配了隧道说明运维是刻意把 GPU 挪走的。
@@ -121,7 +121,7 @@ POCKET_IMAGE_PROFILE=wai_v17
 
 ```sh
 curl -s http://127.0.0.1:18190/health | head -c 300
-TOKEN=$(sed -n 's/^POCKET_ACCESS_TOKEN=//p' /etc/pocket-agent/pocket-agent.env)
+TOKEN=$(sed -n 's/^CHAT_ACCESS_TOKEN=//p' /etc/chat-agent/chat-agent.env)
 curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9991/api/status
 ```
 

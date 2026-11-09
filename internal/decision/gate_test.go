@@ -3,7 +3,7 @@ package decision
 import (
 	"testing"
 
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/probe"
 )
 
 func answer(choice string, labels map[string]float64) Answer {

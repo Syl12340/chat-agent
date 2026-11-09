@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"pocket-agent/internal/probe"
-	"pocket-agent/internal/runlog"
-	"pocket-agent/internal/tasks"
+	"chat-agent/internal/probe"
+	"chat-agent/internal/runlog"
+	"chat-agent/internal/tasks"
 )
 
 type toolProvider struct{ calls int }

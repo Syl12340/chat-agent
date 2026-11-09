@@ -16,7 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"pocket-agent/internal/webtools"
+	"chat-agent/internal/webtools"
 )
 
 var ErrBusy = errors.New("search request limit reached; try later")
@@ -101,7 +101,7 @@ func (s *Service) Search(ctx context.Context, query string) (Response, error) {
 	if err != nil {
 		return Response{}, err
 	}
-	req.Header.Set("User-Agent", "PocketAgentSearch/0.1")
+	req.Header.Set("User-Agent", "ChatAgentSearch/0.1")
 	req.Header.Set("Accept", "application/rss+xml, application/xml, text/xml")
 	response, err := s.http.Do(req)
 	if err != nil {

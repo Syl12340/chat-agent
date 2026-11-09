@@ -41,10 +41,10 @@
 
 | 检查 | 结果 |
 | --- | --- |
-| `go list -m all`（`GOPROXY=off`） | 仅 `pocket-agent`，零第三方模块 |
+| `go list -m all`（`GOPROXY=off`） | 仅 `chat-agent`，零第三方模块 |
 | `go test ./... -count=1 -v`（`GOPROXY=off`） | 3 项通过，测试包耗时 0.084 秒，不含编译；Windows 恢复无同步错误 |
-| `go build -buildvcs=false -o bin/pocket-probe.exe ./cmd/probe` | 成功，Windows amd64 产物 9,119,744 bytes，约 8.7 MiB |
-| `pocket-probe.exe -h` | 正常启动并显示配置参数 |
+| `go build -buildvcs=false -o bin/chat-probe.exe ./cmd/probe` | 成功，Windows amd64 产物 9,119,744 bytes，约 8.7 MiB |
+| `chat-probe.exe -h` | 正常启动并显示配置参数 |
 
 测试需允许本地回环连接；未连接真实模型服务。没有增加测试矩阵、压力测试或独立审查任务。
 

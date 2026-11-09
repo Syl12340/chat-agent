@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"pocket-agent/internal/imagegen"
-	"pocket-agent/internal/media"
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/imagegen"
+	"chat-agent/internal/media"
+	"chat-agent/internal/probe"
 )
 
 // stubImageClient parks a real, configured client whose runner never runs;

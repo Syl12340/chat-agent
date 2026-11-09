@@ -19,8 +19,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"pocket-agent/internal/retrieval"
-	"pocket-agent/internal/storage"
+	"chat-agent/internal/retrieval"
+	"chat-agent/internal/storage"
 )
 
 var ErrLifeNotFound = errors.New("life item not found")

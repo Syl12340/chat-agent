@@ -23,8 +23,8 @@ import javax.crypto.Mac
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
-/** PocketWire v1, interoperable with internal/securewire. The pin is provisioned over SSH. */
-class PocketWire(host: String, port: Int, publicKey: ByteArray) : Closeable {
+/** ChatWire v1, interoperable with internal/securewire. The pin is provisioned over SSH. */
+class ChatWire(host: String, port: Int, publicKey: ByteArray) : Closeable {
     private val socket = Socket()
     private val input: DataInputStream
     private val output: DataOutputStream
@@ -43,7 +43,7 @@ class PocketWire(host: String, port: Int, publicKey: ByteArray) : Closeable {
             require(signatureLength in 8..80 && hello.size == 103 + signatureLength) { "Invalid server signature length" }
             val identity = KeyFactory.getInstance("EC").generatePublic(X509EncodedKeySpec(publicKey))
             val verifier = Signature.getInstance("SHA256withECDSA")
-            verifier.initVerify(identity); verifier.update("PocketWire-v1/server".toByteArray() + challenge + serverEphemeral)
+            verifier.initVerify(identity); verifier.update("ChatWire-v1/server".toByteArray() + challenge + serverEphemeral)
             require(verifier.verify(hello.copyOfRange(103, hello.size))) { "Encrypted server identity mismatch" }
             val generator = KeyPairGenerator.getInstance("EC"); generator.initialize(ECGenParameterSpec("secp256r1"))
             val pair = generator.generateKeyPair(); val local = pair.public as ECPublicKey
@@ -52,7 +52,7 @@ class PocketWire(host: String, port: Int, publicKey: ByteArray) : Closeable {
             val point = ECPoint(BigInteger(1, serverEphemeral.copyOfRange(1,33)), BigInteger(1, serverEphemeral.copyOfRange(33,65)))
             val peer = KeyFactory.getInstance("EC").generatePublic(ECPublicKeySpec(point, local.params))
             val agreement = KeyAgreement.getInstance("ECDH"); agreement.init(pair.private); agreement.doPhase(peer, true)
-            val context = MessageDigest.getInstance("SHA-256").digest("PocketWire-v1/session".toByteArray() + challenge + serverEphemeral + clientEphemeral)
+            val context = MessageDigest.getInstance("SHA-256").digest("ChatWire-v1/session".toByteArray() + challenge + serverEphemeral + clientEphemeral)
             val material = hkdf(agreement.generateSecret(), challenge, context, 72)
             tx = Records(material.copyOfRange(0,32), material.copyOfRange(64,68), context, 0)
             rx = Records(material.copyOfRange(32,64), material.copyOfRange(68,72), context, 1)

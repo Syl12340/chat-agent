@@ -20,17 +20,17 @@
 
 历史发布（2026-11-05）：服务端 **0.18.0** 已切至 `20261105-companion-01`，Android 更新通道为 **0.18.0-debug / versionCode 15**（`android-20261105-01`）。一致性备份 `pre-companion-20261105-01.tar.gz` 已保留，线上只读检查及 APK 下载哈希通过。后台接收默认关闭，无配置/端口/角色文件变更，未安装手机。见[发布记录](../docs/release-0.18.md)。以下为历史发布及通用操作说明。
 
-历史发布（2026-11-04）：服务端 **0.17.0** / `20261104-topics-02`；Android **versionCode 14** / `android-20261104-02`。备份 `/opt/pocket-agent/backups/pre-topics-20261104-02.tar.gz`。话题默认关闭，线上只读与 APK 下载哈希检查通过；未调用真实模型。详见[0.17 发布记录](../docs/release-0.17.md)。以下旧版本段落为历史记录。
+历史发布（2026-11-04）：服务端 **0.17.0** / `20261104-topics-02`；Android **versionCode 14** / `android-20261104-02`。备份 `/opt/chat-agent/backups/pre-topics-20261104-02.tar.gz`。话题默认关闭，线上只读与 APK 下载哈希检查通过；未调用真实模型。详见[0.17 发布记录](../docs/release-0.17.md)。以下旧版本段落为历史记录。
 
-历史发布（2026-11-04）：服务端 **0.16.0** / `20261104-companion-01`；Android **0.16.0-debug / versionCode 13** / `android-20261104-01`。一致性备份 `/opt/pocket-agent/backups/pre-companion-20261104-01.tar.gz`。已完成线上只读检查和 APK 下载哈希检查，未调用真实模型。关怀 state.json 兼容读取 v1、后续写 v2，回退不可仅换旧二进制。详见[本次发布](../docs/release-0.16.md)。下文旧版本检查与发布段落为历史记录。
+历史发布（2026-11-04）：服务端 **0.16.0** / `20261104-companion-01`；Android **0.16.0-debug / versionCode 13** / `android-20261104-01`。一致性备份 `/opt/chat-agent/backups/pre-companion-20261104-01.tar.gz`。已完成线上只读检查和 APK 下载哈希检查，未调用真实模型。关怀 state.json 兼容读取 v1、后续写 v2，回退不可仅换旧二进制。详见[本次发布](../docs/release-0.16.md)。下文旧版本检查与发布段落为历史记录。
 
 2026-10-27 已部署至 `root@47.117.40.74`：Ubuntu 24.04 / Linux amd64。
 
-当前为 **live 真实模型模式**，使用用户指定的 `ecnu-max`，[接通记录](../docs/model-connection.md)。已接入[本地搜索 JSON/MCP 服务](../docs/local-search.md)，仅监听 `127.0.0.1:9993`。保留 `127.0.0.1:9991` 的 SSH 隧道和 `9992` 公网加密 TCP；Android 使用 `pocket://47.117.40.74:9992`。[协议说明](../docs/encrypted-transport.md)。9990/frps、9999/Node 及已有 Apache 未修改，也未修改防火墙。
+当前为 **live 真实模型模式**，使用用户指定的 `ecnu-max`，[接通记录](../docs/model-connection.md)。已接入[本地搜索 JSON/MCP 服务](../docs/local-search.md)，仅监听 `127.0.0.1:9993`。保留 `127.0.0.1:9991` 的 SSH 隧道和 `9992` 公网加密 TCP；Android 使用 `chat://47.117.40.74:9992`。[协议说明](../docs/encrypted-transport.md)。9990/frps、9999/Node 及已有 Apache 未修改，也未修改防火墙。
 
 ## 现在访问
 
-这台电脑本轮已在后台启动隧道，打开 <http://127.0.0.1:60991>。访问口令保存在本地忽略文件 `.cache/pocket-agent-access.txt` 的 `ACCESS_TOKEN` 行。将其输入网页登录框；不需要输入 SSH 密钥或模型 API Key。默认端口 19991 本轮被 Windows 拒绝绑定，因此只调整了本机转发端口，服务器仍监听 9991。
+这台电脑本轮已在后台启动隧道，打开 <http://127.0.0.1:60991>。访问口令保存在本地忽略文件 `.cache/chat-agent-access.txt` 的 `ACCESS_TOKEN` 行。将其输入网页登录框；不需要输入 SSH 密钥或模型 API Key。默认端口 19991 本轮被 Windows 拒绝绑定，因此只调整了本机转发端口，服务器仍监听 9991。
 
 电脑重启或隧道断开后，在项目根目录执行并保持终端打开：
 
@@ -38,9 +38,9 @@
 .\deploy\Open-Tunnel.ps1 -LocalPort 60991
 ```
 
-同一端口已有隧道时可直接使用。关闭隧道不停止服务器上的服务。当前后台隧道的 PID 记录在 `.cache/pocket-agent-tunnel.pid`，日志位于 `.cache/pocket-agent-tunnel.err`；这些文件不加入 Git。
+同一端口已有隧道时可直接使用。关闭隧道不停止服务器上的服务。当前后台隧道的 PID 记录在 `.cache/chat-agent-tunnel.pid`，日志位于 `.cache/chat-agent-tunnel.err`；这些文件不加入 Git。
 
-这条隧道仅绑定电脑回环地址，手机不能直接填写电脑公网地址来访问。当前 Android 新版可直接使用上面的 pocket 地址，不依赖此隧道。USB 调试旧版本时，可针对明确的测试设备执行 `adb -s <设备ID> reverse tcp:19991 tcp:60991`。
+这条隧道仅绑定电脑回环地址，手机不能直接填写电脑公网地址来访问。当前 Android 新版可直接使用上面的 chat 地址，不依赖此隧道。USB 调试旧版本时，可针对明确的测试设备执行 `adb -s <设备ID> reverse tcp:19991 tcp:60991`。
 
 ## 可选 OneBot / QQ 私聊通道
 
@@ -54,7 +54,7 @@ SnowLuma 在本机、chat-agent 在服务器时，运行独立双向隧道并保
 
 它将本机 `127.0.0.1:18080` 转发到服务端 9991，同时把服务端 `127.0.0.1:13000` 反向转发到本机 SnowLuma 3000。SnowLuma HTTP Client URL 填写 `http://127.0.0.1:18080/hooks/onebot/v1/events`；HTTP Server 只监听本机回环。Ingress HMAC secret 与 Action Bearer token 必须分别生成并只写入服务端 root:0600 环境文件和 SnowLuma 对应配置，不提交 Git。
 
-启用前在 `/etc/pocket-agent/pocket-agent.env` 配置：
+启用前在 `/etc/chat-agent/chat-agent.env` 配置：
 
 ```text
 ONEBOT_ENABLED=true
@@ -74,47 +74,47 @@ ONEBOT_MAX_BODY_BYTES=262144
 
 | 位置 | 用途 |
 | --- | --- |
-| `/opt/pocket-agent/releases/<版本>/` | 只读应用版本与启动脚本 |
-| `/opt/pocket-agent/current` | 当前版本软链接 |
-| `/etc/pocket-agent/pocket-agent.env` | root:0600，模式、访问口令和模型配置 |
-| `/var/lib/pocket-agent/demo-sessions` | 演示模式持久化目录 |
-| `/var/lib/pocket-agent/sessions` | 真实模型模式持久化目录，切换时创建 |
-| `/etc/systemd/system/pocket-agent.service` | 开机自启、异常退出后重启 |
+| `/opt/chat-agent/releases/<版本>/` | 只读应用版本与启动脚本 |
+| `/opt/chat-agent/current` | 当前版本软链接 |
+| `/etc/chat-agent/chat-agent.env` | root:0600，模式、访问口令和模型配置 |
+| `/var/lib/chat-agent/demo-sessions` | 演示模式持久化目录 |
+| `/var/lib/chat-agent/sessions` | 真实模型模式持久化目录，切换时创建 |
+| `/etc/systemd/system/chat-agent.service` | 开机自启、异常退出后重启 |
 | systemd journal | 运行日志 |
 
-服务使用 `pocket-agent` 专用无登录账户；数据目录权限 0700，配置不会给浏览器返回。systemd 限制写入范围、权限提升和进程资源，内存上限 256 MiB。没有在服务器安装 Go、npm 或构建依赖。
+服务使用 `chat-agent` 专用无登录账户；数据目录权限 0700，配置不会给浏览器返回。systemd 限制写入范围、权限提升和进程资源，内存上限 256 MiB。没有在服务器安装 Go、npm 或构建依赖。
 
 ## 查看与维护
 
 ```sh
-systemctl status pocket-agent --no-pager
-journalctl -u pocket-agent -n 50 --no-pager
+systemctl status chat-agent --no-pager
+journalctl -u chat-agent -n 50 --no-pager
 curl --fail http://127.0.0.1:9991/healthz
-systemctl restart pocket-agent
+systemctl restart chat-agent
 ```
 
 从 0.22 及更早格式升级到 0.24 runtime 时，必须先停止服务并确认无进程持锁，再在原数据目录运行一次显式迁移：
 
 ```sh
-systemctl stop pocket-agent
-/opt/pocket-agent/current/pocket-agent -migrate-runtime -data /var/lib/pocket-agent/sessions
-systemctl start pocket-agent
+systemctl stop chat-agent
+/opt/chat-agent/current/chat-agent -migrate-runtime -data /var/lib/chat-agent/sessions
+systemctl start chat-agent
 ```
 
 维护命令会把新 runtime 树的属主对齐到数据目录属主，即使用 root 执行也不会留下服务账户无法读取的文件。迁移发布后不能只切换旧二进制回退；应停机恢复迁移前的完整数据与配置备份。需要旧格式副本时使用 `-export-runtime <全新目录>`，不要覆盖生产目录。
 
 ## 接通真实模型
 
-在服务器上用编辑器修改 `/etc/pocket-agent/pocket-agent.env`，保留现有访问口令并设置：
+在服务器上用编辑器修改 `/etc/chat-agent/chat-agent.env`，保留现有访问口令并设置：
 
 ```text
-POCKET_MODE=live
-POCKET_BASE_URL=https://your-api.example/v1
-POCKET_API_KEY=<在服务器私下填写真实密钥>
-POCKET_MODEL=<真实模型 ID>
+CHAT_MODE=live
+CHAT_BASE_URL=https://your-api.example/v1
+CHAT_API_KEY=<在服务器私下填写真实密钥>
+CHAT_MODEL=<真实模型 ID>
 ```
 
-随后执行 `systemctl restart pocket-agent`。演示与真实会话目录分开，不自动迁移演示数据。恢复演示时改回 `POCKET_MODE=demo`。当前已开启本地 web_search；网页抓取仍需独立配置域名白名单，见[搜索配置](../docs/local-search.md)。
+随后执行 `systemctl restart chat-agent`。演示与真实会话目录分开，不自动迁移演示数据。恢复演示时改回 `CHAT_MODE=demo`。当前已开启本地 web_search；网页抓取仍需独立配置域名白名单，见[搜索配置](../docs/local-search.md)。
 
 ## 构建与安装
 
@@ -125,21 +125,21 @@ $env:GOOS='linux'; $env:GOARCH='amd64'; $env:CGO_ENABLED='0'
 go build -trimpath -buildvcs=false -ldflags '-s -w' -o bin/chat-agent-linux-amd64 ./cmd/server
 ```
 
-将二进制命名为 `pocket-agent`，与 `install.sh`、`start.sh`、`pocket-agent.service`、`pocket-agent.env.example` 一起上传到独立暂存目录。由 root 执行 `sh install.sh <新版本ID> <二进制SHA256>`。安装保留已有配置和数据，只更新应用版本及本项目的 unit；升级前应备份数据，并检查新版本格式兼容性。安装失败时需检查当前版本链接、服务状态和日志，不自动反复重试。
+将二进制命名为 `chat-agent`，与 `install.sh`、`start.sh`、`chat-agent.service`、`chat-agent.env.example` 一起上传到独立暂存目录。由 root 执行 `sh install.sh <新版本ID> <二进制SHA256>`。安装保留已有配置和数据，只更新应用版本及本项目的 unit；升级前应备份数据，并检查新版本格式兼容性。安装失败时需检查当前版本链接、服务状态和日志，不自动反复重试。
 
 ## 验证与剩余范围
 
-当前 Agent 版本 `20261108-followup-04`（0.26.0），Linux SHA-256：`030760d41981aec036faf302259c5e32c28f4c37e50747eeeaa3d1e9397ba5ea`。runtime v2/turns v3 不变，但 life 写入版本升至 v4、topics 升至 v2；最终切换前备份为 `/opt/pocket-agent/backups/pre-followup-20261108-04.tar.gz`（SHA-256 `144524cefca381655778397d2eabff4bb93035e95ee73c556396c27ed46c2b5e`）。若需回到 0.25，须恢复更早的 `pre-followup-20261108-01.tar.gz`（SHA-256 `a2b56c492df0d57fa92613384ac2d7fa0394665cc0228686ad138a78d87444a8`），不能只切旧二进制。
+当前 Agent 版本 `20261108-followup-04`（0.26.0），Linux SHA-256：`030760d41981aec036faf302259c5e32c28f4c37e50747eeeaa3d1e9397ba5ea`。runtime v2/turns v3 不变，但 life 写入版本升至 v4、topics 升至 v2；最终切换前备份为 `/opt/chat-agent/backups/pre-followup-20261108-04.tar.gz`（SHA-256 `144524cefca381655778397d2eabff4bb93035e95ee73c556396c27ed46c2b5e`）。若需回到 0.25，须恢复更早的 `pre-followup-20261108-01.tar.gz`（SHA-256 `a2b56c492df0d57fa92613384ac2d7fa0394665cc0228686ad138a78d87444a8`），不能只切旧二进制。
 
 本次零模型部署检查覆盖健康、鉴权、版本、调度与搜索开关、历史和 turns 投影、OneBot 关闭态、Android 清单/下载、9991/9992/9993 监听。最终有 2 个会话、38 条消息和 19 轮记录可读，active/running/queued/paused/unavailable 均为 0；`onebot_enabled=false`，未鉴权 API 为 401，关闭态 webhook 为 404。没有向真实模型或 QQ 发送请求。详见[0.26 发布记录](../docs/release-0.26.md)。
 
-尚未配置公网浏览器 HTTPS、自动备份、日志保留策略和生产速率限制；真实模型已完成一次最小工具循环验收，长期运行尚未验收。文件型存储需要一致性备份：安排短暂维护，正常停止服务后备份 `/var/lib/pocket-agent`，再启动服务；配置文件中的密钥应独立加密备份。不要直接将正在写入的数据当作已验证的可恢复备份。
+尚未配置公网浏览器 HTTPS、自动备份、日志保留策略和生产速率限制；真实模型已完成一次最小工具循环验收，长期运行尚未验收。文件型存储需要一致性备份：安排短暂维护，正常停止服务后备份 `/var/lib/chat-agent`，再启动服务；配置文件中的密钥应独立加密备份。不要直接将正在写入的数据当作已验证的可恢复备份。
 
 ## 可选的工作区与主机巡检
 
-在主机本地配置 `POCKET_HOST_TOOL_SESSIONS` 为获准会话 ID，多个用逗号分隔。再按需要将 `builtin.workspace:filesystem:workspace://server` 或 `builtin.server:filesystem:diagnostics://host` 加入现有 `POCKET_PLUGIN_GRANTS`。停用任一插件可将对应 ID 加入 `POCKET_PLUGINS_DISABLED`。
+在主机本地配置 `CHAT_HOST_TOOL_SESSIONS` 为获准会话 ID，多个用逗号分隔。再按需要将 `builtin.workspace:filesystem:workspace://server` 或 `builtin.server:filesystem:diagnostics://host` 加入现有 `CHAT_PLUGIN_GRANTS`。停用任一插件可将对应 ID 加入 `CHAT_PLUGINS_DISABLED`。
 
-工作区指向 `POCKET_WORKSPACE_ROOT` 的独立目录。执行动作可选，由 `POCKET_WORKSPACE_ACTIONS` 的 JSON 对象定义。键是模型可选的动作名，值是宿主配置的完整 argv 数组。只把受信动作放入白名单。执行器在 Linux 上以 CA 服务账号运行，使用进程组取消和固定超时。它继承服务单元的访问权限，适用于受信任务。
+工作区指向 `CHAT_WORKSPACE_ROOT` 的独立目录。执行动作可选，由 `CHAT_WORKSPACE_ACTIONS` 的 JSON 对象定义。键是模型可选的动作名，值是宿主配置的完整 argv 数组。只把受信动作放入白名单。执行器在 Linux 上以 CA 服务账号运行，使用进程组取消和固定超时。它继承服务单元的访问权限，适用于受信任务。
 
 巡检读取负载、内存、磁盘、监听端口、固定服务状态、发布链接和备份文件名。日志工具只返回 CA 与搜索服务日志的时间、优先级与 unit。采集账号权限不足时会报告相应数据不可读。
 
@@ -147,8 +147,8 @@ go build -trimpath -buildvcs=false -ldflags '-s -w' -o bin/chat-agent-linux-amd6
 
 ## Android 包发布
 
-当前服务版本 `20261108-followup-04`，Android 包为 `0.26.0-debug`（versionCode 21，发布目录 `android-20261108-01`），支持自动登录、通知回到目标会话与应用内更新。APK SHA-256 为 `6b0632b33498a2cf55603dbcdc3deb189256775e886699a86bc7be0e53ef664a`。发布使用 `deploy/publish-android.ps1`，详情见[自动登录与 Android 更新说明](../docs/android-updates.md)。服务端 `POCKET_ANDROID_RELEASE_DIR=/opt/pocket-agent/android/current` 已配置；后续发布只切换安装包目录，无需重启服务。
+当前服务版本 `20261108-followup-04`，Android 包为 `0.26.0-debug`（versionCode 21，发布目录 `android-20261108-01`），支持自动登录、通知回到目标会话与应用内更新。APK SHA-256 为 `6b0632b33498a2cf55603dbcdc3deb189256775e886699a86bc7be0e53ef664a`。发布使用 `deploy/publish-android.ps1`，详情见[自动登录与 Android 更新说明](../docs/android-updates.md)。服务端 `CHAT_ANDROID_RELEASE_DIR=/opt/chat-agent/android/current` 已配置；后续发布只切换安装包目录，无需重启服务。
 
-语音朗读在同一服务环境文件中显式设置 `POCKET_TTS_MODEL=ecnu-tts` 和 `POCKET_TTS_VOICE=xiayu`，复用服务端网关密钥；聊天模型仍为 `ecnu-max`。取消配置并重启即可关闭，不增加端口、后台推送服务或持久化音频。
+语音朗读在同一服务环境文件中显式设置 `CHAT_TTS_MODEL=ecnu-tts` 和 `CHAT_TTS_VOICE=xiayu`，复用服务端网关密钥；聊天模型仍为 `ecnu-max`。取消配置并重启即可关闭，不增加端口、后台推送服务或持久化音频。
 
 0.15 新增 `<data>/devices/state.json` 白名单，备份应包含该目录。首次设备注册等待管理员批准；维护口令保留用于首次授权和恢复，正常 Android 不自动读取旧维护口令。按本轮指示仅构建发布，未跑显式验收脚本。

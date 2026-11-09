@@ -12,7 +12,7 @@
 
 浏览器使用 WebCrypto 与 IndexedDB 保存不可导出的签名私钥，需要 HTTPS 或 localhost 安全环境。浏览器存储丢失/卸载应用/密钥丢失会产生新身份，需重新批准；这不是硬件证明或设备完整性认证。
 
-原 `POCKET_ACCESS_TOKEN` 保留为兼容的高权限维护入口，具备管理权限；正常设备连接不会读取、持久保存或自动回退到它。模型 API Key 仍只在服务器。设备会话在网页内存中使用，Android 更新器仅接受短期设备会话，过期时请求网页重新鉴权；不使用旧的管理员口令代替白名单。
+原 `CHAT_ACCESS_TOKEN` 保留为兼容的高权限维护入口，具备管理权限；正常设备连接不会读取、持久保存或自动回退到它。模型 API Key 仍只在服务器。设备会话在网页内存中使用，Android 更新器仅接受短期设备会话，过期时请求网页重新鉴权；不使用旧的管理员口令代替白名单。
 
 ## 管理与接口
 
@@ -41,6 +41,6 @@ Go 标准库、原生 JavaScript、Kotlin 平台 API，未增加第三方运行�
 
 本次未运行测试或显式验收，构建成功不等于运行行为已经验收。设备鉴权和新版界面均需要后续实际使用反馈。旧服务能忽略新增 devices 目录；回退会回到旧鉴权策略，已有设备白名单应随备份保留。已安装新 Android 版本不通过降低 versionCode 回退。
 
-服务发布 `20261103-device-01`，Linux SHA-256 `c14c74d9b3233cc0460087c48d101fae5ee8eb3d103781150ddc1c75d2f7d2c0`；备份 `/opt/pocket-agent/backups/pre-device-20261103-01.tar.gz`。Android 更新通道为 `android-20261103-07`，923,540 字节，SHA-256 `59d7f63b996c51de6d2c91ba4bbb2365faa9e1d238a2432d87cf55903f800dff`。Windows 旧预览占用原可执行文件，新产物为 `bin/chat-agent-0.15.0.exe`。
+服务发布 `20261103-device-01`，Linux SHA-256 `c14c74d9b3233cc0460087c48d101fae5ee8eb3d103781150ddc1c75d2f7d2c0`；备份 `/opt/chat-agent/backups/pre-device-20261103-01.tar.gz`。Android 更新通道为 `android-20261103-07`，923,540 字节，SHA-256 `59d7f63b996c51de6d2c91ba4bbb2365faa9e1d238a2432d87cf55903f800dff`。Windows 旧预览占用原可执行文件，新产物为 `bin/chat-agent-0.15.0.exe`。
 
 用户当前手机已通过首次公钥登记加入管理员白名单，并已发起设备连接。该步骤属于实际初始化，未据此宣称完成端到端验收。

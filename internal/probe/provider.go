@@ -13,7 +13,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
-	"pocket-agent/internal/media"
+	"chat-agent/internal/media"
 	"sort"
 	"strings"
 )

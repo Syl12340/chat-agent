@@ -20,7 +20,7 @@ import (
 	"time"
 	_ "time/tzdata"
 
-	"pocket-agent/internal/storage"
+	"chat-agent/internal/storage"
 )
 
 var ErrNotFound = errors.New("task not found")

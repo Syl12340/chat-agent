@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"pocket-agent/internal/media"
-	"pocket-agent/plugins/builtin/clock"
+	"chat-agent/internal/media"
+	"chat-agent/plugins/builtin/clock"
 )
 
-const AgentID = "pocket"
+const AgentID = "chat"
 
 type Config struct {
 	BaseURL, APIKey, Model string

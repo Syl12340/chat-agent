@@ -30,9 +30,9 @@
 
 | 项目 | 值 |
 | --- | --- |
-| 服务目录 | `/opt/pocket-agent/releases/20261108-channel-02` |
+| 服务目录 | `/opt/chat-agent/releases/20261108-channel-02` |
 | Linux SHA-256 | `0b2e18c025c50f6f4e10a34af3c7e31a2f7016281462da17358db34489f6d366` |
-| 停机备份 | `/opt/pocket-agent/backups/pre-channel-20261108-01.tar.gz` |
+| 停机备份 | `/opt/chat-agent/backups/pre-channel-20261108-01.tar.gz` |
 | 备份 SHA-256 | `48ced08513e85a256b6a1b387acebef4185eaa3a9d3079cda57a57191b312986` |
 
 最终零模型检查：服务 active，`/healthz` 正常，已认证 status 为 0.25.0 / ecnu-max，scheduler 与 web search/fetch 正常；未认证 API 为 401。当前 2 个会话、30 条消息、15 轮记录可读，active/queued/paused 均为 0。

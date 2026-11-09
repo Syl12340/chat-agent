@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"pocket-agent/internal/companion"
-	"pocket-agent/internal/memory"
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/companion"
+	"chat-agent/internal/memory"
+	"chat-agent/internal/probe"
 )
 
 // One flow checks what a new conversation actually receives: permitted,

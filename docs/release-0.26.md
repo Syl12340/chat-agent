@@ -30,14 +30,14 @@
 
 | 项目 | 值 |
 | --- | --- |
-| 服务目录 | `/opt/pocket-agent/releases/20261108-followup-04` |
+| 服务目录 | `/opt/chat-agent/releases/20261108-followup-04` |
 | Linux SHA-256 | `030760d41981aec036faf302259c5e32c28f4c37e50747eeeaa3d1e9397ba5ea` |
-| 最终切换前备份 | `/opt/pocket-agent/backups/pre-followup-20261108-04.tar.gz`；SHA-256 `144524cefca381655778397d2eabff4bb93035e95ee73c556396c27ed46c2b5e` |
-| 0.25 回退备份 | `/opt/pocket-agent/backups/pre-followup-20261108-01.tar.gz`；SHA-256 `a2b56c492df0d57fa92613384ac2d7fa0394665cc0228686ad138a78d87444a8` |
-| Android 目录 | `/opt/pocket-agent/android/releases/android-20261108-01` |
+| 最终切换前备份 | `/opt/chat-agent/backups/pre-followup-20261108-04.tar.gz`；SHA-256 `144524cefca381655778397d2eabff4bb93035e95ee73c556396c27ed46c2b5e` |
+| 0.25 回退备份 | `/opt/chat-agent/backups/pre-followup-20261108-01.tar.gz`；SHA-256 `a2b56c492df0d57fa92613384ac2d7fa0394665cc0228686ad138a78d87444a8` |
+| Android 目录 | `/opt/chat-agent/android/releases/android-20261108-01` |
 | APK | 948172 字节；SHA-256 `6b0632b33498a2cf55603dbcdc3deb189256775e886699a86bc7be0e53ef664a` |
 | 签名证书 SHA-256 | `4905b966d06c53d22da462b9ef3e36ff27b54994829950a610f92a6bab68b24a` |
 
-最终零模型检查确认：服务和本地搜索 active，`/api/status` 为 0.26.0 / ecnu-max，scheduler、web search/fetch 正常，PWA 为 `pocket-shell-v29`，Android 清单为 versionCode 21；2 个会话、38 条消息、19 轮记录均可读，active/running/queued/paused/unavailable 均为 0。9991 回环 HTTP、9992 加密入口和 9993 本地搜索继续监听；未鉴权 API 为 401，OneBot 关闭态 webhook 为 404，近十分钟服务无 warning 日志。
+最终零模型检查确认：服务和本地搜索 active，`/api/status` 为 0.26.0 / ecnu-max，scheduler、web search/fetch 正常，PWA 为 `chat-shell-v29`，Android 清单为 versionCode 21；2 个会话、38 条消息、19 轮记录均可读，active/running/queued/paused/unavailable 均为 0。9991 回环 HTTP、9992 加密入口和 9993 本地搜索继续监听；未鉴权 API 为 401，OneBot 关闭态 webhook 为 404，近十分钟服务无 warning 日志。
 
 本次没有发送生产聊天、触发关怀/话题、调用真实模型或修改已有消息。未做 Android 真机安装、通知点击和待机验收；自然表达质量仍需日常使用反馈。

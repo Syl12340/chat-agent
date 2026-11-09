@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"pocket-agent/internal/channel"
+	"chat-agent/internal/channel"
 )
 
 var (

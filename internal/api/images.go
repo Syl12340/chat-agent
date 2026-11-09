@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"pocket-agent/internal/media"
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/media"
+	"chat-agent/internal/probe"
 )
 
 func imageFailure(w http.ResponseWriter, err error) {

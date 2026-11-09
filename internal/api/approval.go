@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/probe"
 )
 
 // approveCall issues the only consent this service accepts for a call that could

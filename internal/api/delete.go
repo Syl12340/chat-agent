@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"os"
 
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/probe"
 )
 
 // deleteSession removes a conversation and everything the server keeps for it:

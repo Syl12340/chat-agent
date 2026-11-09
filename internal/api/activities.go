@@ -6,7 +6,7 @@ import (
 	"os"
 	"strconv"
 
-	"pocket-agent/internal/companion"
+	"chat-agent/internal/companion"
 )
 
 func activityFailure(w http.ResponseWriter, err error) {

@@ -1,4 +1,4 @@
-// Package securewire implements PocketWire v1: a pinned server identity,
+// Package securewire implements ChatWire v1: a pinned server identity,
 // ephemeral P-256 ECDH and sequenced AES-256-GCM records over TCP.
 // HTTP is carried inside the encrypted stream; existing Bearer auth still applies.
 package securewire
@@ -27,8 +27,8 @@ import (
 
 const maxData = 16 << 10
 const maxRecords = 1 << 32 // At most 2^32 records per direction and session.
-const serverContext = "PocketWire-v1/server"
-const sessionContext = "PocketWire-v1/session"
+const serverContext = "ChatWire-v1/server"
+const sessionContext = "ChatWire-v1/session"
 
 type listener struct {
 	net.Listener

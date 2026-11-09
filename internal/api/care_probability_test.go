@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/probe"
 )
 
 type careCountModel struct{ calls atomic.Int32 }

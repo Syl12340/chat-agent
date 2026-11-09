@@ -11,8 +11,8 @@ import (
 	"sync"
 	"testing"
 
-	"pocket-agent/internal/companion"
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/companion"
+	"chat-agent/internal/probe"
 )
 
 // One flow checks real API persistence, role scope, context and a simulated model

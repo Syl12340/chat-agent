@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"strings"
 
-	"pocket-agent/internal/deviceauth"
+	"chat-agent/internal/deviceauth"
 )
 
 type deviceAuthContextKey struct{}
@@ -69,7 +69,7 @@ func deviceFailure(w http.ResponseWriter, err error) {
 func (s *Server) authenticateDeviceRequest(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
 	auth := r.Header.Get("Authorization")
 	if !strings.HasPrefix(auth, "Bearer ") || len(auth) > 4096 {
-		w.Header().Set("WWW-Authenticate", `Bearer realm="pocket-agent"`)
+		w.Header().Set("WWW-Authenticate", `Bearer realm="chat-agent"`)
 		deviceFail(w, 401, "authentication_required", "请提供有效的访问凭据")
 		return r, false
 	}
@@ -79,7 +79,7 @@ func (s *Server) authenticateDeviceRequest(w http.ResponseWriter, r *http.Reques
 	if subtle.ConstantTimeCompare(hash[:], s.tokenHash[:]) != 1 {
 		device, err := s.devices.Authenticate(token)
 		if err != nil {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="pocket-agent"`)
+			w.Header().Set("WWW-Authenticate", `Bearer realm="chat-agent"`)
 			deviceFailure(w, err)
 			return r, false
 		}

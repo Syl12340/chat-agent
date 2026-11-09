@@ -152,7 +152,7 @@ func (c *Client) dial(ctx context.Context, network, address string) (net.Conn, e
 func (c *Client) FetchEnabled() bool  { return c != nil && (len(c.hosts) > 0 || c.searchURL != "") }
 func (c *Client) SearchEnabled() bool { return c != nil && c.searchURL != "" }
 func (c *Client) read(ctx context.Context, u *url.URL, key string) ([]byte, string, bool, error) {
-	return c.readAs(ctx, u, key, "PocketAgent/0.3")
+	return c.readAs(ctx, u, key, "ChatAgent/0.3")
 }
 
 func (c *Client) readAs(ctx context.Context, u *url.URL, key, agent string) ([]byte, string, bool, error) {

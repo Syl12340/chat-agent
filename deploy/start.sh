@@ -1,26 +1,26 @@
 #!/bin/sh
 set -eu
 
-case "${POCKET_MODE:-demo}" in
-    demo) set -- -demo -data /var/lib/pocket-agent/demo-sessions ;;
+case "${CHAT_MODE:-demo}" in
+    demo) set -- -demo -data /var/lib/chat-agent/demo-sessions ;;
     live)
-        if [ -z "${POCKET_BASE_URL:-}" ] || [ -z "${POCKET_API_KEY:-}" ] || [ -z "${POCKET_MODEL:-}" ]; then
-            echo 'Live mode requires POCKET_BASE_URL, POCKET_API_KEY and POCKET_MODEL.' >&2
+        if [ -z "${CHAT_BASE_URL:-}" ] || [ -z "${CHAT_API_KEY:-}" ] || [ -z "${CHAT_MODEL:-}" ]; then
+            echo 'Live mode requires CHAT_BASE_URL, CHAT_API_KEY and CHAT_MODEL.' >&2
             exit 1
         fi
-        case "$POCKET_BASE_URL" in
+        case "$CHAT_BASE_URL" in
             https://*) ;;
             *) echo 'Live mode requires an HTTPS model endpoint.' >&2; exit 1 ;;
         esac
-        set -- -data /var/lib/pocket-agent/sessions
+        set -- -data /var/lib/chat-agent/sessions
         ;;
-    *) echo 'POCKET_MODE must be demo or live.' >&2; exit 1 ;;
+    *) echo 'CHAT_MODE must be demo or live.' >&2; exit 1 ;;
 esac
 
-case "${POCKET_ENABLE_WEB:-0}" in
+case "${CHAT_ENABLE_WEB:-0}" in
     0) ;;
     1) set -- "$@" -enable-web ;;
-    *) echo 'POCKET_ENABLE_WEB must be 0 or 1.' >&2; exit 1 ;;
+    *) echo 'CHAT_ENABLE_WEB must be 0 or 1.' >&2; exit 1 ;;
 esac
 
-exec /opt/pocket-agent/current/pocket-agent -listen 127.0.0.1:9991 "$@"
+exec /opt/chat-agent/current/chat-agent -listen 127.0.0.1:9991 "$@"

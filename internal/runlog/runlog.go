@@ -19,8 +19,8 @@ import (
 	"sync"
 	"time"
 
-	"pocket-agent/internal/probe"
-	"pocket-agent/internal/storage"
+	"chat-agent/internal/probe"
+	"chat-agent/internal/storage"
 )
 
 const (

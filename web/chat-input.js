@@ -70,14 +70,14 @@ export function createChatInput({state,request,json,createSession,notice,onChang
   let epoch = 0, drafts = [], options = null, loading = false, selecting = false, uploads = null, model = '', level = 'off';
   let historyScope = '', boundRole = state.roleID, boundSession = state.current;
   let preferences=null, preferenceScope='', preferenceLoad=0, fallbackNotice='';
-  const nativeShell=/PocketAgentAndroid\//.test(navigator.userAgent);
+  const nativeShell=/ChatAgentAndroid\//.test(navigator.userAgent);
   // Image upload needs the native file chooser. Ask what the shell supports rather
   // than comparing version strings, and re-ask once the bridge opens: the shell
   // injects it on page finished, which is later than this module runs.
   const canPickImages=()=>!nativeShell || supports(Features.filePicker);
   // The bridge arrives after this module runs, so refresh the picker state once it
   // does instead of leaving the first (pessimistic) answer in place.
-  if(nativeShell) window.addEventListener('pocket-native-ready',()=>{try{lock();}catch{/* nothing rendered yet */}},{once:true});
+  if(nativeShell) window.addEventListener('chat-native-ready',()=>{try{lock();}catch{/* nothing rendered yet */}},{once:true});
   const cache = new Map();
   const pendingImages = new WeakMap();
   const observer = window.IntersectionObserver ? new IntersectionObserver(entries => {
@@ -92,12 +92,12 @@ export function createChatInput({state,request,json,createSession,notice,onChang
     const scope=composerIdentity(state.config,state.authKind), ticket=++preferenceLoad;
     let native=null, initial=null;
     if(nativeShell && scope) {
-      if(!window.PocketAndroidPreferences)await new Promise(resolve=>{
-        const done=()=>{clearTimeout(timer);window.removeEventListener('pocket-native-ready',done);resolve();};
-        const timer=setTimeout(done,2500);window.addEventListener('pocket-native-ready',done);
+      if(!window.ChatAndroidPreferences)await new Promise(resolve=>{
+        const done=()=>{clearTimeout(timer);window.removeEventListener('chat-native-ready',done);resolve();};
+        const timer=setTimeout(done,2500);window.addEventListener('chat-native-ready',done);
       });
       valid(stamp);
-      native=window.PocketAndroidPreferences;
+      native=window.ChatAndroidPreferences;
       if(native)try{initial=validatePreference(await native.load(scope));}catch{notice('本机偏好暂时无法读取，本次仍可选择模型和思考档位。');}
       else notice('本机偏好桥未就绪，当前设置可能无法跨应用重启保留。');
     }

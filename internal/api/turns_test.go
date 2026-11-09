@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"pocket-agent/internal/probe"
-	"pocket-agent/internal/turns"
+	"chat-agent/internal/probe"
+	"chat-agent/internal/turns"
 )
 
 func TestDurableTurnQueue(t *testing.T) {

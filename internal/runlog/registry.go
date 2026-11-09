@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"pocket-agent/internal/probe"
-	"pocket-agent/internal/storage"
-	"pocket-agent/internal/turns"
+	"chat-agent/internal/probe"
+	"chat-agent/internal/storage"
+	"chat-agent/internal/turns"
 )
 
 const registryLimit = 100_000

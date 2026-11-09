@@ -48,7 +48,7 @@ API35 隔离模拟器通过实际音频播放、识别期间退出取消、重�
 
 四轮 ecnu-max 对话均完成，保存状态保持不变；新会话正确引用“曝光基础 → 快门速度”，活动仍为暂停且没有绑定。代表性场景不表示对所有措辞或语言质量作保证。
 
-服务发布 **20261103-continuity-01**，Linux SHA-256 `fec8bc71c72bd79762f9ab1e4fdd30034afba5ad14a877f97bba041f882e1427`；升级前正常停服，生产会话与环境配置备份为 `/opt/pocket-agent/backups/pre-continuity-20261103-01.tar.gz`（root-only）。原 ecnu-max、语音配置、访问凭据、公钥与端口保留。
+服务发布 **20261103-continuity-01**，Linux SHA-256 `fec8bc71c72bd79762f9ab1e4fdd30034afba5ad14a877f97bba041f882e1427`；升级前正常停服，生产会话与环境配置备份为 `/opt/chat-agent/backups/pre-continuity-20261103-01.tar.gz`（root-only）。原 ecnu-max、语音配置、访问凭据、公钥与端口保留。
 
 Android 发布 **android-20261103-06**，0.14.0-debug / versionCode 11，917,076 字节，SHA-256 `6e8485e00a3db74711d3eb64aa69d659c555e604ddaad3861503ca84b04adb17`。原包名与签名保留，实际下载、版本、大小、哈希与鉴权验证通过。
 

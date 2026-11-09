@@ -16,7 +16,7 @@ class PushClient(private val context: Context, private val address: ServerAddres
     @Volatile private var closed = false
     @Volatile private var connection: HttpURLConnection? = null
     private val gateway: WireGateway? = if (address.encryptedTCP) {
-        val pem = context.resources.openRawResource(R.raw.pocket_server_public).bufferedReader().use { it.readText() }
+        val pem = context.resources.openRawResource(R.raw.chat_server_public).bufferedReader().use { it.readText() }
         WireGateway(address, Base64.decode(pem.lineSequence().filterNot { it.startsWith("---") }.joinToString(""), Base64.DEFAULT))
     } else null
     private val origin = gateway?.origin ?: address.origin

@@ -7,7 +7,7 @@ import (
 	"errors"
 	"time"
 
-	"pocket-agent/internal/pluginapi"
+	"chat-agent/internal/pluginapi"
 )
 
 const Capability = "clock.utc"

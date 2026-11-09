@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"pocket-agent/internal/companion"
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/companion"
+	"chat-agent/internal/probe"
 )
 
 func lifeFailure(w http.ResponseWriter, err error) {

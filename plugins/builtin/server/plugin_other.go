@@ -2,7 +2,7 @@
 
 package server
 
-import "pocket-agent/internal/pluginapi"
+import "chat-agent/internal/pluginapi"
 
 const ID = "builtin.server"
 const Permission = "filesystem:diagnostics://host"

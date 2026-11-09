@@ -19,12 +19,12 @@
 
 | 项目 | 记录 |
 | --- | --- |
-| 服务目录 | `/opt/pocket-agent/releases/20261105-ui-01` |
-| 上一版本 | `/opt/pocket-agent/releases/20261105-chat-01` |
-| 一致性备份 | `/opt/pocket-agent/backups/pre-ui-20261105-01.tar.gz`，root:0600 |
+| 服务目录 | `/opt/chat-agent/releases/20261105-ui-01` |
+| 上一版本 | `/opt/chat-agent/releases/20261105-chat-01` |
+| 一致性备份 | `/opt/chat-agent/backups/pre-ui-20261105-01.tar.gz`，root:0600 |
 | 源码提交 | `0a531add725885f3aba808fe57d849f10fa563fe` |
 | Linux SHA-256 | `afd1c8ad73c8977e257d14c2df9bb20ef1f797452d7a20960090cdf773eeda31` |
-| Android 更新目录 | `/opt/pocket-agent/android/releases/android-20261105-03` |
+| Android 更新目录 | `/opt/chat-agent/android/releases/android-20261105-03` |
 | APK 版本 / 字节 | `0.20.0-debug` / versionCode `17` / 945056 字节 |
 | APK SHA-256 | `02117f01d5c4ca086e30ed16cdc681c8d27324ce4570fa2e963b7b4f62b7ea34` |
 | 原签名证书 SHA-256 | `4905b966d06c53d22da462b9ef3e36ff27b54994829950a610f92a6bab68b24a` |

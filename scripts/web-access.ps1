@@ -21,11 +21,11 @@ param(
 $ErrorActionPreference = 'Stop'
 
 function Get-AccessToken {
-  $remote = "sed -n 's/^POCKET_ACCESS_TOKEN=//p' /etc/pocket-agent/pocket-agent.env"
+  $remote = "sed -n 's/^CHAT_ACCESS_TOKEN=//p' /etc/chat-agent/chat-agent.env"
   $args_ = @('-o', 'BatchMode=yes')
   if ($Identity) { $args_ = @('-i', $Identity) + $args_ }
   $token = (& ssh @args_ $Host_ $remote).Trim()
-  if (-not $token) { throw '未能读取访问令牌，检查 SSH 与 /etc/pocket-agent/pocket-agent.env' }
+  if (-not $token) { throw '未能读取访问令牌，检查 SSH 与 /etc/chat-agent/chat-agent.env' }
   return $token
 }
 

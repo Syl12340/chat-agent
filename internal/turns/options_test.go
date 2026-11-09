@@ -2,7 +2,7 @@ package turns
 
 import (
 	"errors"
-	"pocket-agent/internal/media"
+	"chat-agent/internal/media"
 	"strings"
 	"testing"
 )

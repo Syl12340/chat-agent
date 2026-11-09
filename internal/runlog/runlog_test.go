@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"pocket-agent/internal/media"
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/media"
+	"chat-agent/internal/probe"
 )
 
 func TestRecorderPersistsPreparedRequestAndLifecycle(t *testing.T) {

@@ -16,15 +16,15 @@ import (
 	"syscall"
 	"time"
 
-	"pocket-agent/internal/api"
-	"pocket-agent/internal/decision"
-	"pocket-agent/internal/imagegen"
-	"pocket-agent/internal/pluginapi"
-	"pocket-agent/internal/probe"
-	"pocket-agent/internal/runlog"
-	"pocket-agent/internal/securewire"
-	"pocket-agent/internal/semantic"
-	"pocket-agent/internal/webtools"
+	"chat-agent/internal/api"
+	"chat-agent/internal/decision"
+	"chat-agent/internal/imagegen"
+	"chat-agent/internal/pluginapi"
+	"chat-agent/internal/probe"
+	"chat-agent/internal/runlog"
+	"chat-agent/internal/securewire"
+	"chat-agent/internal/semantic"
+	"chat-agent/internal/webtools"
 )
 
 func main() {
@@ -50,7 +50,7 @@ func splitList(raw string) []string {
 // It is separate from the chat model and refuses to inherit it: asking a chat
 // model to answer a decision request is a misconfiguration, not a fallback.
 func decisionModel() string {
-	if value := strings.TrimSpace(os.Getenv("POCKET_DECISION_MODEL")); value != "" {
+	if value := strings.TrimSpace(os.Getenv("CHAT_DECISION_MODEL")); value != "" {
 		return value
 	}
 	return "ecnu-decision"
@@ -58,9 +58,9 @@ func decisionModel() string {
 
 // utilityModel picks the model that summarizes history. Summaries are validated
 // and rejected on failure, so a cheaper model is safe there and never faces the
-// user; POCKET_UTILITY_MODEL overrides the default.
+// user; CHAT_UTILITY_MODEL overrides the default.
 func utilityModel(primary string) string {
-	if value := strings.TrimSpace(os.Getenv("POCKET_UTILITY_MODEL")); value != "" {
+	if value := strings.TrimSpace(os.Getenv("CHAT_UTILITY_MODEL")); value != "" {
 		return value
 	}
 	// ecnu-max costs three times ecnu-plus per token; keep the flagship for the
@@ -72,10 +72,10 @@ func utilityModel(primary string) string {
 }
 
 // searchEngine returns the public results page the agent reads directly.
-// POCKET_SEARCH_URL overrides it; -enable-web falls back to a default engine so
+// CHAT_SEARCH_URL overrides it; -enable-web falls back to a default engine so
 // a single flag turns on both search and page reading.
 func searchEngine(enabled bool) string {
-	if value := strings.TrimSpace(os.Getenv("POCKET_SEARCH_URL")); value != "" {
+	if value := strings.TrimSpace(os.Getenv("CHAT_SEARCH_URL")); value != "" {
 		return value
 	}
 	if enabled {
@@ -119,8 +119,8 @@ func oneBotConfigFromEnv() (api.OneBotConfig, error) {
 func run() error {
 	c := probe.DefaultConfig()
 	listen := flag.String("listen", "127.0.0.1:8080", "HTTP listen address")
-	wireListen := flag.String("wire-listen", os.Getenv("POCKET_WIRE_LISTEN"), "optional encrypted TCP listen address")
-	wireKey := flag.String("wire-key", os.Getenv("POCKET_WIRE_KEY"), "P-256 server signing private key PEM file")
+	wireListen := flag.String("wire-listen", os.Getenv("CHAT_WIRE_LISTEN"), "optional encrypted TCP listen address")
+	wireKey := flag.String("wire-key", os.Getenv("CHAT_WIRE_KEY"), "P-256 server signing private key PEM file")
 	data := flag.String("data", "", "session directory (default data/sessions, or data/demo-sessions in demo mode)")
 	rolesDir := flag.String("roles", "", "role workspace directory (default <data>/roles)")
 	timeZone := flag.String("timezone", "Asia/Shanghai", "user timezone for reminder interpretation")
@@ -174,17 +174,17 @@ func run() error {
 	if (*wireListen == "") != (*wireKey == "") {
 		return errors.New("wire-listen and wire-key must be configured together")
 	}
-	c.BaseURL, c.APIKey, c.Model = os.Getenv("POCKET_BASE_URL"), os.Getenv("POCKET_API_KEY"), os.Getenv("POCKET_MODEL")
+	c.BaseURL, c.APIKey, c.Model = os.Getenv("CHAT_BASE_URL"), os.Getenv("CHAT_API_KEY"), os.Getenv("CHAT_MODEL")
 	c.UtilityModel = utilityModel(c.Model)
-	chatModels, err := api.ParseChatModels(os.Getenv("POCKET_CHAT_MODELS"))
+	chatModels, err := api.ParseChatModels(os.Getenv("CHAT_CHAT_MODELS"))
 	if err != nil {
 		return err
 	}
 	thinkingMax := 0
-	if value := os.Getenv("POCKET_THINKING_MAX_OUTPUT"); value != "" {
+	if value := os.Getenv("CHAT_THINKING_MAX_OUTPUT"); value != "" {
 		thinkingMax, err = strconv.Atoi(value)
 		if err != nil {
-			return errors.New("invalid POCKET_THINKING_MAX_OUTPUT")
+			return errors.New("invalid CHAT_THINKING_MAX_OUTPUT")
 		}
 	}
 	onebotConfig, err := oneBotConfigFromEnv()
@@ -192,16 +192,16 @@ func run() error {
 		return err
 	}
 	// Installed plugins are compiled in, but loading and permissions stay a host
-	// decision: POCKET_PLUGINS_DISABLED switches a plugin off entirely, and
-	// POCKET_PLUGIN_GRANTS grants the declared permissions one by one.
+	// decision: CHAT_PLUGINS_DISABLED switches a plugin off entirely, and
+	// CHAT_PLUGIN_GRANTS grants the declared permissions one by one.
 	pluginPolicy, err := pluginapi.NewPolicy(
-		splitList(os.Getenv("POCKET_PLUGINS_DISABLED")),
-		splitList(os.Getenv("POCKET_PLUGIN_GRANTS")),
+		splitList(os.Getenv("CHAT_PLUGINS_DISABLED")),
+		splitList(os.Getenv("CHAT_PLUGIN_GRANTS")),
 	)
 	if err != nil {
 		return err
 	}
-	app, err := api.New(api.Config{Agent: c, ChatModels: chatModels, ThinkingMaxOutput: thinkingMax, Speech: api.SpeechConfig{Model: os.Getenv("POCKET_TTS_MODEL"), Voice: os.Getenv("POCKET_TTS_VOICE")}, DataDir: *data, RolesDir: *rolesDir, TimeZone: *timeZone, Web: webtools.Config{Enabled: *webEnabled, AllowedHosts: strings.Split(os.Getenv("POCKET_WEB_HOSTS"), ","), SearchURL: searchEngine(*webEnabled)}, AccessToken: os.Getenv("POCKET_ACCESS_TOKEN"), AndroidReleaseDir: os.Getenv("POCKET_ANDROID_RELEASE_DIR"), Semantic: semantic.Config{BaseURL: os.Getenv("POCKET_BASE_URL"), APIKey: os.Getenv("POCKET_API_KEY"), Model: os.Getenv("POCKET_RERANK_MODEL")}, Decision: decision.Config{BaseURL: os.Getenv("POCKET_BASE_URL"), APIKey: os.Getenv("POCKET_API_KEY"), Model: decisionModel()}, ImageRemote: imagegen.RemoteConfig{BaseURL: os.Getenv("POCKET_IMAGE_REMOTE"), Token: os.Getenv("POCKET_IMAGE_TOKEN")}, Images: imagegen.Config{Python: os.Getenv("POCKET_IMAGE_PYTHON"), Script: os.Getenv("POCKET_IMAGE_BRIDGE"), Profiles: splitList(os.Getenv("POCKET_IMAGE_PROFILES")), DefaultProfile: os.Getenv("POCKET_IMAGE_PROFILE")}, OneBot: onebotConfig, Plugins: pluginPolicy, HostTools: api.HostToolsConfig{Sessions: splitList(os.Getenv("POCKET_HOST_TOOL_SESSIONS")), WorkspaceRoot: os.Getenv("POCKET_WORKSPACE_ROOT"), WorkspaceActions: os.Getenv("POCKET_WORKSPACE_ACTIONS")}})
+	app, err := api.New(api.Config{Agent: c, ChatModels: chatModels, ThinkingMaxOutput: thinkingMax, Speech: api.SpeechConfig{Model: os.Getenv("CHAT_TTS_MODEL"), Voice: os.Getenv("CHAT_TTS_VOICE")}, DataDir: *data, RolesDir: *rolesDir, TimeZone: *timeZone, Web: webtools.Config{Enabled: *webEnabled, AllowedHosts: strings.Split(os.Getenv("CHAT_WEB_HOSTS"), ","), SearchURL: searchEngine(*webEnabled)}, AccessToken: os.Getenv("CHAT_ACCESS_TOKEN"), AndroidReleaseDir: os.Getenv("CHAT_ANDROID_RELEASE_DIR"), Semantic: semantic.Config{BaseURL: os.Getenv("CHAT_BASE_URL"), APIKey: os.Getenv("CHAT_API_KEY"), Model: os.Getenv("CHAT_RERANK_MODEL")}, Decision: decision.Config{BaseURL: os.Getenv("CHAT_BASE_URL"), APIKey: os.Getenv("CHAT_API_KEY"), Model: decisionModel()}, ImageRemote: imagegen.RemoteConfig{BaseURL: os.Getenv("CHAT_IMAGE_REMOTE"), Token: os.Getenv("CHAT_IMAGE_TOKEN")}, Images: imagegen.Config{Python: os.Getenv("CHAT_IMAGE_PYTHON"), Script: os.Getenv("CHAT_IMAGE_BRIDGE"), Profiles: splitList(os.Getenv("CHAT_IMAGE_PROFILES")), DefaultProfile: os.Getenv("CHAT_IMAGE_PROFILE")}, OneBot: onebotConfig, Plugins: pluginPolicy, HostTools: api.HostToolsConfig{Sessions: splitList(os.Getenv("CHAT_HOST_TOOL_SESSIONS")), WorkspaceRoot: os.Getenv("CHAT_WORKSPACE_ROOT"), WorkspaceActions: os.Getenv("CHAT_WORKSPACE_ACTIONS")}})
 	if err != nil {
 		return err
 	}
@@ -222,13 +222,13 @@ func run() error {
 			_ = endpoint.listener.Close()
 		}
 	}()
-	for _, binding := range []struct{ address, scheme string }{{*listen, "http"}, {*wireListen, "pocket"}} {
+	for _, binding := range []struct{ address, scheme string }{{*listen, "http"}, {*wireListen, "chat"}} {
 		if binding.address == "" {
 			continue
 		}
 		var listener net.Listener
 		var err error
-		if binding.scheme == "pocket" {
+		if binding.scheme == "chat" {
 			listener, err = securewire.Listen(binding.address, *wireKey)
 		} else {
 			listener, err = net.Listen("tcp", binding.address)

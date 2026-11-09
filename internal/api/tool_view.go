@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
-	"pocket-agent/internal/probe"
-	"pocket-agent/internal/turns"
+	"chat-agent/internal/probe"
+	"chat-agent/internal/turns"
 )
 
 func startToolView(event probe.Event) turns.ToolEvent {

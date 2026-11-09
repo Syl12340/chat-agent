@@ -18,7 +18,7 @@
 
 当前更新（2026-11-04）：**0.16.0-debug / versionCode 13** 已发布到 `android-20261104-01`，原包名和签名延续。线上清单与下载哈希检查通过，未在手机安装；打开应用使用现有“更新”入口获取。详见[本次发布](release-0.16.md)。下文旧版本号为历史记录。
 
-当前开发包为 **chat-agent 0.15.0-debug，versionCode 12**，包名仍为 `dev.pocketagent.android.debug`，覆盖更新保留原登录与数据。下载沿用 `pocket://47.117.40.74:9992` 的加密连接，无新增公网端口。[本次设备鉴权与界面](release-0.15.md)。
+当前开发包为 **chat-agent 0.15.0-debug，versionCode 12**，包名仍为 `dev.pocketagent.android.debug`，覆盖更新保留原登录与数据。下载沿用 `chat://47.117.40.74:9992` 的加密连接，无新增公网端口。[本次设备鉴权与界面](release-0.15.md)。
 
 服务端 0.7.1 已取消显式聊天模式，Android 顶部点“刷新”生效；此次未重新构建或发布 APK。[说明](adaptive-chat.md)。
 
@@ -61,16 +61,16 @@ Copy-Item android/app/build/outputs/apk/debug/app-debug.apk bin/chat-agent-andro
 
 发布脚本从 APK 读取真实版本与包名、验证签名、生成大小与 SHA-256 清单，通过 SSH 上传服务器，拒绝版本回退，然后原子切换发布目录并验证接口鉴权和实际下载哈希。无需重启已配置的服务，也不会调用模型。`-Server`、`-Apk`、`-Release` 可覆盖默认参数。
 
-服务器配置 `/etc/pocket-agent/pocket-agent.env`：
+服务器配置 `/etc/chat-agent/chat-agent.env`：
 
 ```dotenv
-POCKET_ANDROID_RELEASE_DIR=/opt/pocket-agent/android/current
+CHAT_ANDROID_RELEASE_DIR=/opt/chat-agent/android/current
 ```
 
-首次设置该变量需要重启 pocket-agent，当前服务器已经完成。发布文件归 root:pocket-agent 所有，目录 0750、文件 0640，Agent 只能读取。目录结构：
+首次设置该变量需要重启 chat-agent，当前服务器已经完成。发布文件归 root:chat-agent 所有，目录 0750、文件 0640，Agent 只能读取。目录结构：
 
 ```text
-/opt/pocket-agent/android/
+/opt/chat-agent/android/
   current -> releases/android-20261103-07
   releases/android-20261103-07/
     manifest.json

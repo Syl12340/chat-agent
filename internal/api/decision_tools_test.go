@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"pocket-agent/internal/decision"
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/decision"
+	"chat-agent/internal/probe"
 )
 
 type questionArg = struct {

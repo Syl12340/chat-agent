@@ -28,11 +28,11 @@
 
 | 项目 | 结果 |
 | --- | --- |
-| 服务目录 | `/opt/pocket-agent/releases/20261104-companion-01` |
-| 上一版本 | `/opt/pocket-agent/releases/20261104-semantic-01` |
-| 一致性备份 | `/opt/pocket-agent/backups/pre-companion-20261104-01.tar.gz`，root:0600，含应用数据和配置 |
+| 服务目录 | `/opt/chat-agent/releases/20261104-companion-01` |
+| 上一版本 | `/opt/chat-agent/releases/20261104-semantic-01` |
+| 一致性备份 | `/opt/chat-agent/backups/pre-companion-20261104-01.tar.gz`，root:0600，含应用数据和配置 |
 | Linux SHA-256 | `cfd86017a96d66d0393797fbe2ec9bb74fe6fe8990e4803bf97eb4027ea7f120` |
-| Android 更新目录 | `/opt/pocket-agent/android/releases/android-20261104-01` |
+| Android 更新目录 | `/opt/chat-agent/android/releases/android-20261104-01` |
 | Android 版本 | `0.16.0-debug` / versionCode `13` |
 | APK 大小 / SHA-256 | 925,076 字节 / `831ecec384d4784f3e871453bd7a9e3982dc5bfcd6414fc67a7cedab164ee3dd` |
 | 签名 | 保留原包名、原证书；SHA-256 `4905b966d06c53d22da462b9ef3e36ff27b54994829950a610f92a6bab68b24a` |

@@ -1,12 +1,12 @@
 <resources>
-    <color name="pocket_brand">#679EFE</color>
-    <color name="pocket_primary">#679EFE</color>
-    <color name="pocket_green">@color/pocket_primary</color>
-    <color name="pocket_on_primary">#0F1115</color>
-    <color name="pocket_primary_container">#283142</color>
-    <color name="pocket_on_primary_container">#D3E2FF</color>
-    <color name="pocket_paper">#0F1115</color>
-    <color name="pocket_surface_container">#151517</color>
-    <color name="pocket_on_surface">#F5F6F7</color>
-    <color name="pocket_outline">#2C2C2E</color>
+    <color name="chat_brand">#679EFE</color>
+    <color name="chat_primary">#679EFE</color>
+    <color name="chat_green">@color/chat_primary</color>
+    <color name="chat_on_primary">#0F1115</color>
+    <color name="chat_primary_container">#283142</color>
+    <color name="chat_on_primary_container">#D3E2FF</color>
+    <color name="chat_paper">#0F1115</color>
+    <color name="chat_surface_container">#151517</color>
+    <color name="chat_on_surface">#F5F6F7</color>
+    <color name="chat_outline">#2C2C2E</color>
 </resources>

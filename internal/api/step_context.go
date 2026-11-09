@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"pocket-agent/internal/companion"
-	"pocket-agent/internal/interactive"
-	"pocket-agent/internal/probe"
-	"pocket-agent/internal/retrieval"
+	"chat-agent/internal/companion"
+	"chat-agent/internal/interactive"
+	"chat-agent/internal/probe"
+	"chat-agent/internal/retrieval"
 )
 
 const recentRecallUserMessages = 3

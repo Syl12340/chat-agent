@@ -39,7 +39,7 @@
 
 服务器单独数据目录使用一轮 ecnu-max 对话验证：新关联会话正确接上保存的《三体》阅读进展；随后暂停活动。生产聊天、用户活动和偏好不用于该收费验收。
 
-服务发布为 `20261103-activities-01`，Linux SHA-256 `653b46f72bb93a4271fd7c9281ae6e18f2d9cfd997a88d7cbf1a5a4970633ae6`；Android 发布 `android-20261103-02`，0.7.0-debug / versionCode 7，SHA-256 `a5ac6007b7755cfa55a76ec686b73b6d41e9f4f49fd644ad7e47f87c6d3bada8`。升级前生产数据已停机备份至 `/opt/pocket-agent/backups/pre-activities-20261103-01.tar.gz`（root:root，0600）。
+服务发布为 `20261103-activities-01`，Linux SHA-256 `653b46f72bb93a4271fd7c9281ae6e18f2d9cfd997a88d7cbf1a5a4970633ae6`；Android 发布 `android-20261103-02`，0.7.0-debug / versionCode 7，SHA-256 `a5ac6007b7755cfa55a76ec686b73b6d41e9f4f49fd644ad7e47f87c6d3bada8`。升级前生产数据已停机备份至 `/opt/chat-agent/backups/pre-activities-20261103-01.tar.gz`（root:root，0600）。
 
 模拟器切回公网地址后首次加载曾超时，刷新恢复；随后从停止状态冷启动，自动登录、活动 API、四模板界面和 versionCode 7 更新清单均通过只读验收。未写入生产活动或调用模型；原有 9990/frps、9993/搜索和 9999/Node 继续运行。
 

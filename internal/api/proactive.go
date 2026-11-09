@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"pocket-agent/internal/probe"
-	"pocket-agent/internal/runlog"
+	"chat-agent/internal/probe"
+	"chat-agent/internal/runlog"
 )
 
 var errProactiveUnavailable = errors.New("no available conversation for proactive followup")

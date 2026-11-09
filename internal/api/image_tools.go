@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	"pocket-agent/internal/imagegen"
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/imagegen"
+	"chat-agent/internal/probe"
 )
 
 // imageTools exposes local image generation as a single ordinary capability.

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/probe"
 )
 
 // One integration test covers the HTTP lifecycle; runtime protocol tests remain

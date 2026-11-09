@@ -144,7 +144,7 @@ func ParseChatModels(value string) ([]ChatModel, error) {
 	d.DisallowUnknownFields()
 	var extra any
 	if len(value) > 16<<10 || d.Decode(&models) != nil || d.Decode(&extra) != io.EOF {
-		return nil, errors.New("invalid POCKET_CHAT_MODELS JSON")
+		return nil, errors.New("invalid CHAT_CHAT_MODELS JSON")
 	}
 	return models, nil
 }

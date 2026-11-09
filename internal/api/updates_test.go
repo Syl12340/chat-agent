@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/probe"
 )
 
 func TestAndroidUpdatePublication(t *testing.T) {

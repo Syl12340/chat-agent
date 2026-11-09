@@ -15,8 +15,8 @@ EXPECTED_ANDROID = int(sys.argv[3]) if len(sys.argv) > 3 else 0
 
 
 def access_token() -> str:
-    for line in Path("/etc/pocket-agent/pocket-agent.env").read_text().splitlines():
-        if line.startswith("POCKET_ACCESS_TOKEN="):
+    for line in Path("/etc/chat-agent/chat-agent.env").read_text().splitlines():
+        if line.startswith("CHAT_ACCESS_TOKEN="):
             values = shlex.split(line.split("=", 1)[1])
             if len(values) == 1 and values[0]:
                 return values[0]

@@ -10,9 +10,9 @@ import (
 	"strings"
 	"sync"
 
-	"pocket-agent/internal/companion"
-	"pocket-agent/internal/probe"
-	"pocket-agent/internal/retrieval"
+	"chat-agent/internal/companion"
+	"chat-agent/internal/probe"
+	"chat-agent/internal/retrieval"
 )
 
 func (s *Server) activityOpenTool(role string, inputs []string, sessionID string) []probe.Tool {

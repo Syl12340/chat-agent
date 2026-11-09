@@ -49,6 +49,6 @@ flowchart LR
 
 服务器独立数据目录使用两轮 ecnu-max 对话：自然问句请求长期共读并留住进度，模型自行选择创建和记录工具；随后请求不改记录、只闲聊，模型零工具调用，活动、偏好、记忆、事件、待办与提醒状态均未改变。未自动重试收费请求，未使用生产个人数据；这验证了代表性场景，不等于保证所有语义判断都正确。
 
-仍是 Go 标准库 + 原生网页，无新增第三方依赖。原 Android 0.7.0-debug / versionCode 7 兼容，顶部“刷新”加载新版；静态缓存为 pocket-shell-v12，不需要新安装包。原有模式参数仅兼容旧请求，不控制交流方式。
+仍是 Go 标准库 + 原生网页，无新增第三方依赖。原 Android 0.7.0-debug / versionCode 7 兼容，顶部“刷新”加载新版；静态缓存为 chat-shell-v12，不需要新安装包。原有模式参数仅兼容旧请求，不控制交流方式。
 
-已发布 `20261103-harness-01`，Linux SHA-256 `04e9d7da772d2cd2231a7f45499c55bb3241466bcb285a7d34debc66b0bdc5a7`。升级前正常停机备份生产数据至 `/opt/pocket-agent/backups/pre-harness-20261103-01.tar.gz`（root-only）。线上健康、静态资源、鉴权与原 versionCode 7 更新清单验证通过；真实模型验收使用隔离目录，未修改生产活动或偏好。没有新的手机或长期运行验收。
+已发布 `20261103-harness-01`，Linux SHA-256 `04e9d7da772d2cd2231a7f45499c55bb3241466bcb285a7d34debc66b0bdc5a7`。升级前正常停机备份生产数据至 `/opt/chat-agent/backups/pre-harness-20261103-01.tar.gz`（root-only）。线上健康、静态资源、鉴权与原 versionCode 7 更新清单验证通过；真实模型验收使用隔离目录，未修改生产活动或偏好。没有新的手机或长期运行验收。

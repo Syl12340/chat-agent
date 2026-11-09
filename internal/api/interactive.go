@@ -5,8 +5,8 @@ import (
 	"encoding/hex"
 	"errors"
 
-	"pocket-agent/internal/interactive"
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/interactive"
+	"chat-agent/internal/probe"
 )
 
 // uiContextFloor is independent of what the client renders. References covered

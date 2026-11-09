@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"pocket-agent/internal/imagegen"
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/imagegen"
+	"chat-agent/internal/probe"
 )
 
 // imageHealthTool lets the model ask what the renderer can do instead of the host

@@ -7,16 +7,16 @@ StartLimitBurst=3
 
 [Service]
 Type=simple
-User=pocket-agent
-Group=pocket-agent
-WorkingDirectory=/var/lib/pocket-agent
-EnvironmentFile=/etc/pocket-agent/pocket-agent.env
+User=chat-agent
+Group=chat-agent
+WorkingDirectory=/var/lib/chat-agent
+EnvironmentFile=/etc/chat-agent/chat-agent.env
 Environment=GOMEMLIMIT=160MiB GOMAXPROCS=2
-ExecStart=/opt/pocket-agent/current/start.sh
+ExecStart=/opt/chat-agent/current/start.sh
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=20
-StateDirectory=pocket-agent
+StateDirectory=chat-agent
 StateDirectoryMode=0700
 UMask=0077
 NoNewPrivileges=true
@@ -35,7 +35,7 @@ MemoryMax=256M
 TasksMax=128
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=pocket-agent
+SyslogIdentifier=chat-agent
 
 [Install]
 WantedBy=multi-user.target

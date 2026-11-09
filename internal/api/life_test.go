@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"pocket-agent/internal/companion"
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/companion"
+	"chat-agent/internal/probe"
 )
 
 // One integrated flow covers consent, edits, role isolation, quiet hours,

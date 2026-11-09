@@ -24,23 +24,23 @@ const storage = {
   set(key, value) { try { sessionStorage.setItem(key, value); } catch {} },
   remove(key) { try { sessionStorage.removeItem(key); } catch {} }
 };
-const nativeShell = /PocketAgentAndroid\//.test(navigator.userAgent);
+const nativeShell = /ChatAgentAndroid\//.test(navigator.userAgent);
 const persistent = {
-  get() { try { return localStorage.getItem('pocket-token') || ''; } catch { return ''; } },
-  save(token) { localStorage.setItem('pocket-token', token); },
-  clear() { try { localStorage.removeItem('pocket-token'); } catch {} }
+  get() { try { return localStorage.getItem('chat-token') || ''; } catch { return ''; } },
+  save(token) { localStorage.setItem('chat-token', token); },
+  clear() { try { localStorage.removeItem('chat-token'); } catch {} }
 };
 async function nativeAuth() {
-  if (!nativeShell || window.PocketAndroidAuth) return window.PocketAndroidAuth;
+  if (!nativeShell || window.ChatAndroidAuth) return window.ChatAndroidAuth;
   await new Promise(resolve => {
-    const ready = () => { clearTimeout(timer); window.removeEventListener('pocket-native-ready', ready); resolve(); };
+    const ready = () => { clearTimeout(timer); window.removeEventListener('chat-native-ready', ready); resolve(); };
     const timer = setTimeout(ready, 5000);
-    window.addEventListener('pocket-native-ready', ready);
+    window.addEventListener('chat-native-ready', ready);
   });
-  return window.PocketAndroidAuth;
+  return window.ChatAndroidAuth;
 }
 async function rememberToken(token, checkCurrent) {
-  checkCurrent(); persistent.clear(); storage.remove('pocket-token');
+  checkCurrent(); persistent.clear(); storage.remove('chat-token');
   // Only short-lived device sessions enter the native updater vault.
   if (nativeShell && token.startsWith('dvc1_')) {
     const auth = await nativeAuth(); checkCurrent();
@@ -50,10 +50,10 @@ async function rememberToken(token, checkCurrent) {
 }
 
 function forgetToken() {
-  storage.remove('pocket-token'); persistent.clear();
-  if (nativeShell) window.PocketAndroidAuth?.forget().catch(() => notice('清除本机登录信息失败，请重试退出登录。'));
+  storage.remove('chat-token'); persistent.clear();
+  if (nativeShell) window.ChatAndroidAuth?.forget().catch(() => notice('清除本机登录信息失败，请重试退出登录。'));
 }
-const state = { token: storage.get('pocket-token') || '', current: null, sessions: [], config: null, loading: false, streaming: false, external: false, stopping: false, controller: null, follow: true };
+const state = { token: storage.get('chat-token') || '', current: null, sessions: [], config: null, loading: false, streaming: false, external: false, stopping: false, controller: null, follow: true };
 let chatInput = null;
 let interactiveUI = null, historyRevision = 0, uiFloor = 0, uiSourceMessages = [];
 const workspace = createDesktopWorkspace();
@@ -107,7 +107,7 @@ async function openNativeSessionRequest() {
   else retryNativeSessionRequest();
 }
 
-window.addEventListener('pocket-native-open-session', event => {
+window.addEventListener('chat-native-open-session', event => {
   const id = String(event.detail?.session_id || '');
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return;
   nativeSessionRequest = id;
@@ -252,7 +252,7 @@ function logout() {
   chatInput.clear();
   state.controller?.abort();
   forgetToken();
-  storage.remove('pocket-session');
+  storage.remove('chat-session');
   state.token = ''; state.authKind = ''; state.current = null; state.config = null; state.external = false; state.loading = false; state.compacting = false; state.stopping = false;
   state.roles = []; state.roleID = 'companion'; state.memories = []; state.roleDocument = null; state.memoryEditing = null; state.summary = null;
   for (const id of ['memory-dialog','role-dialog','settings-dialog']) ui[id].close();
@@ -292,7 +292,7 @@ function connect(token, authKind = 'owner') {
       await step(loadRoles());
       await step(refreshSessions());
       const requested = state.sessions.find(item => item.id === nativeSessionRequest && !item.unavailable);
-      const remembered = storage.get('pocket-session');
+      const remembered = storage.get('chat-session');
       const selected = requested || state.sessions.find(item => item.id === remembered) || state.sessions[0];
       if (selected && !selected.unavailable) await step(selectSession(selected.id));
       else { updateUI(); taskUI.refresh().catch(handleError); }
@@ -710,7 +710,7 @@ async function selectSession(id) {
   try {
     const history = await json(`/api/sessions/${encodeURIComponent(id)}/messages`);
     if (selected !== sessionSelection || !state.token) return;
-    state.current = id; storage.set('pocket-session',id); turnUI.watch(id,history);
+    state.current = id; storage.set('chat-session',id); turnUI.watch(id,history);
     renderSessions(); drawer(false);
     if (history.messages?.length || history.turns?.some(turn => turn.content || turn.text || turn.images?.length)) scrollBottom(true);
     else ui.conversation.scrollTop = 0;
@@ -721,7 +721,7 @@ async function createRemoteSession() {
   const targetRole = state.roleID, auth = state.token;
   const item = await json('/api/sessions',{method:'POST',body:JSON.stringify({role_id:targetRole})});
   if (state.token !== auth || state.roleID !== targetRole) throw new Error('连接或角色已变化，请重新打开会话。');
-  state.current = item.id; state.external = false; state.summary = null; showSummary(); storage.set('pocket-session',item.id);
+  state.current = item.id; state.external = false; state.summary = null; showSummary(); storage.set('chat-session',item.id);
   state.sessions.unshift(item); renderSessions(); return item;
 }
 async function newChat() {
@@ -830,10 +830,10 @@ function networkStatus() { ui['offline-banner'].hidden = navigator.onLine; }
 window.addEventListener('online', networkStatus); window.addEventListener('offline', networkStatus); networkStatus();
 if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('/sw.js').catch(() => {});
 async function restoreConnection() {
-  storage.remove('pocket-token'); persistent.clear();
+  storage.remove('chat-token'); persistent.clear();
   updateUI(); await deviceAuth.start();
 }
-window.addEventListener('pocket-native-session-required',()=>{
+window.addEventListener('chat-native-session-required',()=>{
   if(state.authKind==='device' && state.token)renewDeviceSession().catch(error=>{deviceAuth.showError(error);notice(error.message);});
   else deviceAuth.start();
 });

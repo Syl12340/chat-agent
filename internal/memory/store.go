@@ -17,8 +17,8 @@ import (
 	"sync"
 	"time"
 
-	"pocket-agent/internal/retrieval"
-	"pocket-agent/internal/storage"
+	"chat-agent/internal/retrieval"
+	"chat-agent/internal/storage"
 )
 
 var ErrNotFound = errors.New("memory not found")

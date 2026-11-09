@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/probe"
 )
 
 // Gate is the host-side enforcement point for the decision service.

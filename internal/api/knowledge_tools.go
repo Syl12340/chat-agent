@@ -7,10 +7,10 @@ import (
 	"strings"
 	"sync"
 
-	"pocket-agent/internal/companion"
-	"pocket-agent/internal/memory"
-	"pocket-agent/internal/probe"
-	"pocket-agent/internal/retrieval"
+	"chat-agent/internal/companion"
+	"chat-agent/internal/memory"
+	"chat-agent/internal/probe"
+	"chat-agent/internal/retrieval"
 )
 
 func (s *Server) knowledgeTools(role string, inputs []string, sessionID string) []probe.Tool {

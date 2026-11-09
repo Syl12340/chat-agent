@@ -7,8 +7,8 @@ import (
 	"errors"
 	"strings"
 
-	"pocket-agent/internal/media"
-	"pocket-agent/internal/storage"
+	"chat-agent/internal/media"
+	"chat-agent/internal/storage"
 )
 
 func cloneTurn(turn Turn) Turn {

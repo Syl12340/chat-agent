@@ -2,7 +2,7 @@
 // accent, so overrides are only written while the page resolves to light.
 // Loaded as a classic script in <head> so a saved colour paints before first frame.
 (() => {
-  const KEY = 'pocket-accent';
+  const KEY = 'chat-accent';
   const PRESETS = [
     { id: 'default', name: '深蓝', hue: null },
     { id: 'indigo', name: '靛蓝', hue: 222 },

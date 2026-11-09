@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"pocket-agent/internal/probe"
-	"pocket-agent/internal/tasks"
+	"chat-agent/internal/probe"
+	"chat-agent/internal/tasks"
 )
 
 // One P3 lifecycle combines tool execution, API edits, deduplication, durable

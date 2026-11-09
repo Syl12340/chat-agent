@@ -2,7 +2,7 @@ import { Features, supports, waitForShell } from '/native-capabilities.js';
 
 // Shell actions used to live in a native Android title bar above the WebView.
 // They now render inside the page sidebar and reach the shell through the
-// PocketAndroidShell bridge, so the page owns the whole screen.
+// ChatAndroidShell bridge, so the page owns the whole screen.
 //
 // Nothing is shown outside the native shell: in a browser these controls have no
 // meaning, and a dead button is worse than no button.
@@ -54,10 +54,10 @@ export function createShellBridge({ onNotice } = {}) {
     // A shell without the shell_* channel simply has no sidebar block; that is
     // a capability gap, not an error.
     waitForShell().then(ready => {
-      if (ready && supports(Features.shell) && window.PocketAndroidShell) wire(window.PocketAndroidShell);
+      if (ready && supports(Features.shell) && window.ChatAndroidShell) wire(window.ChatAndroidShell);
     });
   }
 
   start();
-  return { refresh: () => window.PocketAndroidShell?.info().then(({ host, encrypted }) => describe(host, encrypted)).catch(() => {}) };
+  return { refresh: () => window.ChatAndroidShell?.info().then(({ host, encrypted }) => describe(host, encrypted)).catch(() => {}) };
 }

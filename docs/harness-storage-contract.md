@@ -30,7 +30,7 @@
 
 ## 3. 权威存储及边界
 
-以下路径已由 0.24 接入 `<data>/runtime`。旧 `<data>/pocket/<session>.jsonl` 与 `<data>/turns/<session>.json` 只允许停机迁移器读取；在线服务发现未登记旧会话会拒绝启动，不能因版本数字相同而当成本节事件格式。
+以下路径已由 0.24 接入 `<data>/runtime`。旧 `<data>/chat/<session>.jsonl` 与 `<data>/turns/<session>.json` 只允许停机迁移器读取；在线服务发现未登记旧会话会拒绝启动，不能因版本数字相同而当成本节事件格式。
 
 ```text
 <data>/runtime/<session>/manifest.json

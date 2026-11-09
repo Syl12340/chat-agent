@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strings"
 
-	"pocket-agent/internal/storage"
+	"chat-agent/internal/storage"
 )
 
 // JobBackend exposes the renderer's own job identifier for targeted cancellation.

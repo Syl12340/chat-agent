@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"pocket-agent/internal/imagegen"
+	"chat-agent/internal/imagegen"
 )
 
 func (s *service) submitJob(w http.ResponseWriter, r *http.Request) {

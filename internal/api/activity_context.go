@@ -1,6 +1,6 @@
 package api
 
-import "pocket-agent/internal/companion"
+import "chat-agent/internal/companion"
 
 // An activity is explicit context for bound sessions, never a global role routine.
 func activityPolicy(activity *companion.Activity) string {

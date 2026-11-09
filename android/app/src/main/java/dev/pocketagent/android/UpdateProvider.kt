@@ -13,7 +13,7 @@ import java.io.File
 class UpdateProvider : ContentProvider() {
     override fun onCreate() = true
     private fun file(uri: Uri): File {
-        require(uri.authority == context!!.packageName + ".updates" && uri.path?.matches(Regex("/pocket-update-[0-9a-f]{64}\\.apk")) == true && uri.query == null && uri.fragment == null)
+        require(uri.authority == context!!.packageName + ".updates" && uri.path?.matches(Regex("/chat-update-[0-9a-f]{64}\\.apk")) == true && uri.query == null && uri.fragment == null)
         return File(context!!.cacheDir, uri.lastPathSegment!!)
     }
     override fun getType(uri: Uri): String { file(uri); return "application/vnd.android.package-archive" }

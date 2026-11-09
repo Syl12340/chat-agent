@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"pocket-agent/internal/interactive"
-	"pocket-agent/internal/probe"
-	"pocket-agent/internal/turns"
+	"chat-agent/internal/interactive"
+	"chat-agent/internal/probe"
+	"chat-agent/internal/turns"
 )
 
 const choiceFixture = "```chat-ui\n" + `{"schema_version":1,"id":"q1","type":"quiz.single_choice","props":{"question":"Which is larger?","options":[{"id":"A","label":"1"},{"id":"B","label":"2"}]}}` + "\n```"

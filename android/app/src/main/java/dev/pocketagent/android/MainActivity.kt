@@ -77,7 +77,7 @@ class MainActivity : Activity() {
     private val selectedImageUris = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     @Volatile private var imageContentOrigin = ""
     private val io = Executors.newSingleThreadExecutor()
-    private val prefs by lazy { getSharedPreferences("pocket-shell", MODE_PRIVATE) }
+    private val prefs by lazy { getSharedPreferences("chat-shell", MODE_PRIVATE) }
     private val vault by lazy { CredentialVault(this) }
     private val deviceIdentity by lazy { DeviceIdentity(this) }
     private val composerPreferences by lazy { ComposerPreferences(this) }
@@ -90,12 +90,12 @@ class MainActivity : Activity() {
     private var pendingInstall: File? = null
     private var pendingSessionID: String? = null
     // Resolved from resources so values-night can switch the shell to true black.
-    private val paper by lazy { getColor(R.color.pocket_paper) }
-    private val primary by lazy { getColor(R.color.pocket_primary) }
-    private val primaryContainer by lazy { getColor(R.color.pocket_primary_container) }
-    private val onPrimaryContainer by lazy { getColor(R.color.pocket_on_primary_container) }
-    private val surfaceContainer by lazy { getColor(R.color.pocket_surface_container) }
-    private val onSurface by lazy { getColor(R.color.pocket_on_surface) }
+    private val paper by lazy { getColor(R.color.chat_paper) }
+    private val primary by lazy { getColor(R.color.chat_primary) }
+    private val primaryContainer by lazy { getColor(R.color.chat_primary_container) }
+    private val onPrimaryContainer by lazy { getColor(R.color.chat_on_primary_container) }
+    private val surfaceContainer by lazy { getColor(R.color.chat_surface_container) }
+    private val onSurface by lazy { getColor(R.color.chat_on_surface) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -174,7 +174,7 @@ class MainActivity : Activity() {
             settings.safeBrowsingEnabled = true
             settings.javaScriptCanOpenWindowsAutomatically = false
             settings.setSupportMultipleWindows(true)
-            settings.userAgentString += " PocketAgentAndroid/${BuildConfig.VERSION_NAME}"
+            settings.userAgentString += " ChatAgentAndroid/${BuildConfig.VERSION_NAME}"
         }
         CookieManager.getInstance().setAcceptCookie(false)
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, false)
@@ -255,8 +255,8 @@ class MainActivity : Activity() {
         web.setDownloadListener { url, _, _, _, _ ->
             val origin = server?.origin ?: return@setDownloadListener
             if (url.startsWith("blob:$origin/") && server?.contains(web.url) == true) {
-                // Supports older Pocket web versions that still download a Blob.
-                web.evaluateJavascript("fetch(${JSONObject.quote(url)}).then(r=>r.text()).then(t=>window.PocketAndroidExports?.saveText(t,'pocket-memory.md')).catch(()=>{});", null)
+                // Supports older Chat web versions that still download a Blob.
+                web.evaluateJavascript("fetch(${JSONObject.quote(url)}).then(r=>r.text()).then(t=>window.ChatAndroidExports?.saveText(t,'chat-memory.md')).catch(()=>{});", null)
             } else toast("请通过网页的 Markdown 导出按钮保存文件。")
         }
         content.addView(web, 0, FrameLayout.LayoutParams(-1, -1))
@@ -299,7 +299,7 @@ class MainActivity : Activity() {
         try {
             if(address.encryptedTCP) {
                 if(gateway == null) {
-                    val pem = resources.openRawResource(R.raw.pocket_server_public).bufferedReader().use { it.readText() }
+                    val pem = resources.openRawResource(R.raw.chat_server_public).bufferedReader().use { it.readText() }
                     val publicKey = Base64.decode(pem.lineSequence().filterNot { it.startsWith("---") }.joinToString(""), Base64.DEFAULT)
                     gateway = WireGateway(address, publicKey)
                 }
@@ -319,7 +319,7 @@ class MainActivity : Activity() {
         val id = pendingSessionID ?: return
         if (!::web.isInitialized || server?.contains(web.url) != true) return
         pendingSessionID = null
-        web.evaluateJavascript("window.dispatchEvent(new CustomEvent('pocket-native-open-session',{detail:{session_id:${JSONObject.quote(id)}}}));", null)
+        web.evaluateJavascript("window.dispatchEvent(new CustomEvent('chat-native-open-session',{detail:{session_id:${JSONObject.quote(id)}}}));", null)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -352,7 +352,7 @@ class MainActivity : Activity() {
     private fun attachExportChannel() {
         val address = server ?: return
         val remoteOrigin = configuredServer?.origin ?: return
-        closePort(); exportMarker = "pocket-export:" + UUID.randomUUID()
+        closePort(); exportMarker = "chat-export:" + UUID.randomUUID()
         val marker = exportMarker
         val ports = web.createWebMessageChannel(); exportPort = ports[0]
         ports[0].setWebMessageCallback(object : WebMessagePort.WebMessageCallback() {
@@ -493,7 +493,7 @@ class MainActivity : Activity() {
                     val bytes = payload.getString("content").toByteArray(Charsets.UTF_8)
                     if (bytes.size > MAX_EXPORT) { toast("导出内容超过 4 MiB。"); return }
                     if (pendingExport != null) { toast("请先完成当前保存操作。"); return }
-                    val name = payload.optString("filename").takeIf { it.matches(Regex("[A-Za-z0-9_-]{1,128}\\.md")) } ?: "pocket-memory.md"
+                    val name = payload.optString("filename").takeIf { it.matches(Regex("[A-Za-z0-9_-]{1,128}\\.md")) } ?: "chat-memory.md"
                     pendingExport = bytes
                     val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("text/markdown").putExtra(Intent.EXTRA_TITLE, name)
                     try { startActivityForResult(intent, SAVE_DOCUMENT) }
@@ -501,7 +501,7 @@ class MainActivity : Activity() {
                 } catch (_: Exception) { toast("导出请求无效。"); pendingExport = null }
             }
         }, Handler(Looper.getMainLooper()))
-        val script = assets.open("export-bridge.js").bufferedReader().use { it.readText() }.replace("__POCKET_MARKER__", JSONObject.quote(marker)).replace("__POCKET_BRIDGE_VERSION__", BuildConfig.VERSION_CODE.toString())
+        val script = assets.open("export-bridge.js").bufferedReader().use { it.readText() }.replace("__CHAT_MARKER__", JSONObject.quote(marker)).replace("__CHAT_BRIDGE_VERSION__", BuildConfig.VERSION_CODE.toString())
         web.evaluateJavascript(script) {
             if (exportMarker == marker && address.contains(web.url)) web.postWebMessage(WebMessage(marker, arrayOf(ports[1])), Uri.parse(address.origin))
             else ports[1].close()
@@ -591,7 +591,7 @@ class MainActivity : Activity() {
         val token = vault.read(remote)
         if (token == null || !token.startsWith("dvc1_")) {
             autoUpdateChecked = false
-            if (server?.contains(web.url) == true) web.evaluateJavascript("window.dispatchEvent(new CustomEvent('pocket-native-session-required',{detail:{reason:'app-update'}}));", null)
+            if (server?.contains(web.url) == true) web.evaluateJavascript("window.dispatchEvent(new CustomEvent('chat-native-session-required',{detail:{reason:'app-update'}}));", null)
             if (manual) toast("请先完成设备认证，再检查更新。")
             return
         }
@@ -607,7 +607,7 @@ class MainActivity : Activity() {
                 if (result.isFailure) {
                     if (result.exceptionOrNull()?.message?.contains("（401）") == true) {
                         autoUpdateChecked = false
-                        if (server?.contains(web.url) == true) web.evaluateJavascript("window.dispatchEvent(new CustomEvent('pocket-native-session-required',{detail:{reason:'app-update'}}));", null)
+                        if (server?.contains(web.url) == true) web.evaluateJavascript("window.dispatchEvent(new CustomEvent('chat-native-session-required',{detail:{reason:'app-update'}}));", null)
                         if (manual) toast("登录会话已到期，正在请求重新认证。")
                     } else if (manual) toast(result.exceptionOrNull()?.message ?: "检查更新失败")
                     return@runOnUiThread

@@ -6,9 +6,9 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 
 async function main() {
-  const base = process.env.POCKET_PREVIEW_URL || 'http://127.0.0.1:18080';
-  const token = process.env.POCKET_ACCESS_TOKEN;
-  assert(token, 'POCKET_ACCESS_TOKEN is required');
+  const base = process.env.CHAT_PREVIEW_URL || 'http://127.0.0.1:18080';
+  const token = process.env.CHAT_ACCESS_TOKEN;
+  assert(token, 'CHAT_ACCESS_TOKEN is required');
   const config = await fetch(`${base}/api/status`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
   assert.equal(config.demo, true, 'Browser smoke check only runs against explicit local demo mode');
   await fs.mkdir('.cache', { recursive: true });
@@ -46,14 +46,14 @@ async function main() {
 
     await page.locator('#new-chat').click();
     await page.waitForFunction(() => !document.getElementById('prompt').disabled);
-    const attack = '<img src=x onerror=window.pocketXSS=true> [unsafe](javascript:alert(1))';
+    const attack = '<img src=x onerror=window.chatXSS=true> [unsafe](javascript:alert(1))';
     await page.locator('#prompt').fill(attack);
     await page.locator('#send').click();
     await page.waitForSelector('.message.assistant');
     await settled(page);
     assert.equal(await page.locator('#messages img').count(), 0);
     assert.equal(await page.locator('#messages a[href^="javascript:"]').count(), 0);
-    assert.equal(await page.evaluate(() => Boolean(window.pocketXSS)), false);
+    assert.equal(await page.evaluate(() => Boolean(window.chatXSS)), false);
 
     await page.locator('#prompt').fill('测试停止流式回复');
     await page.locator('#send').click();

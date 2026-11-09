@@ -2,11 +2,11 @@
 //
 // The shell is a thin WebView host, so the page must run against several shell
 // versions at once: an APK installed months ago still loads today's web assets.
-// Instead of scattering "does window.PocketAndroidX exist" checks — which turn a
+// Instead of scattering "does window.ChatAndroidX exist" checks — which turn a
 // missing bridge into a hard error like "please update the client" — the page asks
 // what the shell can do and degrades around the gaps.
 
-export const inNativeShell = /PocketAgentAndroid\//.test(navigator.userAgent);
+export const inNativeShell = /ChatAgentAndroid\//.test(navigator.userAgent);
 
 // Feature names are stable strings, not booleans, so a shell can advertise a
 // narrower surface than "the whole object exists".
@@ -30,10 +30,10 @@ let cached = null;
 function bridgeOpened(version) {
 	if (version > 0) return true;
 	return Boolean(
-		window.PocketAndroidDevice || window.PocketAndroidAuth ||
-		window.PocketAndroidPreferences || window.PocketAndroidCare ||
-		window.PocketAndroidVoice || window.PocketAndroidExports ||
-		window.PocketAndroidShell
+		window.ChatAndroidDevice || window.ChatAndroidAuth ||
+		window.ChatAndroidPreferences || window.ChatAndroidCare ||
+		window.ChatAndroidVoice || window.ChatAndroidExports ||
+		window.ChatAndroidShell
 	);
 }
 
@@ -47,9 +47,9 @@ export function capabilities() {
 	if (cached) return cached;
 	let version = 0;
 	let features = [];
-	if (typeof window.PocketAndroidCapabilities === 'function') {
+	if (typeof window.ChatAndroidCapabilities === 'function') {
 		try {
-			const reported = window.PocketAndroidCapabilities();
+			const reported = window.ChatAndroidCapabilities();
 			version = Number(reported?.version) || 0;
 			features = Array.isArray(reported?.features) ? reported.features.map(String) : [];
 		} catch {
@@ -59,13 +59,13 @@ export function capabilities() {
 	}
 	if (!version) {
 		// Older shell: infer from the injected objects.
-		if (window.PocketAndroidDevice) features.push(Features.deviceIdentity, Features.deviceSign);
-		if (window.PocketAndroidAuth) features.push(Features.authVault);
-		if (window.PocketAndroidPreferences) features.push(Features.preferences);
-		if (window.PocketAndroidCare) features.push(Features.care);
-		if (window.PocketAndroidVoice) features.push(Features.voice);
-		if (window.PocketAndroidExports) features.push(Features.exports);
-		if (window.PocketAndroidShell) features.push(Features.shell);
+		if (window.ChatAndroidDevice) features.push(Features.deviceIdentity, Features.deviceSign);
+		if (window.ChatAndroidAuth) features.push(Features.authVault);
+		if (window.ChatAndroidPreferences) features.push(Features.preferences);
+		if (window.ChatAndroidCare) features.push(Features.care);
+		if (window.ChatAndroidVoice) features.push(Features.voice);
+		if (window.ChatAndroidExports) features.push(Features.exports);
+		if (window.ChatAndroidShell) features.push(Features.shell);
 		// The WebView file chooser has existed since the first shell: any Android
 		// host implements onShowFileChooser. Inferring it from the newer capability
 		// list alone would tell older APKs they cannot upload, which is false.
@@ -87,15 +87,15 @@ export function supports(feature) {
 // callers do not have to race the injected script on first paint.
 export function waitForShell(timeout = 2500) {
 	if (!inNativeShell) return Promise.resolve(false);
-	if (window.PocketAndroidDevice || window.PocketAndroidShell) return Promise.resolve(true);
+	if (window.ChatAndroidDevice || window.ChatAndroidShell) return Promise.resolve(true);
 	return new Promise(resolve => {
 		const done = () => {
 			clearTimeout(timer);
-			window.removeEventListener('pocket-native-ready', done);
-			resolve(Boolean(window.PocketAndroidDevice || window.PocketAndroidShell));
+			window.removeEventListener('chat-native-ready', done);
+			resolve(Boolean(window.ChatAndroidDevice || window.ChatAndroidShell));
 		};
 		const timer = setTimeout(done, timeout);
-		window.addEventListener('pocket-native-ready', done, { once: true });
+		window.addEventListener('chat-native-ready', done, { once: true });
 	});
 }
 

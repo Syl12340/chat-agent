@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"pocket-agent/internal/probe"
-	"pocket-agent/internal/tasks"
+	"chat-agent/internal/probe"
+	"chat-agent/internal/tasks"
 )
 
 func (s *Server) startScheduler() {
@@ -70,7 +70,7 @@ func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
 	if !s.schedulerOK.Load() {
 		state = "retrying"
 	}
-	w.Header().Set("X-Pocket-Scheduler-State", state)
+	w.Header().Set("X-Chat-Scheduler-State", state)
 	writeJSON(w, 200, items)
 }
 func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {

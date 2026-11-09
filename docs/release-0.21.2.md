@@ -6,7 +6,7 @@
 
 - 显示 ECNU 实际返回的 `reasoning_content`，逐段进入实时进度；思考中默认展开，完成后默认折叠，用户手动选择的展开状态在轮询重绘中保留。已有历史中保存过的思考也可查看。旧版本从未保存的思考不能补回。
 - 思考正文按纯文本显示，独立于回答、复制回答、朗读和声明式组件；不执行 HTML、工具或写入，不作为用户授权、记忆候选或摘要来源。鉴权和会话归属保持，日志仍只写固定错误类别。
-- 普通与开启思考的聊天默认不发送 `max_tokens` / `max_completion_tokens`，不再施加原 1024/4096 token 预算，由模型服务采用自身默认值与能力限制。`-max-output=0` 和 `POCKET_THINKING_MAX_OUTPUT=0` 表示省略参数；运维仍可显式设置正数。后台摘要、主动关怀和共同话题的原有独立小预算保留。
+- 普通与开启思考的聊天默认不发送 `max_tokens` / `max_completion_tokens`，不再施加原 1024/4096 token 预算，由模型服务采用自身默认值与能力限制。`-max-output=0` 和 `CHAT_THINKING_MAX_OUTPUT=0` 表示省略参数；运维仍可显式设置正数。后台摘要、主动关怀和共同话题的原有独立小预算保留。
 - 保留原有超时、工具轮数和网络/文件体积保护。上游主动截断时提示模型服务返回了截断，不再将其描述为项目设置的“本轮输出上限”；不会自动重试或补发。
 
 ## 持久化与回退
@@ -27,12 +27,12 @@
 
 | 项目 | 记录 |
 | --- | --- |
-| 服务目录 | `/opt/pocket-agent/releases/20261106-cot-01` |
-| 上一版本 | `/opt/pocket-agent/releases/20261106-reply-01` |
-| 一致性备份 | `/opt/pocket-agent/backups/pre-cot-20261106-01.tar.gz`，root:0600 |
+| 服务目录 | `/opt/chat-agent/releases/20261106-cot-01` |
+| 上一版本 | `/opt/chat-agent/releases/20261106-reply-01` |
+| 一致性备份 | `/opt/chat-agent/backups/pre-cot-20261106-01.tar.gz`，root:0600 |
 | 源码提交 | `9796097025233663ca131ee784f3c646fae8490d` |
 | Linux SHA-256 | `2af778ec330acc541d04e3d51bfa70d56f7496cc2436b9c9afe1adaedf278458` |
-| Android 更新目录 | `/opt/pocket-agent/android/releases/android-20261106-02` |
+| Android 更新目录 | `/opt/chat-agent/android/releases/android-20261106-02` |
 | APK 版本 / 字节 | `0.21.2-debug` / versionCode `20` / 947292 字节 |
 | APK SHA-256 | `3929c00d6630660c68f2c5e07ada242b9497ebe1fe95482dbe617548145dd295` |
 | 原签名证书 SHA-256 | `4905b966d06c53d22da462b9ef3e36ff27b54994829950a610f92a6bab68b24a` |

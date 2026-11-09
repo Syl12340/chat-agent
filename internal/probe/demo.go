@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"pocket-agent/internal/interactive"
+	"chat-agent/internal/interactive"
 )
 
 // demoStream is an explicitly selected, deterministic local demo. No API calls.

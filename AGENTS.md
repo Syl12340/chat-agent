@@ -22,15 +22,15 @@
 
 用户说“部署”时，指的是**两件事一起做**，不要只做一半：
 
-1. **服务器推送部署**：构建 linux/amd64 二进制，备份 `var/lib/pocket-agent` 与 `/etc/pocket-agent`，
+1. **服务器推送部署**：构建 linux/amd64 二进制，备份 `var/lib/chat-agent` 与 `/etc/chat-agent`，
    上传后用 `install.sh` 发布新 release，切换 `current`，确认服务 active、`NRestarts=0`、health 正常。
-2. **APK 打包发布**：构建 debug APK 时自增 `versionCode`，发布到 `/opt/pocket-agent/android/releases/android-<日期>-<序号>/`，
+2. **APK 打包发布**：构建 debug APK 时自增 `versionCode`，发布到 `/opt/chat-agent/android/releases/android-<日期>-<序号>/`，
    写 `app.apk` 与 `manifest.json`（version_code、version_name、package_name、size、sha256），
-   再用软链把 `/opt/pocket-agent/android/current` 指过去，属主设为 `pocket-agent`。
+   再用软链把 `/opt/chat-agent/android/current` 指过去，属主设为 `chat-agent`。
 
 补充要求：
 
-- 构建 APK 用环境变量传版本号（`ORG_GRADLE_PROJECT_pocketVersionCode` / `..._pocketVersionName`），
+- 构建 APK 用环境变量传版本号（`ORG_GRADLE_PROJECT_chatVersionCode` / `..._chatVersionName`），
   `-P` 形式在当前 Gradle 版本会被当成任务名而失败。
 - 两端版本号要对得上，并在汇报里给出两个版本标识与校验和。
 - 部署前先跑 `go build ./...`、`go vet ./...` 和受影响包的测试；全绿才推。

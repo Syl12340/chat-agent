@@ -8,8 +8,8 @@
 
 旧接口仍接受合法的 mode 字段，旧队列及不确定请求保留原标识和字段，避免重复提交冲突；服务端不再把这些字段变成强制风格指令。新版网页统一提交 auto。已保存偏好和活动进展不迁移、不改写。
 
-本次只更新 Go 服务和网页，原 Android 0.7.0-debug / versionCode 7 继续使用。点击原生顶部“刷新”，或刷新浏览器即可；静态缓存已升至 pocket-shell-v10。
+本次只更新 Go 服务和网页，原 Android 0.7.0-debug / versionCode 7 继续使用。点击原生顶部“刷新”，或刷新浏览器即可；静态缓存已升至 chat-shell-v10。
 
 最小验证：更新两项现有检查，确认实际模型请求携带自适应策略、旧 listen 参数不强制倾听、其他角色同样具备自适应策略，以及页面不再包含选择器；JavaScript 语法检查通过。服务器只读验证健康、静态页面/脚本/缓存、接口鉴权及原 Android 更新清单。没有新增测试、完整矩阵或真实模型调用，未进行新的手机验收。
 
-发布：`20261103-adaptive-01`，Linux SHA-256 `191fb07ae65f172ceabd14e42c6abd0eef82db4394a16b0f76b3058cf9a2c954`。升级前正常停止服务并备份生产数据至 `/opt/pocket-agent/backups/pre-adaptive-20261103-01.tar.gz`（root-only）。
+发布：`20261103-adaptive-01`，Linux SHA-256 `191fb07ae65f172ceabd14e42c6abd0eef82db4394a16b0f76b3058cf9a2c954`。升级前正常停止服务并备份生产数据至 `/opt/chat-agent/backups/pre-adaptive-20261103-01.tar.gz`（root-only）。

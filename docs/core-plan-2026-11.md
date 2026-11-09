@@ -40,7 +40,7 @@
 
 按实际能力整理可追溯发布。核对线上二进制、APK、构建参数与提交来源，补实际发布记录。来源缺失的发布标记为待核对。
 
-Android 的 Gradle 默认值不是发布版本。统一用 `ORG_GRADLE_PROJECT_pocketVersionCode` / `ORG_GRADLE_PROJECT_pocketVersionName` 注入；正式发布清单记录服务版本、APK versionName/code、两端 SHA-256、源码提交、数据格式和回退点。
+Android 的 Gradle 默认值不是发布版本。统一用 `ORG_GRADLE_PROJECT_chatVersionCode` / `ORG_GRADLE_PROJECT_chatVersionName` 注入；正式发布清单记录服务版本、APK versionName/code、两端 SHA-256、源码提交、数据格式和回退点。
 
 ### 3.2 LLM 自主选择与宿主授权
 
@@ -109,9 +109,9 @@ surface 投影可由 history 重建：`surface_id`、`revision`、`creator_messa
 
 只保留关键流程：A 的授权/能力失败与聊天回归；B 的迁移重开和删除防误绑定；C 的创建更新恢复、旧 revision 拒绝和来源失效；D 的重复点击及业务成功后显示失败。界面走一条桌面/窄屏连续流程，既有七组件测试复用，不扩展完整矩阵。真实模型和真机验证单列，未做就明确缺口。
 
-每次部署先通过 `go build ./...`、`go vet ./...` 与受影响包测试。停服后完整备份 `/var/lib/pocket-agent` 和 `/etc/pocket-agent`；配置备份限 root 读取且不进入仓库。项目锁是文件存在型锁，停服后只读检查残留，禁止用 flock 打开原锁路径做探测。
+每次部署先通过 `go build ./...`、`go vet ./...` 与受影响包测试。停服后完整备份 `/var/lib/chat-agent` 和 `/etc/chat-agent`；配置备份限 root 读取且不进入仓库。项目锁是文件存在型锁，停服后只读检查残留，禁止用 flock 打开原锁路径做探测。
 
-服务端发布新 release、切 current，检查 active、NRestarts=0、health；APK 自增 code，构建发布 app.apk/manifest.json，验证签名/哈希并切 android/current，属主按部署约定设为 pocket-agent。报告给出两端标识、校验和及实际回退命令。即使只改网页也明确 APK 是否重新发布，不能默认跳过。
+服务端发布新 release、切 current，检查 active、NRestarts=0、health；APK 自增 code，构建发布 app.apk/manifest.json，验证签名/哈希并切 android/current，属主按部署约定设为 chat-agent。报告给出两端标识、校验和及实际回退命令。即使只改网页也明确 APK 是否重新发布，不能默认跳过。
 
 回退命令必须依据当次实际备份结构填写：停服→恢复数据及配置→切回旧服务 release→启动验收。数据格式变化不能只换二进制；恢复备份会丢弃备份后的新增数据，需先保留故障现场。Android 不降低 versionCode；需回退客户端时用旧代码构建更高 code。
 

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"pocket-agent/internal/pluginapi"
+	"chat-agent/internal/pluginapi"
 )
 
 // open creates a plugin rooted in a fresh temp dir with an approved host. The
@@ -94,7 +94,7 @@ func TestReadRefusesSymlinkEscape(t *testing.T) {
 // only a boundary if it excludes the things worth protecting.
 func TestNewRejectsProtectedRoots(t *testing.T) {
 	data := t.TempDir()
-	for _, root := range []string{"/", "/etc", "/etc/ssl", "/root", "/opt/pocket-agent", "/proc", data} {
+	for _, root := range []string{"/", "/etc", "/etc/ssl", "/root", "/opt/chat-agent", "/proc", data} {
 		if _, err := New(root, data, ""); err == nil {
 			t.Fatalf("root %q must be rejected", root)
 		}

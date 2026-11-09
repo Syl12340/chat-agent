@@ -13,7 +13,7 @@ export function splitReply(text) {
 export function createTurnsUI({ state, json, storage, onError, onHistory, onState, onSettled, createSession, onDraftRestore, onAccepted }) {
   const $ = id => document.getElementById(id);
   const ui = Object.fromEntries(['turn-queue','turn-queue-label','turn-queue-list','turn-queue-error','turn-resume','turn-refresh','turn-unknown','turn-unknown-text','turn-retry','turn-restore-draft'].map(id => [id,$(id)]));
-  const storageKey = 'pocket-turn-unconfirmed';
+  const storageKey = 'chat-turn-unconfirmed';
   let session = null, generation = 0, submission = 0, timer = null, flight = null, readVersion = 0, pending = null, history = null, failures = 0, queueBusy = false;
   let signature = '', terminalSignature = '';
   Object.assign(state,{submitting:false,submitUnknown:false,queuedCount:0,queuePaused:false});

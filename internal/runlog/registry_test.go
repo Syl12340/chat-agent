@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"pocket-agent/internal/probe"
-	"pocket-agent/internal/turns"
+	"chat-agent/internal/probe"
+	"chat-agent/internal/turns"
 )
 
 func writeLegacyHistory(t *testing.T, root, id string) {

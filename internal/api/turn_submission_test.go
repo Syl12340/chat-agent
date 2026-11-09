@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/probe"
 )
 
 type completionCapture struct {

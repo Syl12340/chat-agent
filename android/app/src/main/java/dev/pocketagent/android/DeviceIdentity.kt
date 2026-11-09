@@ -19,14 +19,14 @@ import java.util.Locale
 
 /** Per remote server identity. The private key never leaves AndroidKeyStore. */
 class DeviceIdentity(context: Context) {
-    private val preferences = context.getSharedPreferences("pocket-device-identity", Context.MODE_PRIVATE)
+    private val preferences = context.getSharedPreferences("chat-device-identity", Context.MODE_PRIVATE)
     private fun alias(remoteOrigin: String): String {
         val uri = URI(remoteOrigin)
         val scheme = requireNotNull(uri.scheme).lowercase(Locale.ROOT)
         val host = requireNotNull(uri.host).lowercase(Locale.ROOT)
-        val defaultPort = when (scheme) { "https" -> 443; "pocket" -> 9992; "http" -> 80; else -> error("Unsupported server origin") }
+        val defaultPort = when (scheme) { "https" -> 443; "chat" -> 9992; "http" -> 80; else -> error("Unsupported server origin") }
         val port = if (uri.port == -1) defaultPort else uri.port
-        return "pocket-device-v1-" + fingerprint("$scheme://$host:$port".toByteArray(Charsets.UTF_8))
+        return "chat-device-v1-" + fingerprint("$scheme://$host:$port".toByteArray(Charsets.UTF_8))
     }
 
     private fun keyStore(remoteOrigin: String): Pair<KeyStore, String> {

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"pocket-agent/internal/pluginapi"
+	"chat-agent/internal/pluginapi"
 )
 
 // fakePlugin is the smallest plugin the api package can load, so the status and

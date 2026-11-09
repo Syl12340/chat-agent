@@ -28,12 +28,12 @@ MathML 不可用的浏览器显示源码；单美元仅保守识别带明确数�
 
 | 项目 | 记录 |
 | --- | --- |
-| 服务目录 | `/opt/pocket-agent/releases/20261105-rich-01` |
-| 上一版本 | `/opt/pocket-agent/releases/20261105-ui-01` |
-| 一致性备份 | `/opt/pocket-agent/backups/pre-rich-20261105-01.tar.gz`，root:0600 |
+| 服务目录 | `/opt/chat-agent/releases/20261105-rich-01` |
+| 上一版本 | `/opt/chat-agent/releases/20261105-ui-01` |
+| 一致性备份 | `/opt/chat-agent/backups/pre-rich-20261105-01.tar.gz`，root:0600 |
 | 源码提交 | `8d1a108389abed48603e0cfb4687927d88a5ca21` |
 | Linux SHA-256 | `478afbdac9f2d5a2daefe90daca850d88eb6546bce57ded0b7c33002a56cf096` |
-| Android 更新目录 | `/opt/pocket-agent/android/releases/android-20261105-04` |
+| Android 更新目录 | `/opt/chat-agent/android/releases/android-20261105-04` |
 | APK 版本 / 字节 | `0.21.0-debug` / versionCode `18` / 947292 字节 |
 | APK SHA-256 | `9de05281961117754a79d62d258c298664a0e6d143a00d22239977933c465ae5` |
 | 原签名证书 SHA-256 | `4905b966d06c53d22da462b9ef3e36ff27b54994829950a610f92a6bab68b24a` |

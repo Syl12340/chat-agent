@@ -18,7 +18,7 @@ assert metadata['package_name'] in ('dev.pocketagent.android.debug', 'dev.pocket
 assert 0 < apk.stat().st_size <= 64 * 1024 * 1024
 assert metadata['size'] == apk.stat().st_size
 assert metadata['sha256'] == hashlib.file_digest(apk.open('rb'), 'sha256').hexdigest()
-root = pathlib.Path('/opt/pocket-agent/android')
+root = pathlib.Path('/opt/chat-agent/android')
 current = root / 'current'
 if current.exists():
     old = json.loads((current / 'manifest.json').read_text())
@@ -27,7 +27,7 @@ if current.exists():
 target = root / 'releases' / release
 assert not target.exists(), 'Release already exists'
 target.mkdir(parents=True)
-gid = grp.getgrnam('pocket-agent').gr_gid
+gid = grp.getgrnam('chat-agent').gr_gid
 for path in (root, root / 'releases', target):
     os.chown(path, 0, gid); path.chmod(0o750)
 for name in ('app.apk', 'manifest.json'):

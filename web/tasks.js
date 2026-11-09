@@ -54,7 +54,7 @@ export function createTaskUI({ state, request, json, roleName, drawer, onError }
     const load = async kind => {
       const response = await request(url(kind, '', target));
       const items = await response.json();
-      return { items, schedulerOK: response.headers.get('X-Pocket-Scheduler-State') !== 'retrying' };
+      return { items, schedulerOK: response.headers.get('X-Chat-Scheduler-State') !== 'retrying' };
     };
     const [reminderResult, todoResult] = await Promise.all([load('reminder'), full ? load('todo') : Promise.resolve(null)]);
     if (target !== state.roleID || !state.token) return;

@@ -19,7 +19,7 @@ import (
 	"strings"
 	"sync"
 
-	"pocket-agent/internal/storage"
+	"chat-agent/internal/storage"
 )
 
 const (

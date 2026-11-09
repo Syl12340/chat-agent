@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"pocket-agent/internal/storage"
+	"chat-agent/internal/storage"
 )
 
 const (

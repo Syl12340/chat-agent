@@ -15,9 +15,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"pocket-agent/internal/imagegen"
-	"pocket-agent/internal/probe"
-	"pocket-agent/internal/storage"
+	"chat-agent/internal/imagegen"
+	"chat-agent/internal/probe"
+	"chat-agent/internal/storage"
 )
 
 // Job ownership and operation receipts follow DSH tool-jobs (MIT). Submission

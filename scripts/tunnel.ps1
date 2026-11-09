@@ -14,7 +14,7 @@
 param(
   [string]$Host_ = 'root@47.117.40.74',
   [int]$Port = 18190,
-  [string]$Token = $env:POCKET_IMAGE_TOKEN,
+  [string]$Token = $env:CHAT_IMAGE_TOKEN,
   [string]$Python = 'E:\IAST\image-generation\.venv\Scripts\python.exe',
   [string]$Script = 'E:\IAST\image-generation\agent-bridge\imgctl.py',
   [string]$Profiles = '',

@@ -14,8 +14,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"pocket-agent/internal/pluginapi"
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/pluginapi"
+	"chat-agent/internal/probe"
 )
 
 const ID = "builtin.workspace"
@@ -46,7 +46,7 @@ func New(path, dataDir, actionsJSON string) (*Plugin, error) {
 	if filepath.Dir(resolved) == resolved {
 		return nil, errors.New("workspace root must be a dedicated directory")
 	}
-	for _, protected := range []string{data, "/etc", "/proc", "/sys", "/dev", "/run", "/root", "/opt/pocket-agent"} {
+	for _, protected := range []string{data, "/etc", "/proc", "/sys", "/dev", "/run", "/root", "/opt/chat-agent"} {
 		if under(resolved, protected) || under(protected, resolved) {
 			return nil, errors.New("workspace root overlaps protected host data")
 		}

@@ -7,8 +7,8 @@ import urllib.request
 from pathlib import Path
 
 values = {}
-for line in Path('/etc/pocket-agent/pocket-agent.env').read_text().splitlines():
-    if line.startswith('POCKET_ACCESS_TOKEN='):
+for line in Path('/etc/chat-agent/chat-agent.env').read_text().splitlines():
+    if line.startswith('CHAT_ACCESS_TOKEN='):
         values['token'] = shlex.split(line.split('=', 1)[1])[0]
 base = 'http://127.0.0.1:9991'
 client = urllib.request.build_opener(urllib.request.ProxyHandler({}))

@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"pocket-agent/internal/storage"
+	"chat-agent/internal/storage"
 )
 
 var ErrActivityNotFound = errors.New("activity not found")

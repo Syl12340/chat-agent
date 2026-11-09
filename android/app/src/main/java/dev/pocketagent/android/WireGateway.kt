@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
-/** A loopback-only HTTP facade for WebView. All public-network bytes use PocketWire. */
+/** A loopback-only HTTP facade for WebView. All public-network bytes use ChatWire. */
 class WireGateway(private val target: ServerAddress, private val publicKey: ByteArray) : Closeable {
     private val listener = ServerSocket(0, 16, InetAddress.getByName("127.0.0.1"))
     private val sockets = ConcurrentHashMap.newKeySet<Socket>()
@@ -27,7 +27,7 @@ class WireGateway(private val target: ServerAddress, private val publicKey: Byte
             try { workers.execute { try { proxy(socket) } finally { sockets.remove(socket); runCatching { socket.close() } } } }
             catch (_: java.util.concurrent.RejectedExecutionException) { sockets.remove(socket); socket.close() }
         }
-    }, "pocket-wire-loopback").apply { isDaemon = true; start() }
+    }, "chat-wire-loopback").apply { isDaemon = true; start() }
 
     private fun proxy(local: Socket) {
         var responseStarted = false
@@ -70,16 +70,16 @@ class WireGateway(private val target: ServerAddress, private val publicKey: Byte
             }.toByteArray(StandardCharsets.ISO_8859_1)
             val staticAsset = request[0] == "GET" && request[1].substringBefore('?') in STATIC_ASSETS
             val canceled = AtomicBoolean(false)
-            val activeRemote = AtomicReference<PocketWire?>(null)
+            val activeRemote = AtomicReference<ChatWire?>(null)
             local.soTimeout = 0
             Thread({
                 try { input.read() } catch (_: IOException) { }
                 finally { canceled.set(true); activeRemote.get()?.close() }
-            }, "pocket-wire-cancel").apply { isDaemon = true; start() }
+            }, "chat-wire-cancel").apply { isDaemon = true; start() }
             var attempt = 0
             while (true) {
                 try {
-                    PocketWire(target.host.removeSurrounding("[","]"), target.port, publicKey).use { remote ->
+                    ChatWire(target.host.removeSurrounding("[","]"), target.port, publicKey).use { remote ->
                         activeRemote.set(remote)
                         if(canceled.get()) throw IOException("Local request canceled")
                         remote.write(forward); if(body.isNotEmpty()) remote.write(body)

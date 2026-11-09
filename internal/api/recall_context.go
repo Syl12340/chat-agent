@@ -7,9 +7,9 @@ import (
 	"errors"
 	"strings"
 
-	"pocket-agent/internal/companion"
-	"pocket-agent/internal/memory"
-	"pocket-agent/internal/retrieval"
+	"chat-agent/internal/companion"
+	"chat-agent/internal/memory"
+	"chat-agent/internal/retrieval"
 )
 
 const recallContextBytes = 16 << 10

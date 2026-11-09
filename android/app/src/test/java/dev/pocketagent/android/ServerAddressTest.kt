@@ -14,7 +14,7 @@ class ServerAddressTest {
         assertEquals("http://10.0.2.2:8080", ServerAddress.parse("http://10.0.2.2:8080", true).origin)
         assertEquals("http://192.168.1.2:8080", ServerAddress.parse("http://192.168.1.2:8080", true).origin)
         assertEquals("https://agent.example", ServerAddress.parse("agent.example", false).origin)
-        val encrypted = ServerAddress.parse("pocket://47.117.40.74:9992", false)
+        val encrypted = ServerAddress.parse("chat://47.117.40.74:9992", false)
         assertTrue(encrypted.encryptedTCP)
         assertEquals(9992, encrypted.port)
         assertThrows(IllegalArgumentException::class.java) { ServerAddress.parse("http://47.117.40.74:9992", true) }

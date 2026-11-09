@@ -14,10 +14,10 @@ import (
 	"sync"
 	"time"
 
-	channelstore "pocket-agent/internal/channel"
-	"pocket-agent/internal/channel/onebot"
-	"pocket-agent/internal/probe"
-	"pocket-agent/internal/turns"
+	channelstore "chat-agent/internal/channel"
+	"chat-agent/internal/channel/onebot"
+	"chat-agent/internal/probe"
+	"chat-agent/internal/turns"
 )
 
 type OneBotConfig struct {

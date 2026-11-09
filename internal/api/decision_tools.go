@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"pocket-agent/internal/decision"
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/decision"
+	"chat-agent/internal/probe"
 )
 
 // decisionTool exposes the platform's structured decision endpoint as a

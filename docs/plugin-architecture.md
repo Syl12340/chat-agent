@@ -203,7 +203,7 @@ APK 是 WebView 壳，原生层必须保持**极薄**，判断标准只有一条
 新增 `web/native-capabilities.js`。原生注入显式清单：
 
 ```js
-window.PocketAndroidCapabilities() // { version: 25, features: [...] }
+window.ChatAndroidCapabilities() // { version: 25, features: [...] }
 ```
 
 旧壳没有这个函数时，按注入对象反推（`version: 0`）。

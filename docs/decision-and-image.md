@@ -53,9 +53,9 @@ D3（d3-flash）。它不做自然语言生成，直接返回**每个选项的�
 
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
-| `POCKET_BASE_URL` | — | 复用现有平台地址 |
-| `POCKET_API_KEY` | — | 复用现有令牌 |
-| `POCKET_DECISION_MODEL` | `ecnu-decision` | 不继承对话模型；用对话模型回答决策请求是配置错误，不是回退 |
+| `CHAT_BASE_URL` | — | 复用现有平台地址 |
+| `CHAT_API_KEY` | — | 复用现有令牌 |
+| `CHAT_DECISION_MODEL` | `ecnu-decision` | 不继承对话模型；用对话模型回答决策请求是配置错误，不是回退 |
 
 未配齐时 `New()` 返回 nil，**工具根本不会出现**在工具目录里。
 
@@ -83,7 +83,7 @@ D3（d3-flash）。它不做自然语言生成，直接返回**每个选项的�
 | `qwen21` | — | 12 GB |
 | `llada_t2i` / `llada_edit` | 大模型 | 18 GB |
 
-白名单由 `POCKET_IMAGE_PROFILES` 决定，工具 schema 的 `enum` 直接反映它，
+白名单由 `CHAT_IMAGE_PROFILES` 决定，工具 schema 的 `enum` 直接反映它，
 所以模型看到的就是真实可用的档位。
 
 ### 产物怎么回到对话里
@@ -110,10 +110,10 @@ ComfyUI 0.37.0 / PyTorch 2.13.0+cu132 / RTX 4060 Laptop 8 GB，`--lowvram` 模�
 
 | 变量 | 说明 |
 | --- | --- |
-| `POCKET_IMAGE_PYTHON` | 跑桥的解释器 |
-| `POCKET_IMAGE_BRIDGE` | `imgctl.py` 路径 |
-| `POCKET_IMAGE_PROFILES` | 逗号分隔白名单 |
-| `POCKET_IMAGE_PROFILE` | 默认档案 |
+| `CHAT_IMAGE_PYTHON` | 跑桥的解释器 |
+| `CHAT_IMAGE_BRIDGE` | `imgctl.py` 路径 |
+| `CHAT_IMAGE_PROFILES` | 逗号分隔白名单 |
+| `CHAT_IMAGE_PROFILE` | 默认档案 |
 
 三项缺一即禁用。**服务器上没有 ComfyUI，所以线上环境不配这些变量，工具自动不出现**——
 这是刻意的：宁可少一个工具，也不要让模型看到一个必然失败的能力。

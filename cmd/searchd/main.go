@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"pocket-agent/internal/localsearch"
+	"chat-agent/internal/localsearch"
 )
 
 func main() {
@@ -31,7 +31,7 @@ func run() error {
 	if err != nil || host != "127.0.0.1" {
 		return errors.New("search daemon must bind to 127.0.0.1")
 	}
-	service, err := localsearch.New(os.Getenv("POCKET_SEARCH_TOKEN"), *ttl, *rate)
+	service, err := localsearch.New(os.Getenv("CHAT_SEARCH_TOKEN"), *ttl, *rate)
 	if err != nil {
 		return err
 	}
@@ -47,7 +47,7 @@ func run() error {
 	defer stop()
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
-	fmt.Printf("Pocket Search: http://%s (loopback JSON /search and MCP /mcp)\n", listener.Addr())
+	fmt.Printf("Chat Search: http://%s (loopback JSON /search and MCP /mcp)\n", listener.Addr())
 	select {
 	case err := <-done:
 		if errors.Is(err, http.ErrServerClosed) {

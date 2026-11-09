@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"pocket-agent/internal/channel/onebot"
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/channel/onebot"
+	"chat-agent/internal/probe"
 )
 
 func TestOneBotOwnerPrivateClosedLoop(t *testing.T) {

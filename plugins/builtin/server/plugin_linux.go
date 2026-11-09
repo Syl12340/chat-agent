@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	"pocket-agent/internal/pluginapi"
+	"chat-agent/internal/pluginapi"
 )
 
 const ID = "builtin.server"
@@ -67,14 +67,14 @@ func status(ctx context.Context, _ json.RawMessage) (pluginapi.Result, error) {
 	}
 	report["memory"] = memory
 	disks := map[string]any{}
-	for _, path := range []string{"/", "/var/lib/pocket-agent"} {
+	for _, path := range []string{"/", "/var/lib/chat-agent"} {
 		var stat syscall.Statfs_t
 		if syscall.Statfs(path, &stat) == nil {
 			disks[path] = map[string]uint64{"total_bytes": stat.Blocks * uint64(stat.Bsize), "available_bytes": stat.Bavail * uint64(stat.Bsize)}
 		}
 	}
 	report["disk"] = disks
-	report["services"] = output(ctx, "/usr/bin/systemctl", "show", "--no-pager", "--property=Id,ActiveState,SubState,NRestarts", "pocket-agent.service", "pocket-search.service")
+	report["services"] = output(ctx, "/usr/bin/systemctl", "show", "--no-pager", "--property=Id,ActiveState,SubState,NRestarts", "chat-agent.service", "chat-search.service")
 	report["listeners"] = output(ctx, "/usr/bin/ss", "-H", "-lntu")
 	return encoded(report)
 }
@@ -98,8 +98,8 @@ func releaseName(path string) string {
 }
 
 func releases(ctx context.Context, _ json.RawMessage) (pluginapi.Result, error) {
-	report := map[string]any{"server": releaseName("/opt/pocket-agent/current"), "android": releaseName("/opt/pocket-agent/android/current")}
-	dir, err := os.Open("/opt/pocket-agent/backups")
+	report := map[string]any{"server": releaseName("/opt/chat-agent/current"), "android": releaseName("/opt/chat-agent/android/current")}
+	dir, err := os.Open("/opt/chat-agent/backups")
 	if err != nil {
 		report["backup_inventory"] = unavailable
 		return encoded(report)
@@ -123,7 +123,7 @@ func releases(ctx context.Context, _ json.RawMessage) (pluginapi.Result, error) 
 }
 
 func logs(ctx context.Context, _ json.RawMessage) (pluginapi.Result, error) {
-	raw := output(ctx, "/usr/bin/journalctl", "--system", "--no-pager", "-n", "15", "-o", "json", "--output-fields=__REALTIME_TIMESTAMP,PRIORITY,_SYSTEMD_UNIT", "-u", "pocket-agent.service", "-u", "pocket-search.service")
+	raw := output(ctx, "/usr/bin/journalctl", "--system", "--no-pager", "-n", "15", "-o", "json", "--output-fields=__REALTIME_TIMESTAMP,PRIORITY,_SYSTEMD_UNIT", "-u", "chat-agent.service", "-u", "chat-search.service")
 	// A collector that could not run says so itself; check that before parsing, so
 	// a failed read cannot be reported as "no entries".
 	if raw == unavailable {
@@ -141,7 +141,7 @@ func logs(ctx context.Context, _ json.RawMessage) (pluginapi.Result, error) {
 			continue
 		}
 		var r row
-		if json.Unmarshal([]byte(line), &r) == nil && r.Time != "" && (r.Unit == "pocket-agent.service" || r.Unit == "pocket-search.service") {
+		if json.Unmarshal([]byte(line), &r) == nil && r.Time != "" && (r.Unit == "chat-agent.service" || r.Unit == "chat-search.service") {
 			rows = append(rows, r)
 			continue
 		}

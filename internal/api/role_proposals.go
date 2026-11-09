@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"pocket-agent/internal/probe"
-	"pocket-agent/internal/roles"
+	"chat-agent/internal/probe"
+	"chat-agent/internal/roles"
 )
 
 func roleProposalFailure(w http.ResponseWriter, err error) {

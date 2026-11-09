@@ -33,7 +33,7 @@
 
 保存是独立工具操作：工具已经成功后再停止聊天、断网或遇到模型回复失败，已保存记录仍保留。取消聊天不会撤销已完成的操作；工具日志和活动面板可核对结果。失败不会自动重试。
 
-没有新增数据格式、第三方依赖或后台模型任务。原 Android 0.7.0-debug / versionCode 7 继续使用，顶部点“刷新”即可载入新版网页；静态缓存为 pocket-shell-v11，无需重装。
+没有新增数据格式、第三方依赖或后台模型任务。原 Android 0.7.0-debug / versionCode 7 继续使用，顶部点“刷新”即可载入新版网页；静态缓存为 chat-shell-v11，无需重装。
 
 ## 最小验证
 
@@ -43,4 +43,4 @@
 
 当前发布信息见[部署说明](../deploy/README.md)。
 
-已发布 `20261103-natural-01`，Linux SHA-256 `9d123f0afb0e8bc216e7659fdb14c7e1c4f17e91648735baecf9087859d80d42`。升级前正常停机备份生产数据到 `/opt/pocket-agent/backups/pre-natural-20261103-01.tar.gz`（root-only）；线上健康、静态资源、鉴权及原 versionCode 7 更新清单验证通过。没有重新构建 Android 包。
+已发布 `20261103-natural-01`，Linux SHA-256 `9d123f0afb0e8bc216e7659fdb14c7e1c4f17e91648735baecf9087859d80d42`。升级前正常停机备份生产数据到 `/opt/chat-agent/backups/pre-natural-20261103-01.tar.gz`（root-only）；线上健康、静态资源、鉴权及原 versionCode 7 更新清单验证通过。没有重新构建 Android 包。

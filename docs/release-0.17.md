@@ -12,12 +12,12 @@
 
 | 项目 | 记录 |
 | --- | --- |
-| 服务版本目录 | `/opt/pocket-agent/releases/20261104-topics-02` |
-| 上一服务版本 | `/opt/pocket-agent/releases/20261104-companion-01` |
+| 服务版本目录 | `/opt/chat-agent/releases/20261104-topics-02` |
+| 上一服务版本 | `/opt/chat-agent/releases/20261104-companion-01` |
 | 源码提交 | `c0244ae6eb1f6fea7ff17d2ffa5164179d6782f0` |
 | Linux SHA-256 | `bc3aec3fca41266402f6b5ce3da83214b0bb799ab5e083bb5a735a1259e89541` |
-| 一致性备份 | `/opt/pocket-agent/backups/pre-topics-20261104-02.tar.gz`，root:0600，正常停机后备份应用数据和配置 |
-| Android 更新目录 | `/opt/pocket-agent/android/releases/android-20261104-02` |
+| 一致性备份 | `/opt/chat-agent/backups/pre-topics-20261104-02.tar.gz`，root:0600，正常停机后备份应用数据和配置 |
+| Android 更新目录 | `/opt/chat-agent/android/releases/android-20261104-02` |
 | Android 版本 | `0.17.0-debug` / versionCode `14` |
 | APK 大小 | 925,072 字节 |
 | APK SHA-256 | `797a2366345a6f65fd77c047224b6e44b28f841194fdf81ee3c7f8626e98e9c4` |

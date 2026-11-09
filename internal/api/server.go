@@ -20,25 +20,25 @@ import (
 	"sync/atomic"
 	"time"
 
-	"pocket-agent/internal/companion"
-	"pocket-agent/internal/decision"
-	"pocket-agent/internal/deviceauth"
-	"pocket-agent/internal/imagegen"
-	"pocket-agent/internal/interactive"
-	"pocket-agent/internal/media"
-	"pocket-agent/internal/memory"
-	"pocket-agent/internal/pluginapi"
-	"pocket-agent/internal/probe"
-	"pocket-agent/internal/roles"
-	"pocket-agent/internal/runlog"
-	"pocket-agent/internal/semantic"
-	"pocket-agent/internal/tasks"
-	"pocket-agent/internal/topics"
-	"pocket-agent/internal/turns"
-	"pocket-agent/internal/webtools"
-	"pocket-agent/plugins/builtin/clock"
-	"pocket-agent/plugins/builtin/search"
-	"pocket-agent/web"
+	"chat-agent/internal/companion"
+	"chat-agent/internal/decision"
+	"chat-agent/internal/deviceauth"
+	"chat-agent/internal/imagegen"
+	"chat-agent/internal/interactive"
+	"chat-agent/internal/media"
+	"chat-agent/internal/memory"
+	"chat-agent/internal/pluginapi"
+	"chat-agent/internal/probe"
+	"chat-agent/internal/roles"
+	"chat-agent/internal/runlog"
+	"chat-agent/internal/semantic"
+	"chat-agent/internal/tasks"
+	"chat-agent/internal/topics"
+	"chat-agent/internal/turns"
+	"chat-agent/internal/webtools"
+	"chat-agent/plugins/builtin/clock"
+	"chat-agent/plugins/builtin/search"
+	"chat-agent/web"
 )
 
 type Config struct {
@@ -137,7 +137,7 @@ func New(c Config) (*Server, error) {
 		return nil, errors.New("invalid chat model allowlist")
 	}
 	if len(c.AccessToken) < 32 {
-		return nil, errors.New("POCKET_ACCESS_TOKEN must contain at least 32 characters")
+		return nil, errors.New("CHAT_ACCESS_TOKEN must contain at least 32 characters")
 	}
 	if _, err := probe.New(c.Agent, probe.NewSession()); err != nil {
 		return nil, err

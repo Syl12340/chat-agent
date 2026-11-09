@@ -22,7 +22,7 @@ func ValidID(s string) bool {
 // Replace syncs a temporary file before replacing the destination in the same
 // directory. Callers serialize writes. Directory power-loss durability is not claimed.
 func Replace(path string, data []byte) (err error) {
-	f, err := os.CreateTemp(filepath.Dir(path), ".pocket-*")
+	f, err := os.CreateTemp(filepath.Dir(path), ".chat-*")
 	if err != nil {
 		return err
 	}

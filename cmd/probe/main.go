@@ -10,13 +10,13 @@ import (
 	"os/signal"
 	"strings"
 
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/probe"
 )
 
 func main() {
 	if err := run(); err != nil {
 		message := err.Error()
-		if secret := os.Getenv("POCKET_API_KEY"); secret != "" {
+		if secret := os.Getenv("CHAT_API_KEY"); secret != "" {
 			message = strings.ReplaceAll(message, secret, "[REDACTED]")
 		}
 		fmt.Fprintln(os.Stderr, "probe:", message)
@@ -35,7 +35,7 @@ func run() (runErr error) {
 	data := flag.String("data", "data/sessions", "private session directory")
 	ephemeral := flag.Bool("ephemeral", false, "in-memory session, no persistence")
 	flag.Parse()
-	c.BaseURL, c.APIKey, c.Model = os.Getenv("POCKET_BASE_URL"), os.Getenv("POCKET_API_KEY"), os.Getenv("POCKET_MODEL")
+	c.BaseURL, c.APIKey, c.Model = os.Getenv("CHAT_BASE_URL"), os.Getenv("CHAT_API_KEY"), os.Getenv("CHAT_MODEL")
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	sess := probe.NewSession()

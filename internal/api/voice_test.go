@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/probe"
 )
 
 // One offline flow covers authorization, bounded input, explicit synthesis,

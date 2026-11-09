@@ -18,8 +18,8 @@ import (
 	"time"
 	"unicode"
 
-	"pocket-agent/internal/pluginapi"
-	"pocket-agent/internal/webtools"
+	"chat-agent/internal/pluginapi"
+	"chat-agent/internal/webtools"
 )
 
 const (

@@ -4,9 +4,9 @@ import (
 	"errors"
 	"slices"
 
-	"pocket-agent/internal/pluginapi"
-	serverdiag "pocket-agent/plugins/builtin/server"
-	"pocket-agent/plugins/builtin/workspace"
+	"chat-agent/internal/pluginapi"
+	serverdiag "chat-agent/plugins/builtin/server"
+	"chat-agent/plugins/builtin/workspace"
 )
 
 // HostToolsConfig scopes machine access to explicitly approved conversations.

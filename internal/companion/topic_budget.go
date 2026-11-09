@@ -3,7 +3,7 @@ package companion
 import (
 	"time"
 
-	"pocket-agent/internal/storage"
+	"chat-agent/internal/storage"
 )
 
 // TopicAttempt is a budget receipt, not a message or long-term personal fact.

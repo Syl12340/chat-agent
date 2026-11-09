@@ -20,12 +20,12 @@
 
 | 项目 | 记录 |
 | --- | --- |
-| 服务目录 | `/opt/pocket-agent/releases/20261105-companion-01` |
-| 上一版本 | `/opt/pocket-agent/releases/20261104-topics-02` |
-| 升级前一致性备份 | `/opt/pocket-agent/backups/pre-companion-20261105-01.tar.gz`，root:0600，正常停服后备份应用数据和配置 |
+| 服务目录 | `/opt/chat-agent/releases/20261105-companion-01` |
+| 上一版本 | `/opt/chat-agent/releases/20261104-topics-02` |
+| 升级前一致性备份 | `/opt/chat-agent/backups/pre-companion-20261105-01.tar.gz`，root:0600，正常停服后备份应用数据和配置 |
 | 源码提交 | `028fb3acdfe96f8296dacbed424ef1f5460115ff` |
 | Linux SHA-256 | `54d74bcaf9df767aa8182fc8a6cfc9d3de230cfb1c52cd77483dd6aaa3363ba0` |
-| Android 更新目录 | `/opt/pocket-agent/android/releases/android-20261105-01` |
+| Android 更新目录 | `/opt/chat-agent/android/releases/android-20261105-01` |
 | Android 版本 | `0.18.0-debug` / versionCode `15` |
 | APK 字节 | 1032533 |
 | APK SHA-256 | `985fdaa1c5eaaf3e2a4f7fae69f856f599e081076eefc96f0fa5aee20f37f5d4` |

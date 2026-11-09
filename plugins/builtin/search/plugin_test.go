@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"pocket-agent/internal/pluginapi"
-	"pocket-agent/internal/webtools"
+	"chat-agent/internal/pluginapi"
+	"chat-agent/internal/webtools"
 )
 
 // newClient builds a search-only client. The outbound boundary (HTTPS only,

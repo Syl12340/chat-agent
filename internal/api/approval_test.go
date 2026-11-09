@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/probe"
 )
 
 // The confirmation endpoint is the one place consent enters the runtime, so its

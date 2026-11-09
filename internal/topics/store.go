@@ -23,7 +23,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"pocket-agent/internal/storage"
+	"chat-agent/internal/storage"
 )
 
 var (

@@ -36,7 +36,7 @@ export function createVoiceUI({ state, request, notice, restoreDraft, onError })
     recognizing = true; lock();
     notice('由手机系统识别语音，可能使用系统服务的网络连接；识别文字确认发送后才会提交给聊天服务。');
     try {
-      const result = await window.PocketAndroidVoice.recognize();
+      const result = await window.ChatAndroidVoice.recognize();
       if (state.token !== auth || scoped() !== scope || epoch !== scopeEpoch) return;
       if (!result.available) notice('当前手机没有可用的语音识别服务，可使用键盘的语音输入。');
       else if (result.busy) notice('请先完成系统中的语音输入。');

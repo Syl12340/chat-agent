@@ -2,8 +2,8 @@
 export function createNativeCare({state}) {
   const $ = id => document.getElementById(id);
   let generation = 0, busy = false, status = null;
-  const bridge = () => window.PocketAndroidCare;
-  const nativeShell = /PocketAgentAndroid\//.test(navigator.userAgent);
+  const bridge = () => window.ChatAndroidCare;
+  const nativeShell = /ChatAgentAndroid\//.test(navigator.userAgent);
   function render() {
     const controls=$('native-care-controls'); if(!controls)return;
     controls.hidden=!nativeShell;
@@ -39,7 +39,7 @@ export function createNativeCare({state}) {
   function clear() { generation++;busy=false;status=null;render(); }
   $('native-care-enable')?.addEventListener('click',()=>configure(true));
   $('native-care-disable')?.addEventListener('click',()=>configure(false));
-  window.addEventListener('pocket-native-ready',refresh);
+  window.addEventListener('chat-native-ready',refresh);
   window.addEventListener('focus',refresh);
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')refresh();});
   render();return {refresh,deliver,clear};

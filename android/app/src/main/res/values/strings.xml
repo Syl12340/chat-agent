@@ -1,4 +1,4 @@
 <resources>
     <string name="app_name">chat-agent</string>
-    <string name="default_server_url">pocket://47.117.40.74:9992</string>
+    <string name="default_server_url">chat://47.117.40.74:9992</string>
 </resources>

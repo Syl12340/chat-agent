@@ -7,8 +7,8 @@ from urllib.request import Request, urlopen
 
 BASE = "http://127.0.0.1:9991"
 token = next(line.split("=", 1)[1].strip() for line in Path(
-    "/etc/pocket-agent/pocket-agent.env").read_text().splitlines()
-    if line.startswith("POCKET_ACCESS_TOKEN="))
+    "/etc/chat-agent/chat-agent.env").read_text().splitlines()
+    if line.startswith("CHAT_ACCESS_TOKEN="))
 
 
 def request(path, body=None, authenticated=True):
@@ -28,7 +28,7 @@ except HTTPError as error:
     assert error.code == 401
 assert json.loads(request("/api/status"))["demo"] is True, "Demo checks cannot call a live model"
 assert b"saveMarkdown" in request("/native.js", authenticated=False)
-record = Path("/var/lib/pocket-agent/deploy-check-session")
+record = Path("/var/lib/chat-agent/deploy-check-session")
 if sys.argv[1] == "before-restart":
     session = json.loads(request("/api/sessions", {}))
     sid = session["id"]

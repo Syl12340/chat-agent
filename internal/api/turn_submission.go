@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"pocket-agent/internal/companion"
-	"pocket-agent/internal/interactive"
-	"pocket-agent/internal/media"
-	"pocket-agent/internal/probe"
-	"pocket-agent/internal/turns"
+	"chat-agent/internal/companion"
+	"chat-agent/internal/interactive"
+	"chat-agent/internal/media"
+	"chat-agent/internal/probe"
+	"chat-agent/internal/turns"
 )
 
 type TurnSubmission struct {

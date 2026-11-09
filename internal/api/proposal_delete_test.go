@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"pocket-agent/internal/probe"
-	"pocket-agent/internal/roles"
-	"pocket-agent/internal/turns"
+	"chat-agent/internal/probe"
+	"chat-agent/internal/roles"
+	"chat-agent/internal/turns"
 )
 
 type proposalFixture struct {

@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"pocket-agent/internal/companion"
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/companion"
+	"chat-agent/internal/probe"
 )
 
 func (s *Server) careTools(role string, inputs []string, sessionID string) []probe.Tool {

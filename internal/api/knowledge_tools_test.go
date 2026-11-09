@@ -11,9 +11,9 @@ import (
 	"sync"
 	"testing"
 
-	"pocket-agent/internal/companion"
-	"pocket-agent/internal/memory"
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/companion"
+	"chat-agent/internal/memory"
+	"chat-agent/internal/probe"
 )
 
 // One fixture flow exercises model-selected knowledge operations, revisioned

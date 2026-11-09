@@ -29,7 +29,7 @@ import (
 	"syscall"
 	"time"
 
-	"pocket-agent/internal/imagegen"
+	"chat-agent/internal/imagegen"
 )
 
 const version = "1.1.0"

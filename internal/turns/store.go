@@ -16,9 +16,9 @@ import (
 	"sync"
 	"time"
 
-	"pocket-agent/internal/media"
-	"pocket-agent/internal/probe"
-	"pocket-agent/internal/storage"
+	"chat-agent/internal/media"
+	"chat-agent/internal/probe"
+	"chat-agent/internal/storage"
 )
 
 var ErrConflict = errors.New("request already used or state changed")

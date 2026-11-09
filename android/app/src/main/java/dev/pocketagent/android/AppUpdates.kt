@@ -23,7 +23,7 @@ data class AppRelease(val versionCode: Long, val versionName: String, val packag
     }
 }
 
-/** Fixed, authenticated same-origin endpoints; the loopback gateway uses pinned PocketWire. */
+/** Fixed, authenticated same-origin endpoints; the loopback gateway uses pinned ChatWire. */
 class AppUpdates(private val context: Context, private val origin: String, private val token: String) {
     private fun request(path: String): HttpURLConnection = (URL(origin + path).openConnection() as HttpURLConnection).apply {
         connectTimeout = 8000; readTimeout = 30000; instanceFollowRedirects = false
@@ -45,7 +45,7 @@ class AppUpdates(private val context: Context, private val origin: String, priva
     }
     fun download(release: AppRelease): File {
         require(release.versionCode > BuildConfig.VERSION_CODE) { "拒绝安装旧版本" }
-        val file = File(context.cacheDir, "pocket-update-${release.sha256}.apk")
+        val file = File(context.cacheDir, "chat-update-${release.sha256}.apk")
         val connection = request(release.apkPath)
         var verified = false
         try {

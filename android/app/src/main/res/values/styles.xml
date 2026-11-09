@@ -1,22 +1,22 @@
 <resources>
-    <style name="Theme.PocketAgent" parent="android:style/Theme.Material.Light.NoActionBar">
+    <style name="Theme.ChatAgent" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">@color/pocket_primary</item>
-        <item name="android:colorControlActivated">@color/pocket_primary</item>
-        <item name="android:textColorPrimary">@color/pocket_on_surface</item>
-        <item name="android:alertDialogTheme">@style/Theme.PocketAgent.Dialog</item>
-        <item name="android:windowBackground">@color/pocket_paper</item>
-        <item name="android:statusBarColor">@color/pocket_paper</item>
-        <item name="android:navigationBarColor">@color/pocket_paper</item>
+        <item name="android:colorAccent">@color/chat_primary</item>
+        <item name="android:colorControlActivated">@color/chat_primary</item>
+        <item name="android:textColorPrimary">@color/chat_on_surface</item>
+        <item name="android:alertDialogTheme">@style/Theme.ChatAgent.Dialog</item>
+        <item name="android:windowBackground">@color/chat_paper</item>
+        <item name="android:statusBarColor">@color/chat_paper</item>
+        <item name="android:navigationBarColor">@color/chat_paper</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowLightNavigationBar">true</item>
     </style>
-    <style name="Theme.PocketAgent.Dialog" parent="android:style/Theme.Material.Light.Dialog.Alert">
+    <style name="Theme.ChatAgent.Dialog" parent="android:style/Theme.Material.Light.Dialog.Alert">
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">@color/pocket_primary</item>
-        <item name="android:colorControlActivated">@color/pocket_primary</item>
-        <item name="android:textColorPrimary">@color/pocket_on_surface</item>
-        <item name="android:windowBackground">@color/pocket_surface_container</item>
+        <item name="android:colorAccent">@color/chat_primary</item>
+        <item name="android:colorControlActivated">@color/chat_primary</item>
+        <item name="android:textColorPrimary">@color/chat_on_surface</item>
+        <item name="android:windowBackground">@color/chat_surface_container</item>
         <item name="android:windowMinWidthMajor">90%</item>
         <item name="android:windowMinWidthMinor">90%</item>
     </style>

@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"sort"
 
-	"pocket-agent/internal/pluginapi"
+	"chat-agent/internal/pluginapi"
 )
 
 // permissionView separates what a plugin asked for from what the host granted.

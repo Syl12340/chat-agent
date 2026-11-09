@@ -15,11 +15,11 @@ Android 输入框旁新增“语音输入”：打开手机的系统识别界面
 在原服务环境文件中显式设置：
 
 ```sh
-POCKET_TTS_MODEL=ecnu-tts
-POCKET_TTS_VOICE=xiayu
+CHAT_TTS_MODEL=ecnu-tts
+CHAT_TTS_VOICE=xiayu
 ```
 
-复用 `POCKET_BASE_URL` 与服务器的 `POCKET_API_KEY`，聊天模型仍为 `ecnu-max`；不设置 `POCKET_TTS_MODEL` 或处于演示模式时关闭朗读。仅开放鉴权后的 `POST /api/voice/speech`，请求 JSON 为 `{"input":"要朗读的文字"}`，响应 MP3；客户端不能指定供应商地址、密钥或模型。
+复用 `CHAT_BASE_URL` 与服务器的 `CHAT_API_KEY`，聊天模型仍为 `ecnu-max`；不设置 `CHAT_TTS_MODEL` 或处于演示模式时关闭朗读。仅开放鉴权后的 `POST /api/voice/speech`，请求 JSON 为 `{"input":"要朗读的文字"}`，响应 MP3；客户端不能指定供应商地址、密钥或模型。
 
 每次最多 1200 个 Unicode 字符、一个并发、两次生成至少间隔 10 秒，30 秒超时，音频最多 2 MiB。错误不转发上游原文、密钥或文本，不自动重试或更换供应商。不保存音频文件/缓存，认证 API 与音频不进入 Service Worker 缓存；客户端只暂存一段内存音频。长回答禁用朗读入口并说明上限，不自动截断或拆成多个收费请求。
 
@@ -37,7 +37,7 @@ POCKET_TTS_VOICE=xiayu
 
 ## 发布记录
 
-服务已发布为 `20261103-voice-01`，Linux SHA-256 `ee2bde0be9a0dd9b355a7b9b54ff0509d6ceabcbd12882f25c41ae6ce83d8fb8`。已先正常停止服务，将会话和原环境配置备份为 `/opt/pocket-agent/backups/pre-voice-20261103-01.tar.gz`（root-only），再启动新版；模型仍为 ecnu-max，语音为显式点选的 ecnu-tts。无新增公网端口。
+服务已发布为 `20261103-voice-01`，Linux SHA-256 `ee2bde0be9a0dd9b355a7b9b54ff0509d6ceabcbd12882f25c41ae6ce83d8fb8`。已先正常停止服务，将会话和原环境配置备份为 `/opt/chat-agent/backups/pre-voice-20261103-01.tar.gz`（root-only），再启动新版；模型仍为 ecnu-max，语音为显式点选的 ecnu-tts。无新增公网端口。
 
 Android 发布为 `android-20261103-04`，0.12.0-debug / versionCode 9，914,160 字节，SHA-256 `1c8b2f42d0f5da405b9ba7d2c2c87387212648d7228b31fd9da2fb8070bef27a`。原包名、签名、公钥、加密地址和凭据存储保留。实际更新包下载、哈希、版本与鉴权校验通过。服务端健康、语音开关、页面、CSP 和 v14 缓存清单通过只读验证，未调用生产聊天或朗读。
 

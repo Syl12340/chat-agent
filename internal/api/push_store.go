@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"pocket-agent/internal/storage"
+	"chat-agent/internal/storage"
 )
 
 // Only device opt-ins are persisted. Inbox content remains in its original

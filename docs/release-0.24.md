@@ -25,16 +25,16 @@
 
 | 项目 | 结果 |
 | --- | --- |
-| 服务目录 | `/opt/pocket-agent/releases/20261107-runtime-v2-01` |
-| 上一版本 | `/opt/pocket-agent/releases/20261106-continuity-ui-01` |
+| 服务目录 | `/opt/chat-agent/releases/20261107-runtime-v2-01` |
+| 上一版本 | `/opt/chat-agent/releases/20261106-continuity-ui-01` |
 | Linux amd64 SHA-256 | `d04d0359a0c29d6d1b5ef03b2409ca46c734b18ef03e3d54190045969f2971a0`，线上一致 |
-| 一致性备份 | `/opt/pocket-agent/backups/pre-runtime-v2-20261107-01.tar.gz`，SHA-256 `8ceba7a373519c8e1257dd4daae980e985460b04b142e8f03e4a7d29d9818830`，`root:root` / 0600 |
+| 一致性备份 | `/opt/chat-agent/backups/pre-runtime-v2-20261107-01.tar.gz`，SHA-256 `8ceba7a373519c8e1257dd4daae980e985460b04b142e8f03e4a7d29d9818830`，`root:root` / 0600 |
 | 迁移结果 | `migrated=1 resumed=0 skipped=0`；1 个 active generation 1，旧在线 transcript/turns 已移除 |
 | Android | 0.21.2-debug / versionCode 20，清单 SHA-256 `3929c00d6630660c68f2c5e07ada242b9497ebe1fe95482dbe617548145dd295` |
 
 切换前线上为 1 个会话、20 条消息、12 条轮次，running/queued 均为 0。正常停服且所有 store/session lock 释放后创建备份，再执行显式迁移。迁移后同样为 20 条消息、12 条轮次，队列未暂停；没有新增模型请求、消息、工具执行或业务写入。
 
-首次启动暴露了一个发布权限问题：迁移由 root 执行，新 `runtime/` 初始为 `root:root` / 0700，受限的 `pocket-agent` systemd 用户无法创建 registry lock。服务未读取或修改会话即退出。停掉重启循环后只将已验证的 runtime 树改为 `pocket-agent:pocket-agent`，清除 systemd rate-limit 状态并重启成功；随后将这一行为固化为维护命令的“对齐数据根属主”，重新构建并原子替换最终二进制。最终 runtime 目录为 0700、索引为 0600，属主均正确。
+首次启动暴露了一个发布权限问题：迁移由 root 执行，新 `runtime/` 初始为 `root:root` / 0700，受限的 `chat-agent` systemd 用户无法创建 registry lock。服务未读取或修改会话即退出。停掉重启循环后只将已验证的 runtime 树改为 `chat-agent:chat-agent`，清除 systemd rate-limit 状态并重启成功；随后将这一行为固化为维护命令的“对齐数据根属主”，重新构建并原子替换最终二进制。最终 runtime 目录为 0700、索引为 0600，属主均正确。
 
 最终零模型检查确认：`/healthz` 正常，未认证状态接口为 401，`/api/status` 为 0.24.0 / ecnu-max，scheduler、web search/fetch 正常；会话 20 条消息和 12 条轮次可读，active/running/queued/unavailable 均为 0；9991 回环 HTTP 与 9992 加密 TCP 均监听。本机 SSH 隧道恢复为 `http://127.0.0.1:60991`，健康和网页入口为 200。
 

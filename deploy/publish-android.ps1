@@ -30,7 +30,7 @@ foreach ($name in @('publish-android.sh', 'verify-android.py')) {
     $path = Join-Path $stage $name
     [IO.File]::WriteAllText($path, [IO.File]::ReadAllText($path).Replace("`r`n", "`n"), [Text.UTF8Encoding]::new($false))
 }
-$remote = "/tmp/pocket-$Release"
+$remote = "/tmp/chat-$Release"
 & ssh -o BatchMode=yes $Server "mkdir -p '$remote'"
 if ($LASTEXITCODE -ne 0) { throw 'SSH staging failed' }
 & scp -q (Join-Path $stage 'app.apk') (Join-Path $stage 'manifest.json') (Join-Path $stage 'publish-android.sh') (Join-Path $stage 'verify-android.py') "${Server}:${remote}/"

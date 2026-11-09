@@ -12,7 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"pocket-agent/internal/companion"
+	"chat-agent/internal/companion"
 )
 
 type pushItem struct {

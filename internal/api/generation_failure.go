@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/probe"
 )
 
 // Only these fixed descriptions enter the queue/UI and log. Raw upstream

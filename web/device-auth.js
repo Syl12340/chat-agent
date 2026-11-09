@@ -33,7 +33,7 @@ function derSignature(raw) {
 
 export function createDeviceAuth({state, onToken, onError, adminRequest}) {
   const $=id=>document.getElementById(id);
-  const native=/PocketAgentAndroid\//.test(navigator.userAgent);
+  const native=/ChatAgentAndroid\//.test(navigator.userAgent);
   let identityPromise=null, identity=null, pair=null, cached=null, flight=null, epoch=0, controller=null;
   let maintenance=false, paused=false;
   try{paused=localStorage.getItem('chat-agent-device-paused')==='1';}catch{}
@@ -50,9 +50,9 @@ export function createDeviceAuth({state, onToken, onError, adminRequest}) {
     if(identityPromise)return identityPromise;
     identityPromise=(async()=>{
       if(native){
-        if(!window.PocketAndroidDevice)await new Promise(resolve=>{const ready=()=>{clearTimeout(timer);window.removeEventListener('pocket-native-ready',ready);resolve();};const timer=setTimeout(ready,5000);window.addEventListener('pocket-native-ready',ready);});
-        if(!window.PocketAndroidDevice)throw new Error('请更新 Android 客户端以启用设备鉴权');
-        identity=await window.PocketAndroidDevice.identity();
+        if(!window.ChatAndroidDevice)await new Promise(resolve=>{const ready=()=>{clearTimeout(timer);window.removeEventListener('chat-native-ready',ready);resolve();};const timer=setTimeout(ready,5000);window.addEventListener('chat-native-ready',ready);});
+        if(!window.ChatAndroidDevice)throw new Error('请更新 Android 客户端以启用设备鉴权');
+        identity=await window.ChatAndroidDevice.identity();
       }else{
         if(!window.isSecureContext||!crypto.subtle||!window.indexedDB)throw new Error('设备注册需要 HTTPS 或本机安全连接');
         pair=await browserKey();
@@ -83,7 +83,7 @@ export function createDeviceAuth({state, onToken, onError, adminRequest}) {
       if(challenge.server_id!==registration.server_id)throw new Error('服务器身份发生变化，请重新连接');
       const payload=fromBase64(challenge.payload),lines=new TextDecoder('utf-8',{fatal:true}).decode(payload).split('\n');
       if(lines.length!==6||lines[0]!=='chat-agent-device-v1'||lines[1]!==challenge.server_id||lines[2]!==id.device_id||lines[3]!==challenge.challenge_id||lines[5]!==challenge.expires_at)throw new Error('服务器身份请求格式无效');
-      const signature=native?(await window.PocketAndroidDevice.sign(challenge.payload)).signature:toBase64(derSignature(await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},pair.privateKey,payload)));
+      const signature=native?(await window.ChatAndroidDevice.sign(challenge.payload)).signature:toBase64(derSignature(await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},pair.privateKey,payload)));
       valid(stamp);
       const result=await publicJSON('/api/device/verify',{device_id:id.device_id,challenge_id:challenge.challenge_id,signature},signal);valid(stamp);
       if(!result.token?.startsWith('dvc1_')||result.server_id!==challenge.server_id)throw new Error('设备会话无效');

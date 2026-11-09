@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"pocket-agent/internal/companion"
-	"pocket-agent/internal/memory"
-	"pocket-agent/internal/retrieval"
+	"chat-agent/internal/companion"
+	"chat-agent/internal/memory"
+	"chat-agent/internal/retrieval"
 )
 
 // A single offline flow checks the retrieval contract rather than a phrase

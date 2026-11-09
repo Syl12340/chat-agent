@@ -2,8 +2,8 @@ package probe
 
 import (
 	"errors"
-	"pocket-agent/internal/media"
-	"pocket-agent/internal/storage"
+	"chat-agent/internal/media"
+	"chat-agent/internal/storage"
 )
 
 func validEffort(value string) bool {

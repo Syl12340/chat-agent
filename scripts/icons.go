@@ -19,7 +19,7 @@ func main() {
 			for x := 0; x < size; x++ {
 				u, v := float64(x)*192/float64(size), float64(y)*192/float64(size)
 				c := green
-				// Chat pocket stays inside the maskable-icon safe region.
+				// Chat chat stays inside the maskable-icon safe region.
 				if u >= 52 && u <= 140 && v >= 54 && v <= 125 || u >= 52 && u <= 116 && v >= 125 && v <= 138 || u >= 52 && u <= 77 && v > 138 && v <= 153-(u-52)*.6 {
 					c = cream
 				}

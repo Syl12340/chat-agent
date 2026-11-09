@@ -24,8 +24,8 @@ Channel P0–P2 已完成独立验签入口、Inbox/Outbox、稳定 session mapp
 
 ```powershell
 go build -buildvcs=false -o bin/chat-agent-0.26.0.exe ./cmd/server
-$env:POCKET_ACCESS_TOKEN = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
-$env:POCKET_ACCESS_TOKEN  # 在自己的终端查看，随后输入网页登录框
+$env:CHAT_ACCESS_TOKEN = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+$env:CHAT_ACCESS_TOKEN  # 在自己的终端查看，随后输入网页登录框
 .\bin\chat-agent-0.26.0.exe -demo
 ```
 
@@ -48,9 +48,9 @@ Linux 构建：`go build -buildvcs=false -o bin/chat-agent ./cmd/server`。运�
 保持访问令牌，配置服务端模型环境变量，去掉 `-demo`：
 
 ```powershell
-$env:POCKET_BASE_URL='https://your-api.example/v1'
-$env:POCKET_MODEL='your-model-id'
-# 在自己的终端安全设置 POCKET_API_KEY
+$env:CHAT_BASE_URL='https://your-api.example/v1'
+$env:CHAT_MODEL='your-model-id'
+# 在自己的终端安全设置 CHAT_API_KEY
 .\bin\chat-agent-0.26.0.exe
 ```
 
@@ -58,19 +58,19 @@ $env:POCKET_MODEL='your-model-id'
 
 | 环境变量 | 用途 |
 | --- | --- |
-| `POCKET_ACCESS_TOKEN` | HTTP 服务访问口令，至少 32 字符；浏览器使用此口令 |
-| `POCKET_BASE_URL` | 自定义 API 地址，包含需要的 `/v1`，不包含 `/chat/completions` |
-| `POCKET_API_KEY` | 模型服务密钥，仅保留在服务器 |
-| `POCKET_MODEL` | 原样发给模型服务的模型 ID |
-| `POCKET_TTS_MODEL` / `POCKET_TTS_VOICE` | 可选点选朗读模型/音色；留空不开启，复用服务端网关和密钥 |
-| `POCKET_WEB_HOSTS` | 可选抓取域名白名单，需显式 `-enable-web` |
-| `POCKET_SEARCH_URL` / `POCKET_SEARCH_KEY` | 可选自定义搜索端点与 Bearer 密钥，仅留在服务端 |
+| `CHAT_ACCESS_TOKEN` | HTTP 服务访问口令，至少 32 字符；浏览器使用此口令 |
+| `CHAT_BASE_URL` | 自定义 API 地址，包含需要的 `/v1`，不包含 `/chat/completions` |
+| `CHAT_API_KEY` | 模型服务密钥，仅保留在服务器 |
+| `CHAT_MODEL` | 原样发给模型服务的模型 ID |
+| `CHAT_TTS_MODEL` / `CHAT_TTS_VOICE` | 可选点选朗读模型/音色；留空不开启，复用服务端网关和密钥 |
+| `CHAT_WEB_HOSTS` | 可选抓取域名白名单，需显式 `-enable-web` |
+| `CHAT_SEARCH_URL` / `CHAT_SEARCH_KEY` | 可选自定义搜索端点与 Bearer 密钥，仅留在服务端 |
 
 默认输出字段为 `max_tokens`。需要其他字段时显式设置 `-token-parameter max_completion_tokens`。不发送 `stream_options`，不自动重试收费请求或切换协议。
 
 可选参数：`-listen 127.0.0.1:8080`、`-data <目录>`、`-timeout 30s`、`-max-turns 4`、`-max-tools 4`、`-max-output 1024`。默认最多 4 个会话同时生成，每个会话同一时刻只有一个请求。
 
-Android 当前可以填写 `pocket://47.117.40.74:9992`，通过固定服务器公钥的加密 TCP 直接连接云端；协议与密钥说明见 [加密传输](docs/encrypted-transport.md)。服务器同时保留回环 HTTP 与 SSH 隧道。普通浏览器若需公网 PWA，可另配 HTTPS 反向代理，关闭响应缓冲并保留 Host 和 Authorization 头；当前尚未提供公网浏览器 HTTPS 入口。[连接和维护步骤](deploy/README.md)。
+Android 当前可以填写 `chat://47.117.40.74:9992`，通过固定服务器公钥的加密 TCP 直接连接云端；协议与密钥说明见 [加密传输](docs/encrypted-transport.md)。服务器同时保留回环 HTTP 与 SSH 隧道。普通浏览器若需公网 PWA，可另配 HTTPS 反向代理，关闭响应缓冲并保留 Host 和 Authorization 头；当前尚未提供公网浏览器 HTTPS 入口。[连接和维护步骤](deploy/README.md)。
 
 ## 页面与数据行为
 
@@ -95,7 +95,7 @@ Android 当前可以填写 `pocket://47.117.40.74:9992`，通过固定服务器�
 
 ```text
 <data>/
-├── pocket/<session>.jsonl    # 聊天日志、固定角色与摘要记录
+├── chat/<session>.jsonl    # 聊天日志、固定角色与摘要记录
 ├── memory/<role>.json        # 按角色隔离的候选和已审核事实
 ├── activities/state.json     # 共同活动、保存进展与会话绑定
 ├── life/state.json           # 事件、关怀设置与收件箱
@@ -107,7 +107,7 @@ Android 当前可以填写 `pocket://47.117.40.74:9992`，通过固定服务器�
     └── skills/<name>/SKILL.md
 ```
 
-每个角色最多 500 条记忆、每条最多 4096 字节。基础召回使用中文双字片段和英文关键词；配置 `POCKET_RERANK_MODEL` 后可对事实候选进行远端语义重排，失败回退本地顺序。当前没有 embedding/向量索引或 SQLite/FTS5，数据库迁移按实际需求评估。
+每个角色最多 500 条记忆、每条最多 4096 字节。基础召回使用中文双字片段和英文关键词；配置 `CHAT_RERANK_MODEL` 后可对事实候选进行远端语义重排，失败回退本地顺序。当前没有 embedding/向量索引或 SQLite/FTS5，数据库迁移按实际需求评估。
 
 ## 待办与一次性提醒
 
@@ -131,9 +131,9 @@ Android 当前可以填写 `pocket://47.117.40.74:9992`，通过固定服务器�
 
 ```powershell
 # 可选指定公开 HTML 搜索引擎结果页；不能配置成 JSON 包装接口。
-$env:POCKET_SEARCH_URL='https://cn.bing.com/search'
+$env:CHAT_SEARCH_URL='https://cn.bing.com/search'
 # 可选缩小网页抓取域名范围；留空允许经过校验的公开 HTTPS 站点。
-$env:POCKET_WEB_HOSTS='example.org,docs.example.org'
+$env:CHAT_WEB_HOSTS='example.org,docs.example.org'
 .\bin\chat-agent-0.21.1.exe -enable-web
 ```
 
@@ -151,7 +151,7 @@ $env:POCKET_WEB_HOSTS='example.org,docs.example.org'
 
 ## 会话存储
 
-JSONL 保存于 `<data>/pocket/<id>.jsonl`。每批消息执行文件 Sync；工具调用与对应结果作为一批写入。Windows 的正常重启恢复已测试，不再依赖外部运行时的目录同步或平台锁。
+JSONL 保存于 `<data>/chat/<id>.jsonl`。每批消息执行文件 Sync；工具调用与对应结果作为一批写入。Windows 的正常重启恢复已测试，不再依赖外部运行时的目录同步或平台锁。
 
 每个打开的会话有独占 `.lock` 文件，记忆和任务目录各有 `.store.lock`，正常关闭后清理。异常退出可能残留锁，必须确认无写入进程后手动处理，程序不抢锁。旧 Harness 格式和截断记录会明确报错并保留原文件。P1 会话可读取并默认归属“小伴”；新增角色/摘要记录不保证可被旧二进制回滚读取。当前支持单实例，损坏文件没有自动修复，也未进行断电恢复验收。
 
@@ -169,7 +169,7 @@ go list -m all
 
 ```powershell
 # 如包不在默认路径，可设置 PLAYWRIGHT_MODULE 指向已安装的包
-# 先启动本地 -demo 服务，并设置同一 POCKET_ACCESS_TOKEN
+# 先启动本地 -demo 服务，并设置同一 CHAT_ACCESS_TOKEN
 node scripts/browser-smoke.cjs
 ```
 
@@ -177,7 +177,7 @@ node scripts/browser-smoke.cjs
 
 ## 代码结构与后续范围
 
-Android Kotlin 包装已加入 [`android/`](android/README.md)：原生服务器设置、公钥配对的加密 TCP、本地 WebView 代理、返回键/键盘适配、连接错误页面和 Markdown 系统保存。继续使用现有 Go 服务；支持 pocket 加密连接或 HTTPS，调试版额外支持局域网 HTTP。构建和安装步骤见 Android 说明。
+Android Kotlin 包装已加入 [`android/`](android/README.md)：原生服务器设置、公钥配对的加密 TCP、本地 WebView 代理、返回键/键盘适配、连接错误页面和 Markdown 系统保存。继续使用现有 Go 服务；支持 chat 加密连接或 HTTPS，调试版额外支持局域网 HTTP。构建和安装步骤见 Android 说明。
 
 | 目录 | 职责 |
 | --- | --- |

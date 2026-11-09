@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"pocket-agent/internal/media"
+	"chat-agent/internal/media"
 )
 
 type multimodalTransport func(*http.Request) (*http.Response, error)

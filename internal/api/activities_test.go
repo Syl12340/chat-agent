@@ -11,8 +11,8 @@ import (
 	"sync"
 	"testing"
 
-	"pocket-agent/internal/companion"
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/companion"
+	"chat-agent/internal/probe"
 )
 
 // One fixture flow checks explicit binding, revisioned progress and its history

@@ -4,7 +4,7 @@
 
 ## 直接使用
 
-Android 顶部点“更新”，安装 **chat-agent 0.6.1-debug（versionCode 6）**。网页刷新即可；服务器地址仍为 `pocket://47.117.40.74:9992`，原有自动登录继续生效。2026-11-03 产品统一改名，包名、协议和存储标识保留兼容。
+Android 顶部点“更新”，安装 **chat-agent 0.6.1-debug（versionCode 6）**。网页刷新即可；服务器地址仍为 `chat://47.117.40.74:9992`，原有自动登录继续生效。2026-11-03 产品统一改名，包名、协议和存储标识保留兼容。
 
 1. **连续聊天**：回复过程中可继续输入、发送，等待消息显示在输入框上方。450 毫秒窗口内同交流方式的消息最多合并四条处理，保留独立用户消息；已经启动的生成不会被后来的消息自动打断。普通短回复最多三个语义气泡，代码、列表和长说明保持完整。
 2. **事件记忆**：侧栏点“事件记忆”，手动保存愿意下次继续聊的事情；也可在聊天中明确说“记住这件事”或“下次再聊”，模型可提出待确认候选。候选需要在面板确认才用于后续会话。支持编辑、告一段落、不主动提及、删除，以及查看聊天来源。每个角色独立保存。
@@ -37,7 +37,7 @@ Android 顶部点“更新”，安装 **chat-agent 0.6.1-debug（versionCode 6�
   turns/<session>.json        # 去重标识、队列、部分生成与中断状态
   life/state.json             # 角色事件、上下文起点、关怀设置/额度/收件箱
   companion/<role>.json        # 原有陪伴偏好
-  pocket/<session>.jsonl       # 原有聊天日志，不修改记录格式
+  chat/<session>.jsonl       # 原有聊天日志，不修改记录格式
 ```
 
 新增目录使用独占实例锁与同步后替换写入；正常关闭释放锁。异常退出留下的锁需要确认无写入进程后处理，不自动抢锁。回退上一版程序保留新增目录，但旧程序没有新功能；再次升级不会自动重放中断模型调用。
@@ -51,6 +51,6 @@ Android 顶部点“更新”，安装 **chat-agent 0.6.1-debug（versionCode 6�
 - Android 发布 `android-20261103-01`，900,880 字节，SHA-256 `07d72855a4ff4fde4f4668b3b2fa1b9ebf4ac5c8b606ff3ea3fa224d37662fa3`。原签名、公钥和自动登录机制保持一致。
 - 改名后仅补跑现有 HTTP 页面/鉴权、Android 下载发布两项检查，均通过；API 35 模拟器覆盖安装 0.6.1 后，公网加密连接自动登录、网页新名称、三个功能入口和两个角色关怀默认关闭均通过只读验收。APK 应用标签确认为 `chat-agent`。
 
-兼容标识继续使用 `dev.pocketagent.android.debug`、`pocket://`、`POCKET_*` 与服务器 `pocket-agent.service`、原数据路径；这些标识保留旧客户端覆盖升级、密钥与数据兼容。新构建产物使用 `bin/chat-agent.exe`、`bin/chat-agent-linux-amd64` 和 `bin/chat-agent-android-debug.apk`。
+兼容标识继续使用 `dev.pocketagent.android.debug`、`chat://`、`CHAT_*` 与服务器 `chat-agent.service`、原数据路径；这些标识保留旧客户端覆盖升级、密钥与数据兼容。新构建产物使用 `bin/chat-agent.exe`、`bin/chat-agent-linux-amd64` 和 `bin/chat-agent-android-debug.apk`。
 
-升级前正常停止服务并备份生产会话到服务器 root-only 文件 `/opt/pocket-agent/backups/pre-unified-20261102-01.tar.gz`。验证数据与生产聊天分离。未做真实手机、多设备矩阵、断电恢复或长期运行验收。
+升级前正常停止服务并备份生产会话到服务器 root-only 文件 `/opt/chat-agent/backups/pre-unified-20261102-01.tar.gz`。验证数据与生产聊天分离。未做真实手机、多设备矩阵、断电恢复或长期运行验收。

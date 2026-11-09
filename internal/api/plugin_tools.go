@@ -7,9 +7,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"pocket-agent/internal/imagegen"
-	"pocket-agent/internal/pluginapi"
-	"pocket-agent/internal/probe"
+	"chat-agent/internal/imagegen"
+	"chat-agent/internal/pluginapi"
+	"chat-agent/internal/probe"
 )
 
 // pluginHost is the narrow surface a built-in plugin receives. It hands out a

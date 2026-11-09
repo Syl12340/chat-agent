@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"pocket-agent/internal/probe"
-	"pocket-agent/internal/turns"
+	"chat-agent/internal/probe"
+	"chat-agent/internal/turns"
 )
 
 type recoverableFailureFixture struct{ calls atomic.Int32 }

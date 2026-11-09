@@ -44,6 +44,6 @@
 
 语音和第三方 IM 尚未加入；真实手机、多设备矩阵与长期运行验收仍未进行。
 
-服务发布为 `20261103-bundle-01`，Linux SHA-256 `aac8c376ed57ac40681e38c1202331465413b55c8998733c8debf78368006a93`。Android 发布 `android-20261103-03`，912,356 字节，SHA-256 `f4a79c5c71ea932b2dcdefddae45e2f3417ebf68207416c9652c266ebc9b4733`，延续原签名。生产数据已停机备份到 `/opt/pocket-agent/backups/pre-bundle-20261103-01.tar.gz`（root:root，0600）；线上健康、鉴权、静态资源、设置字段及实际 APK 下载校验通过。
+服务发布为 `20261103-bundle-01`，Linux SHA-256 `aac8c376ed57ac40681e38c1202331465413b55c8998733c8debf78368006a93`。Android 发布 `android-20261103-03`，912,356 字节，SHA-256 `f4a79c5c71ea932b2dcdefddae45e2f3417ebf68207416c9652c266ebc9b4733`，延续原签名。生产数据已停机备份到 `/opt/chat-agent/backups/pre-bundle-20261103-01.tar.gz`（root:root，0600）；线上健康、鉴权、静态资源、设置字段及实际 APK 下载校验通过。
 
 模拟器恢复原公网地址并冷启动后，加密连接自动登录、新关怀字段、本机通知桥默认关闭和 versionCode 8 更新清单均通过只读验收。
