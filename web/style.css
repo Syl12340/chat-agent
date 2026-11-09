@@ -31,17 +31,10 @@
 
 /* Material 3 Expressive inspired design system. All feature surfaces share these tokens. */
 :root {
+  /* Colours and scales live in tokens.css; this block only wires the base element
+     to them so an unloaded tokens file fails loudly instead of painting wrong. */
   color-scheme: light;
-  --primary: #4176e6; --on-primary: #ffffff; --primary-container: #e4edfd; --on-primary-container: #283142;
-  --secondary: #61666b; --secondary-container: #ebeef2; --on-secondary-container: #1b1b1c;
-  --tertiary-container: #d3e2ff; --on-tertiary-container: #283142;
-  --surface: #ffffff; --surface-low: #f9fafb; --surface-container: #f5f6f7; --surface-high: #f1f3f5; --surface-highest: #ebeef2;
-  --on-surface: #0f1115; --on-surface-variant: #61666b; --outline: #81858c; --outline-variant: #e1e5ee;
-  --error: #d92d20; --error-container: #fdeceb; --on-error-container: #4a1212;
-  --warning-container: #fef5e7; --on-warning-container: #27241f; --scrim: #0f111566;
-  --shadow: 0 0 0 .5px #0000000a, 0 4px 16px #0000000f; --easing: cubic-bezier(.2,0,0,1);
-  --green: var(--primary); --muted: var(--on-surface-variant); --line: var(--outline-variant); --paper: var(--surface); --sidebar: #f9fafb;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-family: var(--font-ui);
   corner-shape: superellipse(1.5);
   font-size: 16px; line-height: 1.5; color: var(--on-surface); background: var(--surface-low);
 }
@@ -91,15 +84,6 @@ button,input,textarea,select{font:inherit}button{min-height:48px;transition:back
 @media(prefers-color-scheme:dark){
   :root{
     color-scheme:dark;
-    --primary:#679efe;--on-primary:#0f1115;--primary-container:#283142;--on-primary-container:#d3e2ff;
-    --secondary:#adb2b8;--secondary-container:#2c2c2e;--on-secondary-container:#e9ecf2;
-    --tertiary-container:#34415b;--on-tertiary-container:#d3e2ff;
-    --surface:#0f1115;--surface-low:#151517;--surface-container:#232324;--surface-high:#2c2c2e;--surface-highest:#353638;
-    --on-surface:#f5f6f7;--on-surface-variant:#adb2b8;--outline:#61666b;--outline-variant:#2c2c2e;
-    --error:#ff8a80;--error-container:#3a1715;--on-error-container:#ffd9d6;
-    --warning-container:#27241f;--on-warning-container:#fef5e7;
-    --scrim:#000000cc;--shadow:0 0 0 .5px #ffffff12, 0 8px 32px #000000b3;
-    --sidebar:#151517;
     background:var(--surface);
   }
   .suggestion:nth-child(3) .suggestion-arrow{color:var(--on-tertiary-container)}
