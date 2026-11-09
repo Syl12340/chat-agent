@@ -4,7 +4,7 @@
 (() => {
   const KEY = 'pocket-accent';
   const PRESETS = [
-    { id: 'default', name: '紫', hue: null },
+    { id: 'default', name: '深蓝', hue: null },
     { id: 'indigo', name: '靛蓝', hue: 222 },
     { id: 'teal', name: '青', hue: 187 },
     { id: 'green', name: '绿', hue: 152 },

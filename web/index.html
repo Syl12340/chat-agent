@@ -3,19 +3,20 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f9fafb" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)">
   <meta name="description" content="随时有话可说。你的轻量个人 AI 助手。">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>chat-agent · 随时有话可说</title>
   <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="/icon-192.png" type="image/png">
   <link rel="apple-touch-icon" href="/icon-192.png">
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="/chat-ui.css">
   <link rel="stylesheet" href="/desktop-workspace.css">
   <link rel="stylesheet" href="/ui/ui.css">
   <link rel="stylesheet" href="/richtext.css">
+  <link rel="stylesheet" href="/dsh-look.css">
   <script src="/theme.js"></script>
   <script src="/app.js" type="module"></script>
 </head>
@@ -23,13 +24,21 @@
   <div class="app-shell">
     <button id="drawer-scrim" class="drawer-scrim" aria-label="关闭会话列表" hidden></button>
     <aside id="sidebar" class="sidebar" aria-label="会话导航">
-      <a class="brand" href="/" aria-label="chat-agent 首页"><img src="/icon.svg" alt="" width="38" height="38"><span>chat-agent<span class="brand-sub">你的随身助手</span></span></a>
+      <a class="brand" href="/" aria-label="chat-agent 首页"><img src="/icon-192.png" alt="" width="38" height="38"><span>chat-agent<span class="brand-sub">你的随身助手</span></span></a>
       <label class="role-picker-label" for="role-picker">和谁聊聊</label><select id="role-picker" class="role-picker" disabled><option value="companion">小伴</option></select>
       <button id="new-chat" class="new-chat"><span aria-hidden="true">＋</span> 开始新会话 <kbd>N</kbd></button>
       <details class="utility-menu"><summary>陪伴与工具</summary><div class="knowledge-actions"><button id="memory-open" disabled>记忆管理 <span id="memory-count" hidden></span></button><button id="tasks-open" disabled>待办提醒 <span id="tasks-count" hidden></span></button><button id="role-open" disabled>角色设置</button><button id="role-proposals-open" aria-controls="role-proposals-dialog" disabled>角色变化建议</button><button id="companion-open" disabled>陪伴偏好</button><button id="activities-open" disabled>共同活动</button><button id="topics-open" aria-controls="topics-dialog" disabled>共同话题</button><button id="life-open" disabled>事件记忆</button><button id="care-open" disabled>关怀收件箱 <span id="care-count" hidden></span></button></div></details>
       <div class="list-heading">最近会话 <span id="session-count">0</span></div>
       <label class="sr-only" for="session-filter">筛选会话标题</label><input id="session-filter" class="session-filter" type="search" placeholder="筛选会话标题" maxlength="120" autocomplete="off" aria-controls="sessions">
       <nav id="sessions" class="session-list" aria-label="历史会话"><p class="list-empty">还没有会话，聊点什么吧。</p></nav>
+      <div id="shell-status" class="shell-status" hidden>
+        <span id="shell-host" class="shell-host"></span>
+        <div class="shell-actions">
+          <button id="shell-refresh" type="button" class="shell-action">刷新</button>
+          <button id="shell-update" type="button" class="shell-action">更新</button>
+          <button id="shell-server" type="button" class="shell-action">服务器</button>
+        </div>
+      </div>
       <div class="sidebar-note"><span class="note-dot"></span><div>一点想法，随时放进口袋。<small>对话保存在你的服务器上</small></div></div>
       <div class="sidebar-footer"><span class="protected"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10h12v10H6zM8 10V7a4 4 0 0 1 8 0v3"/></svg>访问已保护</span><button id="logout" class="text-button">退出</button></div>
     </aside>
@@ -47,7 +56,7 @@
       <div id="activity-banner" class="activity-banner" role="status" hidden><span id="activity-current"></span><button id="activity-manage" type="button">管理活动</button></div>
       <section id="conversation" class="conversation" aria-label="聊天内容" aria-busy="false">
         <div id="welcome" class="welcome">
-          <div class="welcome-icon"><img src="/icon.svg" width="60" height="60" alt=""></div>
+          <div class="welcome-icon"><img src="/icon-192.png" width="60" height="60" alt=""></div>
           <div class="eyebrow">随时有话可说</div>
           <h1>你好，今天想聊些什么？</h1>
           <p>一个想法，一段心情，或者一个还没想清楚的问题。<br>从这里开始，慢慢聊。</p>
@@ -94,7 +103,7 @@
 
   <div id="login-overlay" class="login-overlay" role="dialog" aria-modal="true" aria-labelledby="login-title">
     <form id="login-form" class="login-card" aria-labelledby="login-title">
-      <img src="/icon.svg" width="52" height="52" alt="">
+      <img src="/icon-192.png" width="52" height="52" alt="">
       <span class="eyebrow">你的随身助手</span>
       <h1 id="login-title">欢迎来到 chat-agent</h1><p>给这台设备起个名字，即可申请连接。<br>首次注册需要主人批准，之后会自动连接。</p>
       <section id="device-auth-panel" aria-label="设备连接">

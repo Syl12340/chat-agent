@@ -10,6 +10,8 @@ import { createNativeCare } from '/native-care.js';
 import { createVoiceUI } from '/voice.js';
 import { createDeviceAuth } from '/device-auth.js';
 import { createChatInput } from '/chat-input.js';
+import { createShellBridge } from '/shell-bridge.js';
+import { attachGeneratedImage } from '/generated-image.js';
 import { createUIRenderer } from '/ui/render.js';
 import { createDesktopWorkspace } from '/desktop-workspace.js';
 import { createMarkdownRenderer } from '/markdown.js';
@@ -64,6 +66,7 @@ const companionUI = createCompanionUI({ state, json, drawer, onError: handleErro
 const roleProposalsUI = createRoleProposalsUI({state,json,drawer,onError:handleError});
 const topicsUI=createTopicsUI({state,json,drawer,onError:handleError,onOpenSession:id=>selectSession(id)});
 const nativeCare = createNativeCare({state});
+const shellBridge = createShellBridge({ onNotice: handleError });
 const voiceUI = createVoiceUI({ state, request, notice, restoreDraft, onError: handleError });
 const lifeUI = createLifeUI({ state, json, drawer, onError: handleError, onOpenSession: id => selectSession(id), onCareReady: (role,items)=>nativeCare.deliver(role,items) });
 const turnUI = createTurnsUI({ state, json, storage, onError: handleError, onHistory: applyTurnHistory, onState: updateUI, onSettled: refreshAfterTurn, createSession: createRemoteSession, onDraftRestore: restoreTurnDraft, onAccepted: payload=>chatInput?.accepted(payload) });
@@ -404,7 +407,7 @@ function card(role, text = '', key = '', images = [], context = null) {
   const copy=document.createElement('button'); copy.type='button'; copy.className='message-copy'; copy.textContent='复制'; copy.setAttribute('aria-label','复制这条回答');
   content.append(label, logs, attachments, body, status); if(role==='assistant'){actions.append(copy);content.append(actions);}
   article.append(avatar, content); ui.messages.append(article);
-  const result = { node: article, body, status, logs, tools: new Map(), text: '',
+  const result = { node: article, body, status, logs, attachments, tools: new Map(), text: '',
     appendSegment(value,source) {
       this.text=[this.text,value].filter(Boolean).join('\n\n');
       copy.disabled=!this.text;
@@ -498,6 +501,47 @@ function toolLog(message, data, pending = false) {
   log.node.classList.toggle('failed', !pending && Boolean(data.error));
   log.summary.textContent = `${label}${hint ? ' ' + hint : ''} · ${state}`;
   log.output.textContent = pending ? '等待工具返回结果…' : data.error || data.output || '执行完成';
+  // A call that only lacked an assessment can be authorized by the person who is
+  // actually here. The ticket is host-issued for this exact argument digest and
+  // can be spent once; the model cannot mint one.
+  toolApproval(log, !pending && data.code === 'DECISION_NEEDS_APPROVAL' ? data.decision?.approval : null);
+  // A drawing tool returns a JSON receipt, not a picture. Turn it into one so the
+  // result is visible instead of being a wall of field names.
+  if (!pending) attachGeneratedImage(message, data, (host, id) => chatInput.renderInlineImage(host, id));
+}
+
+// toolApproval renders the single human confirmation a refused call may offer.
+// Showing it is not consent: the button only asks the host to record one.
+function toolApproval(log, approval) {
+  log.approvalRequest = approval || null;
+  if (!approval) {
+    if (log.approval) { log.approval.remove(); delete log.approval; }
+    return;
+  }
+  if (!log.approval) {
+    const node = document.createElement('div'); node.className = 'tool-approval';
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'tool-approval-button';
+    const hint = document.createElement('span'); hint.className = 'tool-approval-hint';
+    node.append(button, hint);
+    button.addEventListener('click', async () => {
+      const pending = log.approvalRequest;
+      if (!pending || button.disabled) return;
+      button.disabled = true; button.textContent = '正在授权…';
+      try {
+        await json('/api/approvals', { method: 'POST', body: JSON.stringify({ session: state.current, tool: pending.tool, digest: pending.digest }) });
+        button.textContent = '已授权';
+        hint.textContent = '再发一条消息，它才会原样重试这一次调用。';
+      } catch (error) {
+        button.disabled = false; button.textContent = '允许这一次';
+        hint.textContent = error.message || '授权失败，请稍后再试。';
+      }
+    });
+    log.node.after(node);
+    log.approval = node; log.approvalButton = button; log.approvalHint = hint;
+  }
+  log.approvalButton.disabled = false;
+  log.approvalButton.textContent = '允许这一次';
+  log.approvalHint.textContent = approval.reason ? `决策服务不可用：${approval.reason}` : '决策服务不可用，需要你确认。';
 }
 
 // Only the provider's reasoning_content is shown. Treat it as inert text:

@@ -1,6 +1,7 @@
 // Image drafts stay on this device until Send. Server image references, never
 // credentials or base64, are retained by the durable submission queue.
 import {composerIdentity,createComposerPreferences,validatePreference} from '/composer-preferences.js';
+import { Features, supports } from '/native-capabilities.js';
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const LEVELS = {off:'关闭思考',medium:'思考 · 中',high:'思考 · 高',ultra:'思考 · 超高'};
 const abort = () => new DOMException('会话已变化','AbortError');
@@ -70,10 +71,11 @@ export function createChatInput({state,request,json,createSession,notice,onChang
   let historyScope = '', boundRole = state.roleID, boundSession = state.current;
   let preferences=null, preferenceScope='', preferenceLoad=0, fallbackNotice='';
   const nativeShell=/PocketAgentAndroid\//.test(navigator.userAgent);
+  // Image upload needs the native file chooser; ask what the shell supports
+  // instead of comparing version strings.
+  const oldNative=nativeShell && !supports(Features.filePicker);
   const cache = new Map();
   const pendingImages = new WeakMap();
-  const nativeVersion=navigator.userAgent.match(/PocketAgentAndroid\/(\d+)\.(\d+)/);
-  const oldNative=Boolean(nativeVersion && Number(nativeVersion[1])===0 && Number(nativeVersion[2])<19);
   const observer = window.IntersectionObserver ? new IntersectionObserver(entries => {
     for (const entry of entries) if (entry.isIntersecting) {
       observer.unobserve(entry.target);
@@ -113,13 +115,13 @@ export function createChatInput({state,request,json,createSession,notice,onChang
     picker.disabled = locked || !options;
     thinking.disabled = locked || !options;
     add.disabled = locked || oldNative || !selectedModel()?.vision || drafts.length >= 3;
-    add.title=oldNative?'请通过顶部“更新”升级到 0.19 后上传图片':'添加 JPEG 或 PNG 图片';
+    add.title=oldNative?'这台客户端还不能上传图片':'添加 JPEG 或 PNG 图片';
     files.disabled = add.disabled;
     strip.querySelectorAll('button').forEach(button => { button.disabled = locked; });
     if (state.imageBusy) hint.textContent = '正在上传图片…';
     else if (selecting) hint.textContent = '正在处理图片…';
     else if (drafts.length) hint.textContent = `${drafts.length}/3 张图片 · 点击发送后上传并交给所选模型理解`;
-    else hint.textContent = oldNative && state.token?'图片上传需 Android 0.19，请通过顶部“更新”升级客户端。':'';
+    else hint.textContent = oldNative && state.token?'这台客户端还不能上传图片，可以先发文字。':'';
     hint.hidden = !hint.textContent;
   }
   function renderDrafts() {
@@ -297,11 +299,53 @@ export function createChatInput({state,request,json,createSession,notice,onChang
       tile.textContent='图片暂不可用 · 点击重试'; tile.onclick=()=>loadHistoryImage(tile,{session,id,stamp});
     }
   }
-  function renderImages(host,images=[]) {
+  // renderInlineImage shows a picture the assistant just produced.
+  //
+  // It deliberately does not reuse loadHistoryImage: that path refuses to work when
+  // the epoch moved on (which happens on every history redraw), so a freshly created
+  // tile would stay empty forever. Here the tile is created and filled in one call,
+  // and de-duplication is done on the DOM by image id, so a redraw re-renders while a
+  // repeat call in the same card does not stack.
+  async function renderInlineImage(host,id) {
+    if (!host || !state.current || !SAFE_ID.test(id)) return;
+    let group = host.querySelector('.message-images');
+    if (!group) { group = document.createElement('div'); group.className = 'message-images'; host.append(group); }
+    if (group.querySelector(`[data-image-id="${id}"]`)) return;
+    const session = state.current;
+    const tile = document.createElement('button');
+    tile.type = 'button'; tile.className = 'message-image inline'; tile.dataset.imageId = id;
+    tile.textContent = '正在读取图片…';
+    group.append(tile);
+    try {
+      const response = await request(`/api/sessions/${encodeURIComponent(session)}/images/${encodeURIComponent(id)}`);
+      const blob = await response.blob();
+      if (blob.size > 4*1024*1024 || !['image/png','image/jpeg'].includes(blob.type)) throw new Error('图片内容不可用');
+      if (!tile.isConnected) return;
+      const url = URL.createObjectURL(blob);
+      const image = document.createElement('img');
+      image.alt = '生成的图片'; image.loading = 'lazy'; image.decoding = 'async'; image.src = url;
+      image.addEventListener('load',()=>onImageLoad?.(),{once:true});
+      tile.replaceChildren(image);
+      tile.setAttribute('aria-label','放大查看图片');
+      tile.onclick = () => showImage(url);
+    } catch {
+      if (!tile.isConnected) return;
+      tile.textContent = '图片暂不可用 · 点击重试';
+      tile.onclick = () => { tile.remove(); renderInlineImage(host,id); };
+    }
+  }
+
+  function renderImages(host,images=[],options={}) {
     if (!images.length || !state.current) return;
     const group=document.createElement('div'); group.className='message-images';
     for (const metadata of images.slice(0,3)) {
       if (!SAFE_ID.test(metadata.id)) continue;
+      if (options.inline) {
+        // A picture this turn produced IS the answer, so load it immediately
+        // instead of asking the user to click once more to reveal it.
+        renderInlineImage(host,metadata.id);
+        continue;
+      }
       const button=document.createElement('button'); button.type='button'; button.className='message-image'; button.textContent='点击查看图片';
       const details={session:state.current,id:metadata.id,stamp:epoch}; pendingImages.set(button,details);
       button.onclick=()=>loadHistoryImage(button,details); group.append(button);
@@ -323,7 +367,7 @@ export function createChatInput({state,request,json,createSession,notice,onChang
   $('image-viewer-close').addEventListener('click',()=>preview.close());
   preview.addEventListener('close',()=>large.removeAttribute('src'));
   preview.addEventListener('click',event=>{if(event.target===preview)preview.close();});
-  return {refreshOptions,lock,prepare,accepted,restoreUploaded,renderImages,syncScope,beforeHistoryRender:()=>observer?.disconnect(),ready:()=>Boolean(options && selectedModel()),hasImages:()=>Boolean(drafts.length),selection:()=>({model,thinking:level,image_ids:[]}),
+  return {refreshOptions,lock,prepare,accepted,restoreUploaded,renderImages,renderInlineImage,syncScope,beforeHistoryRender:()=>observer?.disconnect(),ready:()=>Boolean(options && selectedModel()),hasImages:()=>Boolean(drafts.length),selection:()=>({model,thinking:level,image_ids:[]}),
     clear(){ preferenceLoad++;preferences=null;preferenceScope='';fallbackNotice='';clearDrafts(false); clearCache(); options=null; model=''; level='off'; boundRole=state.roleID; boundSession=null; picker.replaceChildren(); thinking.replaceChildren(); lock(); },
     discard(){ clearDrafts(); clearCache(); boundRole=state.roleID; boundSession=state.current; },
     hasUnsentImages:()=>Boolean(drafts.length)};

@@ -1,3 +1,4 @@
+import { Features, describeGap, inNativeShell, supports } from '/native-capabilities.js';
 // Audio is requested only by an explicit click. Keep at most one clip in memory;
 // neither audio nor recognition results enter persistent browser storage.
 export function createVoiceUI({ state, request, notice, restoreDraft, onError }) {
@@ -5,7 +6,7 @@ export function createVoiceUI({ state, request, notice, restoreDraft, onError })
   const panel = document.getElementById('voice-player');
   const audio = document.getElementById('voice-audio');
   const status = document.getElementById('voice-status');
-  const native = /PocketAgentAndroid\//.test(navigator.userAgent);
+  const native = inNativeShell;
   let generation = 0, scopeEpoch = 0, recognition = 0, controller = null, clip = null, recognizing = false;
   const scoped = () => `${state.current || ''}:${state.roleID}`;
   function stop() {
@@ -22,12 +23,14 @@ export function createVoiceUI({ state, request, notice, restoreDraft, onError })
     clip = null; audio.removeAttribute('src'); audio.load(); panel.hidden = true;
   }
   function lock() {
-    input.hidden = !native;
+    // Hide the control when this shell has no recogniser instead of offering
+    // a button that can only fail.
+    input.hidden = !native || !supports(Features.voice);
     input.disabled = !state.token || state.loading || state.compacting || recognizing || document.getElementById('prompt').disabled;
   }
   async function recognize() {
     if (input.disabled) return;
-    if (!window.PocketAndroidVoice) { notice('请先更新 Android 客户端以使用语音输入。'); return; }
+    if (!supports(Features.voice)) { notice(describeGap(Features.voice)); return; }
     stop();
     const auth = state.token, scope = scoped(), epoch = scopeEpoch, attempt = ++recognition;
     recognizing = true; lock();

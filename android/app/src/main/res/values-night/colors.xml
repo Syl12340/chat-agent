@@ -1,12 +1,12 @@
 <resources>
-    <!-- AMOLED night palette: the shell and page sit on true black. -->
-    <color name="pocket_primary">#CFBCFF</color>
+    <color name="pocket_brand">#679EFE</color>
+    <color name="pocket_primary">#679EFE</color>
     <color name="pocket_green">@color/pocket_primary</color>
-    <color name="pocket_on_primary">#2B1A5C</color>
-    <color name="pocket_primary_container">#3B2B6B</color>
-    <color name="pocket_on_primary_container">#E9DDFF</color>
-    <color name="pocket_paper">#000000</color>
-    <color name="pocket_surface_container">#0F0F12</color>
-    <color name="pocket_on_surface">#ECEAF0</color>
-    <color name="pocket_outline">#2A2A30</color>
+    <color name="pocket_on_primary">#0F1115</color>
+    <color name="pocket_primary_container">#283142</color>
+    <color name="pocket_on_primary_container">#D3E2FF</color>
+    <color name="pocket_paper">#0F1115</color>
+    <color name="pocket_surface_container">#151517</color>
+    <color name="pocket_on_surface">#F5F6F7</color>
+    <color name="pocket_outline">#2C2C2E</color>
 </resources>

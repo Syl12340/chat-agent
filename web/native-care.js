@@ -11,7 +11,7 @@ export function createNativeCare({state}) {
     $('native-care-disable').disabled=busy||!state.token||!bridge()||!status?.enabled;
     $('native-care-enable').textContent=status?.background_supported?'开启后台接收':'开启本机通知';
     $('native-care-disable').textContent=status?.background_supported?'关闭后台接收':'关闭本机通知';
-    $('native-care-status').textContent=!bridge()?'升级 Android 包后可开启手机通知。':!status?'正在读取本机通知设置…':!status.enabled?'本机通知未开启。':!status.permission?'本机已开启，系统通知权限或通知频道尚未允许。':status.background_supported?(status.background_state||'后台接收状态尚未更新。'):'本机通知已开启；升级到 0.18 Android 包后可启用后台接收。';
+    $('native-care-status').textContent=!bridge()?'这台客户端还不能发系统通知。':!status?'正在读取本机通知设置…':!status.enabled?'本机通知未开启。':!status.permission?'本机已开启，系统通知权限或通知频道尚未允许。':status.background_supported?(status.background_state||'后台接收状态尚未更新。'):'本机通知已开启；升级到 0.18 Android 包后可启用后台接收。';
   }
   async function refresh() {
     render();if(!bridge()||!state.token)return;

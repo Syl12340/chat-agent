@@ -50,6 +50,23 @@
         return request('care_deliver', { role, items });
       }
     }) });
+    // Capability list, so the page never has to guess from object presence.
+    // The version is the shell's versionCode, substituted at injection time.
+    Object.defineProperty(window, 'PocketAndroidCapabilities', { configurable: true, value: Object.freeze(
+      () => Object.freeze({
+        version: __POCKET_BRIDGE_VERSION__,
+        features: Object.freeze([
+          'device.identity', 'device.sign', 'auth', 'preferences',
+          'care', 'voice', 'exports', 'shell', 'files.picker'
+        ])
+      })
+    ) });
+    Object.defineProperty(window, 'PocketAndroidShell', { configurable: true, value: Object.freeze({
+      info: () => request('shell_info', {}, 4000).then(({ host, encrypted }) => ({ host: String(host || ''), encrypted: Boolean(encrypted) })),
+      refresh: () => request('shell_refresh', {}, 15000),
+      checkUpdate: () => request('shell_update', {}, 120000),
+      openServer: () => request('shell_server', {}, 15000)
+    }) });
     Object.defineProperty(window, 'PocketAndroidExports', { configurable: true, value: Object.freeze({
       saveText(content, filename) {
         if (typeof content !== 'string' || content.length > 4 * 1024 * 1024 || typeof filename !== 'string') return false;

@@ -1,0 +1,183 @@
+/* ─────────────────────────────────────────────────────────────
+   DSH 外观对齐层（DeepSeek Harness, MIT）
+
+   依据实际渲染的 DSH Web 界面测量：
+   · 侧栏 280px，纯色 surface，右侧 1px 极淡分隔线
+   · 内容居中，会话区最大宽度 816px
+   · 不做卡片化：没有大面积圆角容器与投影，层次靠 0.5px 描边
+   · 助手消息不套气泡，直接铺排；用户消息浅底气泡右对齐
+   · 输入框 16px 大圆角、内嵌工具栏，发送键是圆形实心按钮
+   · 基准字号 14px，正文行高 1.7
+   ──────────────────────────────────────────────────────────── */
+
+:root{
+  --dsh-radius-sm:8px;
+  --dsh-radius-md:10px;
+  --dsh-radius-lg:16px;
+  --dsh-content:816px;
+}
+
+/* 浏览器默认的 body margin 没有在本项目里被重置：桌面端表现为整页留 8px 边，
+   窄屏下把可用宽度又啃掉 16px，且让整块内容看起来偏左。DSH 是全屏无边的。 */
+html,body{margin:0;padding:0;box-sizing:border-box}
+body{width:100%;overflow-x:hidden}
+
+/* 本项目没有全局 box-sizing 重置，这几个容器必须自己保证 border-box，
+   否则 padding 会加在宽度之外，把内容推出视口（移动端会看见右侧被裁）。 */
+.messages,.composer-area,.composer,.welcome,.notice,.suggestions,
+.topbar,.sidebar,.main-panel,.tool-log,.settings-dialog,.knowledge-dialog,.dialog{box-sizing:border-box}
+
+/* 整体骨架：平铺，不做悬浮卡片 */
+.app-shell{background:var(--surface);gap:0}
+.sidebar{width:280px;padding:14px 12px 0;background:var(--surface-low);border-right:1px solid var(--outline-variant)}
+.main-panel{margin:0;border:0;border-radius:0;background:var(--surface);box-shadow:none}
+
+/* 品牌区：贴近 DSH 的左对齐标识 */
+.brand{font-size:17px;font-weight:650;letter-spacing:-.2px;color:var(--on-surface);gap:9px;padding:4px 6px}
+.brand img{width:26px;height:26px;border-radius:7px}
+.brand-sub{font-size:11px;letter-spacing:0;color:var(--on-surface-variant);margin-top:2px}
+
+/* 新会话：全宽、1px 描边、居中，不用主色填充 */
+.new-chat{margin:14px 0 12px;background:var(--surface);border:1px solid var(--outline-variant);color:var(--on-surface);min-height:38px;justify-content:center;border-radius:var(--dsh-radius-md);font-size:13px;font-weight:500;box-shadow:none}
+.new-chat:hover{background:var(--surface-high)}
+.new-chat kbd{display:none}
+.new-chat>span{font-size:16px;font-weight:400}
+
+/* 分区标题与导航项 */
+.list-heading{font-size:12px;letter-spacing:0;color:var(--on-surface-variant);font-weight:500;padding:14px 8px 8px}
+.session-list{padding-bottom:16px}
+.session-item{min-height:34px;padding:7px 8px;border-radius:var(--dsh-radius-md);gap:9px;color:var(--on-surface);font-size:13px}
+.session-item:hover{background:var(--surface-high)}
+.session-item.active{background:var(--surface-high);color:var(--on-surface);font-weight:500}
+.session-item svg{width:15px;height:15px;opacity:.65}
+.session-text{font-size:13px}
+.session-role,.session-item .session-date{font-size:11px;color:var(--on-surface-variant);background:none;padding:0}
+.session-delete{width:26px;height:26px;font-size:14px}
+
+/* 顶栏：不再有独立的标题块，只留一条极淡分隔线 */
+.topbar{min-height:52px;padding:0 20px;background:var(--surface);border-bottom:1px solid var(--outline-variant)}
+.conversation-heading>span{font-size:14px;font-weight:600;letter-spacing:0}
+.conversation-heading small{font-size:11px;color:var(--on-surface-variant)}
+.icon-button{width:32px;height:32px;border-radius:var(--dsh-radius-sm);color:var(--on-surface-variant)}
+.icon-button:hover:not(:disabled){background:var(--surface-high);color:var(--on-surface)}
+
+/* 会话区：居中定宽，与 DSH 的阅读列一致 */
+.messages{max-width:var(--dsh-content);margin:0 auto;padding:32px 24px 24px;gap:0}
+.message{gap:0;margin-bottom:26px}
+
+/* 助手与用户都不再戴头像；层次靠排版，不靠装饰 */
+.message-avatar{display:none}
+.message-content{max-width:100%;min-width:0}
+.message-role{font-size:11px;color:var(--on-surface-variant);margin-bottom:6px}
+
+/* 助手消息：无气泡，直接铺排 */
+.message.assistant .reply-bubble,
+.message.assistant .message-content{background:transparent;border:0;box-shadow:none;padding:0;border-radius:0}
+.message-body{font-size:15px;line-height:1.75;color:var(--on-surface)}
+
+/* 用户消息：浅底气泡，右对齐，16px 圆角 */
+.message.user{justify-content:flex-end}
+.message.user .message-content,.message.user .reply-bubble{
+  background:var(--surface-container);
+  border-radius:var(--dsh-radius-lg);
+  padding:9px 14px;
+  max-width:min(560px,82%);
+  margin-left:auto;
+  box-shadow:none;
+  border:0;
+}
+.message.user .message-body{font-size:15px;line-height:1.65}
+.message.user .message-role{display:none}
+
+/* 工具日志：DSH 用极淡的内嵌块，不做强调卡 */
+.tool-log{border-radius:var(--dsh-radius-md);background:var(--surface-container);box-shadow:none;border:1px solid var(--outline-variant);margin-top:8px}
+.tool-log summary{font-size:12px;color:var(--on-surface-variant);padding:7px 10px}
+
+/* 输入区：16px 大圆角，工具栏内嵌 */
+.composer-area{padding:0 24px 18px}
+.composer{
+  max-width:var(--dsh-content);
+  margin:0 auto;
+  border-radius:var(--dsh-radius-lg);
+  background:var(--surface-container);
+  border:1px solid var(--outline-variant);
+  box-shadow:none;
+  padding:11px 13px 9px;
+}
+.composer:focus-within{border-color:var(--outline);box-shadow:none}
+.composer textarea,.composer input{font-size:14px;line-height:1.6;background:transparent}
+.composer-hint{font-size:11px;color:var(--on-surface-variant);text-align:center;padding-top:6px}
+
+/* 发送键：圆形实心，禁用时降为浅色 */
+.send-button{width:34px;height:34px;min-height:34px;border-radius:50%;background:var(--primary);color:var(--on-primary);box-shadow:none}
+.send-button:hover:not(:disabled){background:var(--primary);opacity:.9}
+.send-button:disabled{background:var(--surface-high);color:var(--on-surface-variant)}
+.stop-button{border-radius:var(--dsh-radius-md);font-size:12px;min-height:34px}
+.primary-button{border-radius:var(--dsh-radius-md);font-size:13px;min-height:36px;box-shadow:none}
+.secondary-button{border-radius:var(--dsh-radius-md);font-size:13px;border:1px solid var(--outline-variant);background:var(--surface)}
+
+/* 欢迎页：居中标题 + 一行说明，不堆卡片阴影 */
+.welcome{gap:10px}
+.welcome h1{font-size:26px;font-weight:650;letter-spacing:-.4px;color:var(--on-surface)}
+.welcome>p{font-size:14px;line-height:1.8;color:var(--on-surface-variant)}
+.welcome-icon img{width:44px;height:44px;border-radius:10px}
+.suggestion{border-radius:var(--dsh-radius-md);border:1px solid var(--outline-variant);box-shadow:none;padding:14px 15px;background:transparent}
+.suggestion:hover{background:var(--surface-high);transform:none}
+.suggestion strong{font-size:13px}
+.suggestion small{font-size:11.5px;line-height:1.6}
+
+/* 对话框与浮层：统一 16px 圆角与细描边 */
+.settings-dialog,.knowledge-dialog,.dialog{border-radius:var(--dsh-radius-lg);border:1px solid var(--outline-variant);box-shadow:var(--shadow);padding:22px}
+.settings-dialog h2,.knowledge-dialog h2{font-size:17px;letter-spacing:-.2px}
+.dialog-description{font-size:12.5px;line-height:1.8}
+.eyebrow,.dialog-heading .eyebrow{font-size:11px;letter-spacing:.4px;color:var(--on-surface-variant)}
+
+/* 侧栏底部提示与状态 */
+.sidebar-note{font-size:11px;line-height:1.7;color:var(--on-surface-variant);border-top:1px solid var(--outline-variant);margin-top:auto}
+.sidebar-footer{border-top:1px solid var(--outline-variant)}
+.offline-banner,.notice{border-radius:var(--dsh-radius-md);font-size:12px}
+
+/* 移动端：DSH 的 816px 阅读列只在宽屏有意义，窄屏要贴着视口走。
+   这里同时把侧栏宽度交还给抽屉规则，避免固定 280px 盖掉 min(300px,86vw)。 */
+@media(max-width:760px){
+  .sidebar{width:min(300px,86vw);padding:max(20px,env(safe-area-inset-top)) 12px 0}
+  .messages{max-width:none;padding:20px 16px 12px}
+  .composer-area{padding:0 12px max(12px,env(safe-area-inset-bottom))}
+  .composer{max-width:none;padding:11px 12px 9px;border-radius:14px}
+  .welcome{max-width:none;padding:30px 16px 18px}
+  .topbar{padding:0 14px;min-height:56px}
+  .suggestion{padding:13px 14px}
+  .message.user .reply-bubble,.message.user .message-content{max-width:88%}
+  /* 窄屏上「删除这轮记录」会和气泡抢宽度，让它掉到气泡下方。 */
+  .message.user{flex-wrap:wrap;row-gap:2px}
+  .message.user .delete-turn{order:2;margin-left:auto;font-size:10px;padding:2px 6px}
+  .message.user .message-content{order:1}
+}
+
+/* Shell controls that used to sit in a native Android title bar. They render at
+   the bottom of the sidebar, above the footer, and only exist inside the app. */
+.shell-status{display:flex;flex-direction:column;gap:8px;padding:12px 10px;margin-bottom:8px;border-radius:10px;background:var(--surface-container)}
+.shell-status[hidden]{display:none}
+.shell-host{font-size:11px;line-height:1.5;color:var(--on-surface-variant);overflow-wrap:anywhere}
+.shell-actions{display:flex;gap:6px}
+.shell-action{flex:1;min-height:30px;padding:0 6px;border:1px solid var(--outline-variant);border-radius:8px;background:var(--surface);color:var(--on-surface-variant);font:inherit;font-size:11px;cursor:pointer}
+.shell-action:hover:not(:disabled){background:var(--surface-high);color:var(--on-surface)}
+.shell-action:disabled{opacity:.5;cursor:default}
+
+/* A generated picture is the point of the turn, so it gets room; the JSON receipt
+   underneath is noise once the image is shown. */
+.message.assistant .message-attachments{margin:2px 0 10px}
+.message-images{display:flex;flex-wrap:wrap;gap:10px}
+.message-image{min-height:0;padding:0;border:1px solid var(--outline-variant);border-radius:12px;background:var(--surface-container);overflow:hidden}
+.message-image img{display:block;max-width:min(100%,420px);height:auto;border-radius:12px}
+.tool-log.has-image{opacity:.6}
+.tool-log.has-image summary{font-size:11px}
+
+/* A refused call may offer one human confirmation. It is a host-issued ticket for
+   that exact call, not a model decision, so it reads as a plain action rather
+   than a warning the assistant is asking you to accept. */
+.tool-approval{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:0 12px 10px}
+.tool-approval-button{min-height:32px;padding:0 14px;border:1px solid var(--outline-variant);border-radius:9px;background:var(--surface);color:var(--on-surface);font:inherit;font-size:12px;cursor:pointer}
+.tool-approval-button:hover:not(:disabled){border-color:var(--primary);color:var(--primary)}
+.tool-approval-button:disabled{cursor:default;opacity:.7}
+.tool-approval-hint{font-size:11px;line-height:1.6;color:var(--on-surface-variant)}

@@ -19,7 +19,6 @@ import android.os.Message
 import android.provider.Settings
 import android.speech.RecognizerIntent
 import android.text.InputType
-import android.text.TextUtils
 import android.util.Base64
 import android.view.Gravity
 import android.view.View
@@ -63,7 +62,6 @@ class MainActivity : Activity() {
     private lateinit var web: WebView
     private lateinit var content: FrameLayout
     private lateinit var root: LinearLayout
-    private lateinit var title: TextView
     private lateinit var progress: ProgressBar
     private lateinit var errorPanel: LinearLayout
     private lateinit var errorText: TextView
@@ -134,14 +132,9 @@ class MainActivity : Activity() {
     }
     private fun buildLayout() {
         root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(paper) }
-        val bar = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(16), dp(8), dp(8), dp(8)); setBackgroundColor(paper) }
-        title = TextView(this).apply { text = "chat-agent"; textSize = 14f; setTextColor(primary); maxLines = 1; ellipsize = TextUtils.TruncateAt.MIDDLE }
-        bar.addView(title, LinearLayout.LayoutParams(0, dp(48), 1f).apply { gravity = Gravity.CENTER_VERTICAL; rightMargin = dp(8) })
-        title.gravity = Gravity.CENTER_VERTICAL
-        bar.addView(button("刷新") { loadServer() }, LinearLayout.LayoutParams(dp(64), dp(48)).apply { marginEnd = dp(6) })
-        bar.addView(button("更新") { checkUpdates(true) }, LinearLayout.LayoutParams(dp(64), dp(48)).apply { marginEnd = dp(6) })
-        bar.addView(button("服务器") { configureServer(false) }, LinearLayout.LayoutParams(dp(76), dp(48)))
-        root.addView(bar)
+        // No native title bar: refresh / update / server address live in the web
+        // sidebar and reach the shell through the shell_* bridge messages, so the
+        // page owns the whole screen. Errors still surface through errorPanel.
         progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { max = 100; visibility = View.GONE; progressTintList = ColorStateList.valueOf(primary) }
         root.addView(progress, LinearLayout.LayoutParams(-1, dp(2)))
         content = FrameLayout(this)
@@ -224,7 +217,13 @@ class MainActivity : Activity() {
         }
         web.webChromeClient = object : WebChromeClient() {
             override fun onShowFileChooser(view: WebView, callback: ValueCallback<Array<Uri>>, parameters: FileChooserParams): Boolean {
-                if (!activityVisible || server?.contains(view.url) != true) { callback.onReceiveValue(null); return true }
+                if (!activityVisible || server?.contains(view.url) != true) {
+                    // Answering null without a word is what makes "the + button does
+                    // nothing" impossible to diagnose. Say which check failed.
+                    callback.onReceiveValue(null)
+                    toast(if (!activityVisible) "窗口刚恢复，请再点一次添加图片。" else "页面尚未就绪，请稍后再试。")
+                    return true
+                }
                 imageSelection?.callback?.onReceiveValue(null)
                 imageSelection = ImageSelection(callback, exportMarker, configuredServer?.origin ?: "")
                 val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
@@ -306,7 +305,6 @@ class MainActivity : Activity() {
                 }
                 server = ServerAddress.parse(gateway!!.origin, true)
             } else server = address
-            title.text = (if(address.encryptedTCP) "加密 · " else "") + address.host
             pageFailed = false; errorPanel.visibility = View.GONE; web.visibility = View.VISIBLE
             web.loadUrl(server!!.origin + "/")
         } catch (_: Exception) { showError("无法启动本地加密连接。\n请检查服务器配置并重试。") }
@@ -386,6 +384,34 @@ class MainActivity : Activity() {
                                     runCatching { port.postMessage(WebMessage(reply.toString())) }
                                 }
                             }
+                        }
+                        return
+                    }
+                    if (type.startsWith("shell_")) {
+                        // The web sidebar drives the few shell-level actions that used
+                        // to sit in a native title bar. Each reply is posted on the UI
+                        // thread because the port belongs to the WebView.
+                        val reply = JSONObject().put("id", payload.optString("id")).put("ok", true)
+                        val address = configuredServer
+                        when (type) {
+                            "shell_info" -> {
+                                reply.put("host", address?.host ?: "")
+                                reply.put("encrypted", address?.encryptedTCP ?: false)
+                                port.postMessage(WebMessage(reply.toString()))
+                            }
+                            "shell_refresh" -> {
+                                port.postMessage(WebMessage(reply.toString()))
+                                loadServer()
+                            }
+                            "shell_update" -> {
+                                port.postMessage(WebMessage(reply.toString()))
+                                checkUpdates(true)
+                            }
+                            "shell_server" -> {
+                                port.postMessage(WebMessage(reply.toString()))
+                                configureServer(false)
+                            }
+                            else -> port.postMessage(WebMessage(JSONObject().put("id", payload.optString("id")).put("ok", false).toString()))
                         }
                         return
                     }
@@ -475,10 +501,29 @@ class MainActivity : Activity() {
                 } catch (_: Exception) { toast("导出请求无效。"); pendingExport = null }
             }
         }, Handler(Looper.getMainLooper()))
-        val script = assets.open("export-bridge.js").bufferedReader().use { it.readText() }.replace("__POCKET_MARKER__", JSONObject.quote(marker))
+        val script = assets.open("export-bridge.js").bufferedReader().use { it.readText() }.replace("__POCKET_MARKER__", JSONObject.quote(marker)).replace("__POCKET_BRIDGE_VERSION__", BuildConfig.VERSION_CODE.toString())
         web.evaluateJavascript(script) {
             if (exportMarker == marker && address.contains(web.url)) web.postWebMessage(WebMessage(marker, arrayOf(ports[1])), Uri.parse(address.origin))
             else ports[1].close()
+        }
+    }
+
+    // isSupportedImage accepts what a system picker actually returns. Content
+    // providers are inconsistent: many report a precise MIME type, some report
+    // image/*, and a few report nothing at all. Rejecting the last two would refuse
+    // perfectly good photos, so fall back to the file extension.
+    private fun isSupportedImage(uri: Uri): Boolean {
+        if (uri.scheme != "content") return false
+        val declared = runCatching { contentResolver.getType(uri)?.lowercase() }.getOrNull()
+        when {
+            declared == "image/jpeg" || declared == "image/png" -> return true
+            declared == null || declared == "image/*" || declared == "image" -> {
+                // lastPathSegment is what the provider exposes without an extra
+                // query: usually the display name, sometimes a numeric document id.
+                val name = (uri.lastPathSegment ?: "").lowercase()
+                return name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png")
+            }
+            else -> return false
         }
     }
 
@@ -493,9 +538,20 @@ class MainActivity : Activity() {
                 val clips = data?.clipData
                 if (clips != null) (0 until minOf(clips.itemCount, 4)).map { clips.getItemAt(it).uri } else listOfNotNull(data?.data)
             } else emptyList()
-            val allowed = uris.size in 1..3 && uris.all { uri -> uri.scheme == "content" && runCatching { contentResolver.getType(uri)?.lowercase() in listOf("image/jpeg", "image/png") }.getOrDefault(false) }
+            val withinLimit = uris.size in 1..3
+            val allImages = uris.all { isSupportedImage(it) }
+            val allowed = withinLimit && allImages
             if (allowed) { selectedImageUris.clear(); imageContentOrigin = server?.origin ?: ""; selectedImageUris.addAll(uris.map { it.toString() }) }
-            else if (uris.isNotEmpty()) toast("每次最多选择三张 JPEG 或 PNG 图片。")
+            else if (resultCode == RESULT_OK && !binding) {
+                // The page reloaded while the picker was open (a service-worker
+                // update can do it). The selection is still valid to the person who
+                // made it, so say what happened instead of dropping it silently.
+                toast("页面刚刚更新过，请重新点击添加图片。")
+            }
+            // Separate the two failures: "too many" and "wrong file type" are
+            // different mistakes, and one message for both misleads the user.
+            else if (!withinLimit && uris.isNotEmpty()) toast("一次最多三张图片。")
+            else if (!allImages) toast("只支持 JPEG 或 PNG 图片。")
             pending.callback.onReceiveValue(if (allowed) uris.toTypedArray() else null)
             return
         }
