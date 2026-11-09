@@ -1,6 +1,6 @@
 # 单机部署（SSH 隧道）
 
-当前发布（2026-11-08）：服务端 **0.26.0** 为 `20261108-followup-04`；Android 为 **0.26.0-debug / versionCode 21**（`android-20261108-01`）。主动陪伴同会话接续、两阶段投递与通知回跳已上线；一致性备份 `pre-followup-20261108-04.tar.gz`、版本/鉴权/历史/队列/APK/监听均通过零模型检查。OneBot 仍默认关闭。见[发布记录](../docs/release-0.26.md)。
+当前发布（2026-11-09，版本线重置后）：服务端 **0.4.0** 为 `20261109-unified-01`；Android 为 **0.4.0-debug / versionCode 7**（`android-20261109-19`）。设备 challenge 自动连接、统一助手、服务器模型配置、受限工作区 shell、文件回传和仿生分段已上线；一致性备份为 `pre-unified-20261109-01.tar.gz`。见[发布记录](../docs/release-0.4.md)。
 
 历史发布（2026-11-08）：服务端 **0.25.0** 为 `20261108-channel-02`；Android 为 **0.21.2-debug / versionCode 20**（`android-20261106-02`）。OneBot v11 owner 私聊 P0–P2 已部署但默认关闭；一致性备份 `pre-channel-20261108-01.tar.gz`、版本/鉴权/历史/关闭态 webhook 和监听均通过零模型检查。见[发布记录](../docs/release-0.25.md)。
 
@@ -129,7 +129,7 @@ go build -trimpath -buildvcs=false -ldflags '-s -w' -o bin/chat-agent-linux-amd6
 
 ## 验证与剩余范围
 
-当前 Agent 版本 `20261108-followup-04`（0.26.0），Linux SHA-256：`030760d41981aec036faf302259c5e32c28f4c37e50747eeeaa3d1e9397ba5ea`。runtime v2/turns v3 不变，但 life 写入版本升至 v4、topics 升至 v2；最终切换前备份为 `/opt/chat-agent/backups/pre-followup-20261108-04.tar.gz`（SHA-256 `144524cefca381655778397d2eabff4bb93035e95ee73c556396c27ed46c2b5e`）。若需回到 0.25，须恢复更早的 `pre-followup-20261108-01.tar.gz`（SHA-256 `a2b56c492df0d57fa92613384ac2d7fa0394665cc0228686ad138a78d87444a8`），不能只切旧二进制。
+当前 Agent 版本 `20261109-unified-01`（0.4.0），Linux SHA-256：`c0ab716b25651ac906582a41214eee9b7282ff7a62417d7c556922738c5e64ca`。本版不迁移已有 runtime/turns/life/topics 格式；新增模型配置写入独立的 `model-configs/state.json`。切换前备份为 `/opt/chat-agent/backups/pre-unified-20261109-01.tar.gz`（SHA-256 `887fff14613e6e10022d2e3f0c347c99af50eefa804c8646434577a99944c891`）。
 
 本次零模型部署检查覆盖健康、鉴权、版本、调度与搜索开关、历史和 turns 投影、OneBot 关闭态、Android 清单/下载、9991/9992/9993 监听。最终有 2 个会话、38 条消息和 19 轮记录可读，active/running/queued/paused/unavailable 均为 0；`onebot_enabled=false`，未鉴权 API 为 401，关闭态 webhook 为 404。没有向真实模型或 QQ 发送请求。详见[0.26 发布记录](../docs/release-0.26.md)。
 
@@ -147,7 +147,7 @@ go build -trimpath -buildvcs=false -ldflags '-s -w' -o bin/chat-agent-linux-amd6
 
 ## Android 包发布
 
-当前服务版本 `20261108-followup-04`，Android 包为 `0.26.0-debug`（versionCode 21，发布目录 `android-20261108-01`），支持自动登录、通知回到目标会话与应用内更新。APK SHA-256 为 `6b0632b33498a2cf55603dbcdc3deb189256775e886699a86bc7be0e53ef664a`。发布使用 `deploy/publish-android.ps1`，详情见[自动登录与 Android 更新说明](../docs/android-updates.md)。服务端 `CHAT_ANDROID_RELEASE_DIR=/opt/chat-agent/android/current` 已配置；后续发布只切换安装包目录，无需重启服务。
+当前服务版本 `20261109-unified-01`，Android 包为 `0.4.0-debug`（versionCode 7，发布目录 `android-20261109-19`），包名为 `dev.chatagent.ai.debug`。APK SHA-256 为 `335498e562cb9b85fd0a4b446bce0e53433afa4234ca1abdd02510ec7c1e04e9`。发布使用 `deploy/publish-android.ps1`，详情见[自动登录与 Android 更新说明](../docs/android-updates.md)。服务端 `CHAT_ANDROID_RELEASE_DIR=/opt/chat-agent/android/current` 已配置；后续发布只切换安装包目录，无需重启服务。
 
 语音朗读在同一服务环境文件中显式设置 `CHAT_TTS_MODEL=ecnu-tts` 和 `CHAT_TTS_VOICE=xiayu`，复用服务端网关密钥；聊天模型仍为 `ecnu-max`。取消配置并重启即可关闭，不增加端口、后台推送服务或持久化音频。
 

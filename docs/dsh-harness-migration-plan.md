@@ -15,7 +15,7 @@
 | 阶段 3C：恢复迁移 | 已实现 | 旧格式显式转换、API 规范状态、删除登记/新代重写、停机修复和兼容导出通过最小故障注入 |
 | 受限 host followup | 0.26 已实现 | 复用 Prompt/PrepareStep/Provider/RunRecorder，已有会话内一次响应且不暴露工具；可信触发不持久化为用户消息 |
 
-Harness 3B/3C 的生产基线仍由 0.24 建立；最新服务端为 **0.26.0**（`20261108-followup-04`），Android 为 **0.26.0-debug / versionCode 21**（`android-20261108-01`），见[0.26 发布说明](release-0.26.md)。0.26 不另建 Agent Loop：主动触发只增加受限 followup 入口，runtime v2、turns v3 和普通聊天工具循环保持不变。
+Harness 3B/3C 的生产基线仍由旧版本线的 0.24 建立；版本线重置后的最新服务端为 **0.4.0**（`20261109-unified-01`），Android 为 **0.4.0-debug / versionCode 7**（`android-20261109-19`），见[0.4 发布说明](release-0.4.md)。0.4.0 没有另建 Agent Loop：模型路由、受限工作区与文件回传仍由现有 Go Harness 统一准入、授权和结算。
 
 实现细节见 [阶段 1–2 实施说明](harness-phases-1-2.md)。总体产品方向见 [功能规划](feature-plan.md)。
 

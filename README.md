@@ -1,6 +1,6 @@
 # chat-agent
 
-当前源码版本为 **0.4.0**；Android 更新包为 **0.4.0-debug（versionCode 7）**，沿用重置后的新包名 `dev.chatagent.ai.debug`。本版统一为单一助手入口，增加设备指纹 challenge 自动连接、服务器模型/API Key 管理、受限工作区 shell 与内容绑定文件下载，并吸收 DSH、Aurabot 的可复用契约和对话节奏设计。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
+当前发布为 **0.4.0**（`20261109-unified-01`）；Android 更新包为 **0.4.0-debug（versionCode 7）**（`android-20261109-19`），沿用重置后的新包名 `dev.chatagent.ai.debug`。本版统一为单一助手入口，增加设备指纹 challenge 自动连接、服务器模型/API Key 管理、受限工作区 shell 与内容绑定文件下载，并吸收 DSH、Aurabot 的可复用契约和对话节奏设计。[发布记录](docs/release-0.4.md)。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
 
 0.24.0 以 format index + manifest 选择唯一 runtime 代，聊天/队列规范状态与 attempt/model/tool 运行事实处于同一代。旧 transcript v1/v2、turns v1/v2/v3 只由停机维护命令显式迁移；最新轮/整会话删除先登记再重写或清理，旧代和模型快照不会被读取器自动复活。生产配置仍使用 `ecnu-max`，本地搜索、设备白名单和加密 9992 入口保持不变。
 
