@@ -22,20 +22,39 @@ import (
 const ID = "builtin.server"
 const Permission = "filesystem:diagnostics://host"
 
-type Plugin struct{}
+// New builds the diagnostics plugin for an explicit set of units.
+//
+// The unit list is the allow-list: the tool cannot name a unit that is not in
+// it, so the capability stays "look at these services" rather than "query
+// systemd". An empty list means the service tool is not registered at all.
+func New(units []string) pluginapi.Plugin {
+	clean := make([]string, 0, len(units))
+	for _, unit := range units {
+		if name, ok := normalizeUnit(unit); ok {
+			clean = append(clean, name)
+		}
+	}
+	slices.Sort(clean)
+	return Plugin{units: slices.Compact(clean)}
+}
 
-func New() pluginapi.Plugin { return Plugin{} }
+// Plugin carries the unit allow-list.
+type Plugin struct{ units []string }
 
-func (Plugin) Manifest() pluginapi.Manifest {
+func (p Plugin) Manifest() pluginapi.Manifest {
+	tools := []string{"server_status", "server_releases", "server_logs"}
+	if len(p.units) > 0 {
+		tools = append(tools, "server_service")
+	}
 	return pluginapi.Manifest{
 		APIVersion: pluginapi.APIVersion, Kind: pluginapi.Kind,
-		Metadata: pluginapi.Metadata{ID: ID, Name: "服务器只读巡检", Version: "0.1.0"},
+		Metadata: pluginapi.Metadata{ID: ID, Name: "服务器只读巡检", Version: "0.2.0"},
 		Spec: pluginapi.Spec{Runtime: pluginapi.RuntimeBuiltin, Capabilities: []string{"diagnostics.host"},
 			Permissions: pluginapi.Permissions{Filesystem: []string{"diagnostics://host"}},
-			Tools:       []string{"server_status", "server_releases", "server_logs"}},
+			Tools:       tools},
 	}
 }
-func (Plugin) Start(_ context.Context, host pluginapi.Host) error {
+func (p Plugin) Start(_ context.Context, host pluginapi.Host) error {
 	if !host.Allowed(Permission) {
 		return errors.New("server diagnostics permission denied")
 	}
@@ -43,15 +62,28 @@ func (Plugin) Start(_ context.Context, host pluginapi.Host) error {
 }
 func (Plugin) Stop(context.Context) error { return nil }
 
-func (Plugin) Register(registry *pluginapi.Registry) error {
+func (p Plugin) Register(registry *pluginapi.Registry) error {
 	tools := []pluginapi.Tool{
 		{Name: "server_status", Description: "Read Linux load, memory, disk usage, listening TCP/UDP ports and CA service status.", Handler: status},
 		{Name: "server_releases", Description: "Read active CA and Android release names and list available backup filenames.", Handler: releases},
 		{Name: "server_logs", Description: "Read recent CA and search service journal timestamps and priorities. Message bodies are omitted.", Handler: logs},
 	}
+	if len(p.units) > 0 {
+		enum, _ := json.Marshal(p.units)
+		schema := `{"type":"object","properties":{"unit":{"type":"string","enum":` + string(enum) + `}},"required":["unit"],"additionalProperties":false}`
+		tools = append(tools, pluginapi.Tool{
+			Name:        "server_service",
+			Description: "Read one allow-listed systemd unit in detail: active state, restarts, memory, start time, enabled state and the last exit result. Read-only; it cannot start, stop or restart anything.",
+			Usage:       "use when a service looks unhealthy or the user asks whether something restarted or failed.",
+			Parameters:  json.RawMessage(schema),
+			Handler:     p.service,
+		})
+	}
 	for i, tool := range tools {
 		tool.Capability, tool.Order, tool.Timeout = "diagnostics.host", 730+i, 8*time.Second
-		tool.Parameters = json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`)
+		if tool.Parameters == nil {
+			tool.Parameters = json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`)
+		}
 		if err := registry.Tool(tool); err != nil {
 			return err
 		}

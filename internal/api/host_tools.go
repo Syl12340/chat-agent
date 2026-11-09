@@ -14,6 +14,9 @@ type HostToolsConfig struct {
 	Sessions         []string
 	WorkspaceRoot    string
 	WorkspaceActions string
+	// ServiceUnits is the allow-list of systemd units the diagnostics plugin may
+	// inspect. Empty leaves the per-unit tool unregistered.
+	ServiceUnits []string
 }
 
 func (c Config) hostPlugins() ([]pluginapi.Plugin, error) {
@@ -34,7 +37,9 @@ func (c Config) hostPlugins() ([]pluginapi.Plugin, error) {
 		plugins = append(plugins, p)
 	}
 	if c.Plugins.Grant(serverdiag.ID, serverdiag.Permission) {
-		plugins = append(plugins, serverdiag.New())
+		if p := serverdiag.New(c.HostTools.ServiceUnits); p != nil {
+			plugins = append(plugins, p)
+		}
 	}
 	return plugins, nil
 }
