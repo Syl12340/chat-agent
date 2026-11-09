@@ -32,6 +32,9 @@
 
 - 构建 APK 用环境变量传版本号（`ORG_GRADLE_PROJECT_chatVersionCode` / `..._chatVersionName`），
   `-P` 形式在当前 Gradle 版本会被当成任务名而失败。
+- **平台文件只在目标平台上参与编译**：`//go:build linux` 的文件在 Windows 上被 `go build ./...`、
+  `go vet ./...`、`go test ./...` 直接跳过。改过这些文件后必须再跑一次
+  `GOOS=linux GOARCH=amd64 go build ./...` 与 `go vet ./...`，否则检查是假的。
 - 两端版本号要对得上，并在汇报里给出两个版本标识与校验和。
 - 部署前先跑 `go build ./...`、`go vet ./...` 和受影响包的测试；全绿才推。
 - 每次部署前做数据备份，汇报中给出回退命令。

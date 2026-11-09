@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -101,13 +103,23 @@ func releases(ctx context.Context, _ json.RawMessage) (pluginapi.Result, error) 
 	report := map[string]any{"server": releaseName("/opt/chat-agent/current"), "android": releaseName("/opt/chat-agent/android/current")}
 	dir, err := os.Open("/opt/chat-agent/backups")
 	if err != nil {
+		// Say which failure this is. "unavailable" alone reads as "there are no
+		// backups", which is a different and alarming claim than "this account
+		// may not list them".
 		report["backup_inventory"] = unavailable
+		if errors.Is(err, fs.ErrPermission) {
+			report["backup_reason"] = "the service account cannot list the backup directory"
+		} else {
+			report["backup_reason"] = "the backup directory could not be opened"
+		}
 		return encoded(report)
 	}
 	defer dir.Close()
 	entries, err := dir.ReadDir(64)
 	if err != nil && !errors.Is(err, io.EOF) {
-		return pluginapi.Result{}, errors.New("backup inventory unavailable")
+		report["backup_inventory"] = unavailable
+		report["backup_reason"] = "the backup directory could not be read"
+		return encoded(report)
 	}
 	names := []string{}
 	for _, entry := range entries {
@@ -118,7 +130,20 @@ func releases(ctx context.Context, _ json.RawMessage) (pluginapi.Result, error) 
 	if err := ctx.Err(); err != nil {
 		return pluginapi.Result{}, err
 	}
+	// A full listing is dozens of names. Handing all of them to the model both
+	// crowds out the answer and slows the turn until it times out, so report the
+	// count and the newest few, which is what a restore decision actually needs.
+	const shown = 8
+	total := len(names)
+	slices.Sort(names)
+	if total > shown {
+		names = names[total-shown:]
+	}
 	report["backup_inventory"] = names
+	report["backup_total"] = total
+	if total > shown {
+		report["backup_note"] = "only the newest entries are listed; names sort by time"
+	}
 	return encoded(report)
 }
 
@@ -135,23 +160,33 @@ func logs(ctx context.Context, _ json.RawMessage) (pluginapi.Result, error) {
 		Unit     string `json:"_SYSTEMD_UNIT"`
 	}
 	rows := []row{}
-	malformed := 0
+	malformed, otherUnits := 0, 0
 	for _, line := range strings.Split(raw, "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
 		var r row
-		if json.Unmarshal([]byte(line), &r) == nil && r.Time != "" && (r.Unit == "chat-agent.service" || r.Unit == "chat-search.service") {
-			rows = append(rows, r)
+		if json.Unmarshal([]byte(line), &r) != nil || r.Time == "" {
+			// The read is capped, so the final line can be cut mid-object. Say how
+			// many were dropped instead of letting a short list look complete.
+			malformed++
 			continue
 		}
-		// The read is capped, so the final line can be cut mid-object. Say how many
-		// were dropped instead of letting a short list look complete.
-		malformed++
+		if r.Unit != "chat-agent.service" && r.Unit != "chat-search.service" {
+			// journalctl interleaves entries from related scopes even with -u.
+			// Filtering those out is the filter working, not data going missing,
+			// so counting them as unreadable would misreport every read.
+			otherUnits++
+			continue
+		}
+		rows = append(rows, r)
 	}
 	report := map[string]any{"entries": rows, "message_bodies": "omitted", "scope": "journals visible to service account"}
 	if malformed > 0 {
 		report["unreadable_lines"] = malformed
+	}
+	if otherUnits > 0 {
+		report["filtered_other_units"] = otherUnits
 	}
 	return encoded(report)
 }
