@@ -20,21 +20,24 @@ type ToolSchema struct {
 }
 
 type Tool struct {
-	Name        string                                                     `json:"name"`
-	Description string                                                     `json:"description"`
-	Parameters  json.RawMessage                                            `json:"parameters"`
-	Usage       string                                                     `json:"-"`
-	Order       int                                                        `json:"-"`
-	Timeout     time.Duration                                              `json:"-"`
-	Available   func(context.Context, StepContext) (bool, error)           `json:"-"`
-	Validate    func(json.RawMessage) error                                `json:"-"`
-	Guard       ToolGuard                                                  `json:"-"`
-	Receipt     ReceiptCapability                                          `json:"-"`
+	Name        string                                           `json:"name"`
+	Description string                                           `json:"description"`
+	Parameters  json.RawMessage                                  `json:"parameters"`
+	Usage       string                                           `json:"-"`
+	Prompt      string                                           `json:"-"`
+	Kind        string                                           `json:"-"`
+	Present     func(json.RawMessage) (title, summary string)    `json:"-"`
+	Order       int                                              `json:"-"`
+	Timeout     time.Duration                                    `json:"-"`
+	Available   func(context.Context, StepContext) (bool, error) `json:"-"`
+	Validate    func(json.RawMessage) error                      `json:"-"`
+	Guard       ToolGuard                                        `json:"-"`
+	Receipt     ReceiptCapability                                `json:"-"`
 	// Decision is the host's requirement, not a suggestion: the executor enforces
 	// it even when the model never asks. Empty means DecisionNever.
 	Decision DecisionRequirement `json:"-"`
 	// Risk describes the cost of a wrong or failed call. Metadata only.
-	Risk    RiskLevel                                                      `json:"-"`
+	Risk    RiskLevel                                                  `json:"-"`
 	Execute func(context.Context, json.RawMessage) (ToolResult, error) `json:"-"`
 }
 

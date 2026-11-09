@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"pocket-agent/internal/media"
+	"pocket-agent/internal/probe"
 	"pocket-agent/internal/storage"
 )
 
@@ -25,11 +26,15 @@ var ErrLimit = errors.New("turn queue or ledger limit reached")
 var ErrNotFound = errors.New("request not found")
 
 type ToolEvent struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Arguments string `json:"arguments,omitempty"`
-	Output    string `json:"output,omitempty"`
-	Error     string `json:"error,omitempty"`
+	ID        string                 `json:"id"`
+	Name      string                 `json:"name"`
+	Arguments string                 `json:"arguments,omitempty"`
+	Output    string                 `json:"output,omitempty"`
+	Error     string                 `json:"error,omitempty"`
+	View      *probe.ToolView        `json:"view,omitempty"`
+	Status    string                 `json:"status,omitempty"`
+	ElapsedMS *int64                 `json:"elapsed_ms,omitempty"`
+	Approval  *probe.ApprovalRequest `json:"approval,omitempty"`
 }
 type Turn struct {
 	ID               string        `json:"id"`
@@ -124,7 +129,7 @@ func decodeState(id string, b []byte) (*state, bool, error) {
 	if err := d.Decode(&st); err != nil {
 		return nil, false, err
 	}
-	if d.Decode(&extra) != io.EOF || (st.Version != 1 && st.Version != 2 && st.Version != 3) || st.SessionID != id || len(st.Items) > 2048 {
+	if d.Decode(&extra) != io.EOF || st.Version < 1 || st.Version > 4 || st.SessionID != id || len(st.Items) > 2048 {
 		return nil, false, errors.New("invalid turn ledger")
 	}
 	if st.Version == 1 {
@@ -147,6 +152,11 @@ func decodeState(id string, b []byte) (*state, bool, error) {
 		}
 		if !validOptions(t.Model, t.Thinking, t.Images) {
 			return nil, false, errors.New("invalid turn options")
+		}
+		for _, tool := range t.Tools {
+			if st.Version < 4 && (tool.View != nil || tool.Status != "" || tool.ElapsedMS != nil || tool.Approval != nil) {
+				return nil, false, errors.New("legacy ledger contains tool view fields")
+			}
 		}
 		seen[t.ID] = true
 		switch t.Status {
@@ -176,6 +186,22 @@ func NormalizeLegacy(id string, b []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	return json.Marshal(st)
+}
+
+// ExportV3 retains historical tool output and strips v4 display metadata.
+func ExportV3(id string, b []byte) ([]byte, error) {
+	st, _, err := decodeState(id, b)
+	if err != nil {
+		return nil, err
+	}
+	for i := range st.Items {
+		for j := range st.Items[i].Tools {
+			t := &st.Items[i].Tools[j]
+			t.View, t.ElapsedMS, t.Approval, t.Status = nil, nil, nil, ""
+		}
+	}
+	st.Version = 3
 	return json.Marshal(st)
 }
 
@@ -524,7 +550,13 @@ func (s *Store) ProgressWithReasoning(id, batch, text, reasoning string, tools [
 	}
 	next := clone(st)
 	if reasoning != "" || len(text) > 64<<10 {
-		next.Version = 3
+		next.Version = max(next.Version, 3)
+	}
+	for _, tool := range tools {
+		if tool.View != nil || tool.Status != "" || tool.ElapsedMS != nil || tool.Approval != nil {
+			next.Version = 4
+			break
+		}
 	}
 	for i := range next.Items {
 		r := &next.Items[i]
@@ -557,7 +589,13 @@ func (s *Store) FinishWithReasoning(id, batch, status, text, reasoning, message 
 	}
 	next := clone(st)
 	if reasoning != "" || len(text) > 64<<10 {
-		next.Version = 3
+		next.Version = max(next.Version, 3)
+	}
+	for _, tool := range tools {
+		if tool.View != nil || tool.Status != "" || tool.ElapsedMS != nil || tool.Approval != nil {
+			next.Version = 4
+			break
+		}
 	}
 	for i := range next.Items {
 		r := &next.Items[i]

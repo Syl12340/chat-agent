@@ -4,14 +4,15 @@ import { createCompanionUI } from '/companion.js';
 import { createRoleProposalsUI } from '/role-proposals.js';
 import { createTopicsUI } from '/topics.js';
 import { createLifeUI } from '/life.js';
-import { createTurnsUI } from '/turns.js';
+import { createTurnsUI, splitReply } from '/turns.js';
 import { createActivitiesUI } from '/activities.js';
 import { createNativeCare } from '/native-care.js';
 import { createVoiceUI } from '/voice.js';
 import { createDeviceAuth } from '/device-auth.js';
 import { createChatInput } from '/chat-input.js';
 import { createShellBridge } from '/shell-bridge.js';
-import { attachGeneratedImage } from '/generated-image.js';
+import { attachGeneratedImage, watchImageJob } from '/generated-image.js';
+import { describeTool, searchResults } from '/tool-view.js';
 import { createUIRenderer } from '/ui/render.js';
 import { createDesktopWorkspace } from '/desktop-workspace.js';
 import { createMarkdownRenderer } from '/markdown.js';
@@ -411,26 +412,30 @@ function card(role, text = '', key = '', images = [], context = null) {
     appendSegment(value,source) {
       this.text=[this.text,value].filter(Boolean).join('\n\n');
       copy.disabled=!this.text;
-      const bubble=document.createElement('div'); bubble.className='reply-bubble';
       const budget=richText.createBudget();
       let cached=null, ordinal=0;
       if(source.messageIndex>=0){
         const cacheKey=JSON.stringify([source.role,source.session,source.messageIndex]);
         cached=richMessages.get(cacheKey);
-        if(cached?.raw!==value){cached={raw:value,index:source.messageIndex,pieces:[]};richMessages.set(cacheKey,cached);}
+        if(!cached || cached.raw!==value || cached.segmented!==source.segmented){cached={raw:value,index:source.messageIndex,segmented:source.segmented,pieces:[]};richMessages.set(cacheKey,cached);}
         while(richMessages.size>96){
           const free=[...richMessages].find(([k,c])=>k!==cacheKey && !c.pieces.some(p=>p.node.contains(document.activeElement)));
           if(!free)break;richMessages.delete(free[0]);
         }
       }
-      bubble.append(interactiveUI.renderMessage(value,source,part=>{
+      const renderPart = part => {
         const slot=ordinal++, old=cached?.pieces[slot];
         if(old){budget.count+=old.count;budget.bytes+=old.bytes;return old.node;}
         const node=document.createElement('div');node.className='rich-text-segment';
         const before={...budget};node.append(richText.render(part,{budget}));
         if(cached)cached.pieces[slot]={node,count:budget.count-before.count,bytes:budget.bytes-before.bytes};
         return node;
-      })); body.append(bubble);
+      };
+      const pieces = source.segmented ? splitReply(value) : [value];
+      for (const piece of pieces) {
+        const bubble = document.createElement('div'); bubble.className = pieces.length > 1 ? 'reply-bubble reply-conversational' : 'reply-bubble';
+        bubble.append(interactiveUI.renderMessage(piece,source,renderPart)); body.append(bubble);
+      }
     },
     setText(value,source=context) {
       this.text=''; body.replaceChildren();
@@ -456,27 +461,6 @@ function renderUserContent(body,text) {
   label.textContent='查看原始答案'; source.textContent=text; details.append(label,source); body.append(summary,details);
 }
 
-const toolStarts = new Map();
-const toolHintKeys = ['query','url','title','content','name','action','id'];
-
-function toolHint(data) {
-  if (!data.arguments) return '';
-  let args;
-  try { args = JSON.parse(data.arguments); } catch { return ''; }
-  if (!args || typeof args !== 'object') return '';
-  for (const key of toolHintKeys) {
-    const value = args[key];
-    if (typeof value === 'string' && value.trim()) return `「${value.trim().slice(0, 60)}」`;
-  }
-  return '';
-}
-
-function elapsed(ms) {
-  const seconds = Math.round(ms / 1000);
-  if (seconds < 60) return `${Math.max(seconds, 1)} 秒`;
-  return `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
-}
-
 function toolLog(message, data, pending = false) {
   let log = message.tools.get(data.id);
   if (!log) {
@@ -484,30 +468,32 @@ function toolLog(message, data, pending = false) {
     const summary = document.createElement('summary'), output = document.createElement('pre'); details.append(summary, output); message.logs.append(details);
     log = { summary, output, node: details }; message.tools.set(data.id, log);
   }
-  const names = {shared_activity_update:'更新活动记录',shared_activity_open:'接续活动记录',companion_preferences_update:'保存交流偏好',episode_propose:'记录事件候选',skill_load:'读取相处指引',knowledge_manage:'整理记忆',care_preferences:'调整关怀安排',web_search:'联网搜索',web_fetch:'读取网页',memory_search:'查找记忆',memory_write:'记录候选'};
-  const label = names[data.name] || data.name || '工具';
-  const hint = toolHint(data);
-  let state;
-  if (pending) {
-    if (!toolStarts.has(data.id)) toolStarts.set(data.id, Date.now());
-    state = `正在执行 · ${elapsed(Date.now() - toolStarts.get(data.id))}`;
-  } else {
-    const started = toolStarts.get(data.id);
-    toolStarts.delete(data.id);
-    state = data.error ? '未完成' : '已完成';
-    if (started) state += ` · ${elapsed(Date.now() - started)}`;
-  }
-  log.node.classList.toggle('running', pending);
-  log.node.classList.toggle('failed', !pending && Boolean(data.error));
-  log.summary.textContent = `${label}${hint ? ' ' + hint : ''} · ${state}`;
-  log.output.textContent = pending ? '等待工具返回结果…' : data.error || data.output || '执行完成';
+  const view = describeTool(data, pending);
+  log.node.dataset.kind = data.view?.kind || 'other';
+  log.node.dataset.card = data.view?.card || 'generic';
+  log.node.classList.toggle('running', view.status === 'running');
+  log.node.classList.toggle('failed', view.status === 'unfinished');
+  log.summary.textContent = view.title;
+  log.output.textContent = view.detail;
+  log.results?.remove();
+  log.results = searchResults(data);
+  log.output.hidden = Boolean(log.results);
+  if (log.results) log.output.after(log.results);
   // A call that only lacked an assessment can be authorized by the person who is
   // actually here. The ticket is host-issued for this exact argument digest and
   // can be spent once; the model cannot mint one.
-  toolApproval(log, !pending && data.code === 'DECISION_NEEDS_APPROVAL' ? data.decision?.approval : null);
+  toolApproval(log, data.approval || (data.code === 'DECISION_NEEDS_APPROVAL' ? data.decision?.approval : null));
   // A drawing tool returns a JSON receipt, not a picture. Turn it into one so the
   // result is visible instead of being a wall of field names.
-  if (!pending) attachGeneratedImage(message, data, (host, id) => chatInput.renderInlineImage(host, id));
+  if (view.status === 'completed') {
+    const attach = result => attachGeneratedImage(message, result, (host, id) => chatInput.renderInlineImage(host, id));
+    attach(data);
+    const session = state.current;
+    watchImageJob(log, data, (id, cancel) => {
+      const path = '/api/sessions/' + encodeURIComponent(session) + '/image-jobs/' + encodeURIComponent(id);
+      return cancel ? json(path + '/cancel', {method:'POST'}) : json(path);
+    }, attach);
+  }
 }
 
 // toolApproval renders the single human confirmation a refused call may offer.
@@ -596,7 +582,12 @@ function renderHistory(messages, turns = [], hashes = new Map()) {
     if (root.status === 'running' && !remainder && committed && messages.slice(root.start_index,end).some(m => m.role === 'assistant' && !m.tool_calls?.length && m.content)) return;
     if (!current || currentStart < root.start_index) { current = card('assistant','',`${state.current}:turn:${root.id}`); currentStart = end; }
     if (remainder) current.setText([current.text,remainder].filter(Boolean).join('\n\n'));
-    for (const tool of root.tools || []) if (!calls.has(`${root.id}:${tool.id}`)) { toolLog(current,tool,!tool.output && !tool.error); calls.set(`${root.id}:${tool.id}`,{card:current,name:tool.name}); }
+    for (const tool of root.tools || []) if (!calls.has(`${root.id}:${tool.id}`)) {
+      const active = root.status === 'running';
+      const event = !active && tool.status === 'running' ? {...tool,status:'unfinished'} : tool;
+      toolLog(current,event,active && !tool.output && !tool.error);
+      calls.set(`${root.id}:${tool.id}`,{card:current,name:tool.name});
+    }
     current.node.classList.add(root.status === 'running' ? 'pending':'unfinished');
     current.status.textContent = root.status === 'running' ? (root.text ? '正在回复…':root.thinking && root.thinking!=='off' ? '正在思考或等待模型回应…':'正在等待模型回应…') : root.error || '这段回复未完成，没有自动重试。';
     current = null; currentStart = -1;
@@ -606,7 +597,8 @@ function renderHistory(messages, turns = [], hashes = new Map()) {
     const message = messages[index], root = owner(index), key = root ? `${state.current}:turn:${root.id}`:`${state.current}:message:${index}`;
     if (message.role === 'user') { legacyUser = index; card('user',message.content,userKeys.get(index) || `${state.current}:message:${index}`,message.images || []); current = null; currentStart = -1; }
     else if (message.role === 'assistant') {
-      const source={role:state.roleID,session:state.current,messageIndex:index,sha256:hashes.get(index) || '',eligible:Boolean(hashes.get(index) && root?.status==='completed' && index===root.end_index-1 && !message.tool_calls?.length),floor:uiFloor};
+      const final = !message.tool_calls?.length && (!root || root.status === 'completed' && index === root.end_index - 1);
+      const source={role:state.roleID,session:state.current,messageIndex:index,sha256:hashes.get(index) || '',eligible:Boolean(hashes.get(index) && root && final),floor:uiFloor,segmented:final};
       if (!current) { current = card('assistant',message.content,key,[],source); currentStart = index; }
       else if (message.content) current.appendSegment(message.content,source);
       if (!root && message.reasoning_content) showReasoning(current.node,message.reasoning_content,`${state.current}:reasoning:${index}`);
@@ -621,7 +613,10 @@ function renderHistory(messages, turns = [], hashes = new Map()) {
       }
     } else if (message.role === 'tool') {
       const call = calls.get(`${root?.id || `legacy-${legacyUser}`}:${message.tool_call_id}`);
-      if (call) toolLog(call.card,{id:message.tool_call_id,name:call.name,output:message.content,error:message.content.startsWith('Error: ') ? message.content.slice(7):''});
+      if (call) {
+        const event = root?.tools?.find(tool => tool.id === message.tool_call_id);
+        toolLog(call.card,event?.view ? event : {id:message.tool_call_id,name:call.name,output:message.content,error:message.content.startsWith('Error: ') ? message.content.slice(7):''});
+      }
     }
   }
   for (const root of roots) if (root.status === 'running' || ['failed','canceled','interrupted'].includes(root.status) && root.end_index >= messages.length) incomplete(root);

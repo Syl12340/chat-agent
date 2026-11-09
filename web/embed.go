@@ -5,7 +5,7 @@ import (
 	"net/http"
 )
 
-//go:embed index.html app.js theme.js tasks.js companion.js life.js turns.js activities.js native.js native-care.js voice.js device-auth.js role-proposals.js topics.js shell-bridge.js native-capabilities.js generated-image.js chat-input.js composer-preferences.js markdown.js math-render.js richtext.css dsh-look.css tokens.css vendor/katex/katex.mjs vendor/katex/LICENSE.txt chat-ui.css desktop-workspace.js desktop-workspace.css ui/*.js ui/ui.css style.css sw.js manifest.webmanifest icon-192.png icon-512.png apple-touch-icon.png
+//go:embed index.html app.js theme.js tasks.js companion.js life.js turns.js activities.js native.js native-care.js voice.js device-auth.js role-proposals.js topics.js shell-bridge.js native-capabilities.js generated-image.js tool-view.js chat-input.js composer-preferences.js markdown.js math-render.js richtext.css dsh-look.css tokens.css vendor/katex/katex.mjs vendor/katex/LICENSE.txt chat-ui.css desktop-workspace.js desktop-workspace.css ui/*.js ui/ui.css style.css sw.js manifest.webmanifest icon-192.png icon-512.png apple-touch-icon.png
 var assets embed.FS
 
 func Handler() http.Handler {
@@ -20,6 +20,7 @@ func Handler() http.Handler {
 	allowed["/shell-bridge.js"] = true
 	allowed["/native-capabilities.js"] = true
 	allowed["/generated-image.js"] = true
+	allowed["/tool-view.js"] = true
 	allowed["/chat-input.js"] = true
 	allowed["/chat-ui.css"] = true
 	for _, path := range []string{"/composer-preferences.js", "/markdown.js", "/math-render.js", "/richtext.css", "/vendor/katex/katex.mjs", "/vendor/katex/LICENSE.txt", "/ui/structures.js"} {

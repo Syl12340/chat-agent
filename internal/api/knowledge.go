@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	"pocket-agent/internal/companion"
-	"pocket-agent/internal/interactive"
 	"pocket-agent/internal/decision"
+	"pocket-agent/internal/interactive"
 	"pocket-agent/internal/memory"
 	"pocket-agent/internal/probe"
 )
@@ -437,9 +437,10 @@ func (s *Server) agentForTurn(sess *probe.Session, inputs []string, sessionID st
 		}},
 	)
 	c.Tools = append(c.Tools, s.taskTools(role.ID, sessionID)...)
-	c.Tools = append(c.Tools, s.pluginTools(s.toolCapabilities())...)
+	c.DisableBuiltinClock = true
+	c.Tools = append(c.Tools, s.pluginTools(s.toolCapabilities(), sessionID)...)
 	c.Tools = append(c.Tools, s.decisionTool()...)
-	c.Tools = append(c.Tools, s.imageTools(role.ID, sessionID)...)
+	c.Tools = append(c.Tools, s.imageTools(role.ID, sessionID, c.RequestID)...)
 	if strings.TrimSpace(strings.Join(inputs, "\n")) == "" || len(uiResponses) > 0 {
 		// Embedded image text is reference, never the user's authorization.
 		filtered := make([]probe.Tool, 0, len(c.Tools))

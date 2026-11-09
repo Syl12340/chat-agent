@@ -68,6 +68,11 @@ func (a *Agent) assemble(ctx context.Context, step StepContext) (PromptAssembly,
 	p.Add("role", 10, a.config.SystemPrompt)
 	p.Add("tool-policy", 60, systemToolPolicy(set))
 	p.Add("tool-guidance", 70, set.guidance())
+	for _, tool := range set.ordered {
+		if tool.definition.Prompt != "" {
+			p.Add("plugin-"+tool.definition.Name, 75, tool.definition.Prompt)
+		}
+	}
 	system, err := p.Render()
 	if err != nil {
 		return PromptAssembly{}, err

@@ -91,13 +91,13 @@ type remoteHealth struct {
 
 // ProfileSpec is the size envelope a profile accepts.
 type ProfileSpec struct {
-	Name         string `json:"name"`
-	Mode         string `json:"mode"`
-	Width        []int  `json:"width"`
-	Height       []int  `json:"height"`
-	Alignment    int    `json:"alignment"`
+	Name         string  `json:"name"`
+	Mode         string  `json:"mode"`
+	Width        []int   `json:"width"`
+	Height       []int   `json:"height"`
+	Alignment    int     `json:"alignment"`
 	MinFreeRAMGB float64 `json:"min_free_ram_gb"`
-	Ready        bool   `json:"ready"`
+	Ready        bool    `json:"ready"`
 }
 
 // NewRemote returns nil when no base URL is configured, matching New's contract:
@@ -291,14 +291,14 @@ func (r *Remote) Generate(ctx context.Context, req Request) (*Result, error) {
 		return nil, ErrUnavailable
 	}
 	payload := map[string]any{
-		"prompt":   req.Prompt,
-		"negative": req.Negative,
-		"profile":  req.Profile,
-		"width":    req.Width,
-		"height":   req.Height,
-		"steps":    req.Steps,
-		"seed":     req.Seed,
-		"cfg":      req.CFG,
+		"prompt":          req.Prompt,
+		"negative":        req.Negative,
+		"profile":         req.Profile,
+		"width":           req.Width,
+		"height":          req.Height,
+		"steps":           req.Steps,
+		"seed":            req.Seed,
+		"cfg":             req.CFG,
 		"min_free_ram_gb": req.MinFreeRAMGB,
 	}
 	body, err := json.Marshal(payload)
@@ -337,6 +337,10 @@ func (r *Remote) Generate(ctx context.Context, req Request) (*Result, error) {
 	if response.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("%w：桥返回 %d", ErrUnavailable, response.StatusCode)
 	}
+	return decodeRemoteImages(reply)
+}
+
+func decodeRemoteImages(reply remoteGeneration) (*Result, error) {
 	result := &Result{JobID: reply.JobID, Profile: reply.Profile, Seed: reply.Seed}
 	for _, image := range reply.Images {
 		data, err := base64.StdEncoding.DecodeString(image.Data)

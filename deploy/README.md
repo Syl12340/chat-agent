@@ -135,6 +135,16 @@ go build -trimpath -buildvcs=false -ldflags '-s -w' -o bin/chat-agent-linux-amd6
 
 尚未配置公网浏览器 HTTPS、自动备份、日志保留策略和生产速率限制；真实模型已完成一次最小工具循环验收，长期运行尚未验收。文件型存储需要一致性备份：安排短暂维护，正常停止服务后备份 `/var/lib/pocket-agent`，再启动服务；配置文件中的密钥应独立加密备份。不要直接将正在写入的数据当作已验证的可恢复备份。
 
+## 可选的工作区与主机巡检
+
+在主机本地配置 `POCKET_HOST_TOOL_SESSIONS` 为获准会话 ID，多个用逗号分隔。再按需要将 `builtin.workspace:filesystem:workspace://server` 或 `builtin.server:filesystem:diagnostics://host` 加入现有 `POCKET_PLUGIN_GRANTS`。停用任一插件可将对应 ID 加入 `POCKET_PLUGINS_DISABLED`。
+
+工作区指向 `POCKET_WORKSPACE_ROOT` 的独立目录。执行动作可选，由 `POCKET_WORKSPACE_ACTIONS` 的 JSON 对象定义。键是模型可选的动作名，值是宿主配置的完整 argv 数组。只把受信动作放入白名单。执行器在 Linux 上以 CA 服务账号运行，使用进程组取消和固定超时。它继承服务单元的访问权限，适用于受信任务。
+
+巡检读取负载、内存、磁盘、监听端口、固定服务状态、发布链接和备份文件名。日志工具只返回 CA 与搜索服务日志的时间、优先级与 unit。采集账号权限不足时会报告相应数据不可读。
+
+新工具视图随 turns v4 保存。回退旧服务时按发布记录恢复升级前备份，或停机通过兼容导出取得不含新卡片元数据的 turns v3。
+
 ## Android 包发布
 
 当前服务版本 `20261108-followup-04`，Android 包为 `0.26.0-debug`（versionCode 21，发布目录 `android-20261108-01`），支持自动登录、通知回到目标会话与应用内更新。APK SHA-256 为 `6b0632b33498a2cf55603dbcdc3deb189256775e886699a86bc7be0e53ef664a`。发布使用 `deploy/publish-android.ps1`，详情见[自动登录与 Android 更新说明](../docs/android-updates.md)。服务端 `POCKET_ANDROID_RELEASE_DIR=/opt/pocket-agent/android/current` 已配置；后续发布只切换安装包目录，无需重启服务。

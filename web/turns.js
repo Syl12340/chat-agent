@@ -1,20 +1,14 @@
 // Durable server turn queue. Reconnection only reads; it never re-submits or resumes.
 export function splitReply(text) {
-  if (!text || text.length > 1600 || /```|^\s*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|>\s)/m.test(text)) return [text];
+  // Keep block markup, references, and math in one render so parser context
+  // never changes when the same reply is copied or reopened.
+  if (!text || text.length > 600 || /[`$\\\[\]<>|~]|^(?:\t| {4}|\s*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|[-*_]{3,}\s*$))/m.test(text)) return [text];
   const paragraphs = text.split(/\n\s*\n/).map(part => part.trim()).filter(Boolean);
   if (paragraphs.length <= 1) return [text];
   if (paragraphs.length <= 3) return paragraphs;
   const groupSize = Math.ceil(paragraphs.length / 3), groups = [];
   for (let i=0;i<paragraphs.length;i+=groupSize) groups.push(paragraphs.slice(i,i+groupSize).join('\n\n'));
   return groups;
-}
-export function replyBubbles(body, text, markdown, key) {
-  // One continuous answer keeps headings, code and copying predictable.
-  const pieces = [text];
-  body.replaceChildren(...pieces.map((piece,index) => {
-    const bubble = document.createElement('div'); bubble.className = 'reply-bubble'; bubble.dataset.bubbleId = `${key}:bubble:${index}`;
-    bubble.append(markdown(piece)); return bubble;
-  }));
 }
 export function createTurnsUI({ state, json, storage, onError, onHistory, onState, onSettled, createSession, onDraftRestore, onAccepted }) {
   const $ = id => document.getElementById(id);

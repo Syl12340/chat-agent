@@ -66,19 +66,24 @@ func newPluginHost(manifest pluginapi.Manifest, dataDir string, policy pluginapi
 //
 // The wrap keeps the error surface identical to built-in tools so callers cannot
 // tell a plugin tool from a core one.
-func (s *Server) pluginTools(enable pluginapi.Enablement) []probe.Tool {
+func (s *Server) pluginTools(enable pluginapi.Enablement, sessionID string) []probe.Tool {
 	if s.plugins == nil {
 		return nil
 	}
 	admission := s.plugins.Admit(enable)
 	out := make([]probe.Tool, 0, len(admission.Tools))
 	for _, loaded := range admission.Tools {
+		if !s.hostPluginAllowed(loaded.PluginID, sessionID) {
+			continue
+		}
 		tool := loaded.Tool
-		pluginID := loaded.PluginID
-		out = append(out, probe.Tool{
+		definition := probe.Tool{
 			Name:        tool.Name,
 			Description: tool.Description,
 			Usage:       tool.Usage,
+			Prompt:      tool.Prompt,
+			Kind:        tool.Kind,
+			Present:     tool.Present,
 			Order:       tool.Order,
 			Timeout:     tool.Timeout,
 			Parameters:  tool.Parameters,
@@ -91,10 +96,10 @@ func (s *Server) pluginTools(enable pluginapi.Enablement) []probe.Tool {
 				if len(result.Data) > 0 {
 					out.Value = result.Data
 				}
-				_ = pluginID
 				return out, nil
 			},
-		})
+		}
+		out = append(out, definition)
 	}
 	return out
 }

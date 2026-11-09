@@ -1,7 +1,9 @@
 package api
 
 import (
+	"errors"
 	"net/http"
+	"os"
 
 	"pocket-agent/internal/probe"
 )
@@ -15,6 +17,10 @@ func (s *Server) deleteSession(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if !validID(id) {
 		fail(w, 400, "会话编号无效")
+		return
+	}
+	if s.activeImageJob.session == id {
+		fail(w, 409, "会话的图像作业正在结算")
 		return
 	}
 	s.mu.Lock()
@@ -62,6 +68,10 @@ func (s *Server) purgeTurn(w http.ResponseWriter, r *http.Request, sess *probe.S
 	s.mediaMu.Lock()
 	defer s.mediaMu.Unlock()
 	id, rid := r.PathValue("id"), r.PathValue("request")
+	if s.activeImageJob.session == id {
+		fail(w, 409, "会话的图像作业正在结算")
+		return
+	}
 	s.mu.Lock()
 	running := s.runs[id] != nil
 	s.mu.Unlock()
@@ -124,6 +134,27 @@ func (s *Server) purgeTurn(w http.ResponseWriter, r *http.Request, sess *probe.S
 				fail(w, 500, "聊天记录已删除，但图片清理未完成")
 				return
 			}
+		}
+	}
+	for _, requestID := range removedRequests {
+		jobID := imageJobID(id, requestID)
+		record, err := s.readImageJob(id, jobID)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			fail(w, 503, "记录已删除，但图像作业清理未完成")
+			return
+		}
+		if record.ImageID != "" && !keep[record.ImageID] {
+			if err := s.images.Delete(newSession.RoleID(), id, record.ImageID); err != nil {
+				fail(w, 503, "记录已删除，但图像清理未完成")
+				return
+			}
+		}
+		if err := os.Remove(s.imageJobPath(id, jobID)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			fail(w, 503, "记录已删除，但图像作业清理未完成")
+			return
 		}
 	}
 	writeJSON(w, 200, map[string]any{"removed_messages": total - turn.StartIndex, "removed_request_ids": removedRequests})

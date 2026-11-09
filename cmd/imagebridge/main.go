@@ -32,7 +32,7 @@ import (
 	"pocket-agent/internal/imagegen"
 )
 
-const version = "1.0.0"
+const version = "1.1.0"
 
 type service struct {
 	client *imagegen.Client
@@ -83,6 +83,9 @@ func main() {
 	mux.HandleFunc("/health", svc.health)
 	mux.HandleFunc("/profiles", svc.profileList)
 	mux.HandleFunc("/generate", svc.generate)
+	mux.HandleFunc("POST /jobs", svc.submitJob)
+	mux.HandleFunc("GET /jobs/{job}/result", svc.waitJob)
+	mux.HandleFunc("POST /jobs/{job}/cancel", svc.cancelJob)
 
 	server := &http.Server{
 		Addr:              *listen,
@@ -232,9 +235,9 @@ func (s *service) health(w http.ResponseWriter, r *http.Request) {
 		},
 		"memory_pressure": memoryPressure(health.Memory.AvailableGB, committable),
 		"memory": map[string]any{
-			"load_percent": health.Memory.LoadPercent,
-			"total_gb":     health.Memory.TotalGB,
-			"available_gb": health.Memory.AvailableGB,
+			"load_percent":   health.Memory.LoadPercent,
+			"total_gb":       health.Memory.TotalGB,
+			"available_gb":   health.Memory.AvailableGB,
 			"committable_gb": committable,
 		},
 		"uptime_seconds": int(time.Since(s.start).Seconds()),
@@ -271,6 +274,14 @@ type generateRequest struct {
 	MinFreeRAMGB float64 `json:"min_free_ram_gb"`
 }
 
+func (req generateRequest) request() imagegen.Request {
+	return imagegen.Request{
+		Profile: req.Profile, Prompt: req.Prompt, Negative: req.Negative,
+		Width: req.Width, Height: req.Height, Steps: req.Steps, Seed: req.Seed,
+		CFG: req.CFG, MinFreeRAMGB: req.MinFreeRAMGB,
+	}
+}
+
 // generate runs one job and returns the images inline as base64. The images are
 // small enough (≤1536px PNG) that a separate download step would only add
 // failure modes to a link that already crosses a tunnel.
@@ -296,14 +307,14 @@ func (s *service) generate(w http.ResponseWriter, r *http.Request) {
 
 	started := time.Now()
 	result, err := s.client.Generate(ctx, imagegen.Request{
-		Profile:  req.Profile,
-		Prompt:   req.Prompt,
-		Negative: req.Negative,
-		Width:    req.Width,
-		Height:   req.Height,
-		Steps:    req.Steps,
-		Seed:     req.Seed,
-		CFG:      req.CFG,
+		Profile:      req.Profile,
+		Prompt:       req.Prompt,
+		Negative:     req.Negative,
+		Width:        req.Width,
+		Height:       req.Height,
+		Steps:        req.Steps,
+		Seed:         req.Seed,
+		CFG:          req.CFG,
 		MinFreeRAMGB: req.MinFreeRAMGB,
 	})
 	if err != nil {

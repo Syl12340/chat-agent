@@ -407,7 +407,7 @@ ONEBOT_MAX_BODY_BYTES=262144
 
 研究快照：2026-11-08。实施前应重新核对上游版本和许可。
 
-- DeepSeek Harness：MIT；本项目只复用允许的提示词/工作流设计，Go 侧独立实现。
+- DeepSeek Harness 的适用许可允许直接复用源码与组件。Channel Bridge 的部署方式按具体能力和权限域确定。 [项目复用规则](../AGENTS.md)
 - Aurabot：MIT；可借鉴模块 API、权限与记忆来源，复制或改写时登记许可声明。
 - [AstrBot](https://github.com/AstrBotDevs/AstrBot)：AGPL-3.0-or-later；优先独立进程和协议，不复制核心代码。
 - [SnowLuma HTTP POST adapter](https://github.com/SnowLuma/SnowLuma/blob/main/packages/onebot/src/network/http-post-adapter.ts)：确认 `X-Signature` HMAC-SHA1 和 `X-Self-ID`。

@@ -88,8 +88,8 @@ type Client struct {
 	poll     time.Duration
 	maxBytes int64
 
-	mu       sync.Mutex
-	closed   bool
+	mu     sync.Mutex
+	closed bool
 }
 
 const (
@@ -223,9 +223,10 @@ type submitResult struct {
 }
 
 type statusResult struct {
-	JobID     string `json:"job_id"`
-	State     string `json:"state"`
-	Completed bool   `json:"completed"`
+	JobID     string            `json:"job_id"`
+	State     string            `json:"state"`
+	Completed bool              `json:"completed"`
+	Messages  []json.RawMessage `json:"messages"`
 }
 
 type resultResult struct {
@@ -244,12 +245,25 @@ func (c *Client) Generate(ctx context.Context, req Request) (*Result, error) {
 	if c == nil {
 		return nil, errors.New("图像生成未配置")
 	}
-	profile, err := c.validate(req)
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	id, err := c.SubmitJob(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, c.timeout)
-	defer cancel()
+	result, err := c.WaitJob(ctx, id)
+	if result != nil && result.Profile == "" {
+		result.Profile, _ = c.validate(req)
+	}
+	return result, err
+}
+
+// SubmitJob starts exactly one renderer request.
+func (c *Client) SubmitJob(ctx context.Context, req Request) (string, error) {
+	profile, err := c.validate(req)
+	if err != nil {
+		return "", err
+	}
 
 	args := []string{"submit", "--profile", profile, "--prompt", req.Prompt}
 	if req.Negative != "" {
@@ -276,27 +290,32 @@ func (c *Client) Generate(ctx context.Context, req Request) (*Result, error) {
 
 	var submitted submitResult
 	if err := c.call(ctx, args, &submitted); err != nil {
-		return nil, err
+		return "", err
 	}
-	if submitted.JobID == "" {
-		return nil, errors.New("图像服务没有返回作业号")
+	if !ValidRendererJobID(submitted.JobID) {
+		return "", errors.New("图像服务没有返回有效作业号")
 	}
+	return submitted.JobID, nil
+}
 
-	if err := c.wait(ctx, submitted.JobID); err != nil {
+func (c *Client) WaitJob(ctx context.Context, id string) (*Result, error) {
+	if !ValidRendererJobID(id) {
+		return nil, errors.New("invalid renderer job id")
+	}
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	if err := c.wait(ctx, id); err != nil {
 		return nil, err
 	}
 
 	var finished resultResult
-	if err := c.call(ctx, []string{"result", submitted.JobID}, &finished); err != nil {
+	if err := c.call(ctx, []string{"result", id}, &finished); err != nil {
 		return nil, err
 	}
 	if !finished.Ready {
 		return nil, errors.New("图像作业尚未完成")
 	}
-	out := &Result{JobID: submitted.JobID, Profile: finished.Profile, Seed: finished.Seed}
-	if out.Profile == "" {
-		out.Profile = profile
-	}
+	out := &Result{JobID: id, Profile: finished.Profile, Seed: finished.Seed}
 	for _, item := range finished.Images {
 		data, mime, err := c.readImage(item.Path)
 		if err != nil {
@@ -310,6 +329,23 @@ func (c *Client) Generate(ctx context.Context, req Request) (*Result, error) {
 	return out, nil
 }
 
+func (c *Client) CancelJob(ctx context.Context, id string) error {
+	if !ValidRendererJobID(id) {
+		return errors.New("invalid renderer job id")
+	}
+	var reply struct {
+		JobID     string `json:"job_id"`
+		Requested bool   `json:"cancel_requested"`
+	}
+	if err := c.call(ctx, []string{"cancel", id}, &reply); err != nil {
+		return err
+	}
+	if reply.JobID != id || !reply.Requested {
+		return errors.New("图像桥未确认收到取消请求")
+	}
+	return nil
+}
+
 func (c *Client) wait(ctx context.Context, jobID string) error {
 	for {
 		var status statusResult
@@ -319,7 +355,15 @@ func (c *Client) wait(ctx context.Context, jobID string) error {
 		switch status.State {
 		case "success", "succeeded":
 			return nil
-		case "failed", "error", "cancelled":
+		case "cancelled", "canceled", "interrupted":
+			return ErrJobCanceled
+		case "failed", "error":
+			for _, event := range status.Messages {
+				var fields []json.RawMessage
+				if json.Unmarshal(event, &fields) == nil && len(fields) != 0 && string(fields[0]) == `"execution_interrupted"` {
+					return ErrJobCanceled
+				}
+			}
 			return errors.New("图像生成失败")
 		}
 		if status.Completed {

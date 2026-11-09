@@ -27,6 +27,18 @@ plugins, tool implementations, or its full system prompt. chat-agent's own
 role isolation, review workflow, authorization constraints and bounded execution
 remain authoritative. No compatibility with the DSH plugin API is claimed.
 
+Additional design reference: DeepSeek Harness commit
+`fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159` (MIT).
+
+- `packages/core/tools/src/presentation.ts` and `contracts.ts` inform
+  `internal/probe/presentation.go` and the host tool-card projection.
+- `packages/sandbox/sandbox` informs the unavailable-state contract for
+  `plugins/builtin/workspace`. That runner has process-level restrictions.
+- `packages/jobs/tool-jobs/src/index.ts` informs the separation of job
+  submission, observation and cancellation in `internal/api/image_jobs.go`.
+
+These are Go and JavaScript adaptations of the cited contracts.
+
 ## KaTeX 0.19.1
 
 Source: https://github.com/KaTeX/KaTeX/releases/tag/v0.19.1

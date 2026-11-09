@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"pocket-agent/internal/media"
+	"pocket-agent/plugins/builtin/clock"
 )
 
 const AgentID = "pocket"
@@ -28,6 +29,7 @@ type Config struct {
 	Demo                                    bool
 	SystemPrompt, HostPrompt, Reference     string
 	Tools                                   []Tool
+	DisableBuiltinClock                     bool
 	RoleID, SessionID                       string
 	PrepareStep                             func(context.Context, StepContext) (StepState, error)
 	Guards                                  []ToolGuard
@@ -37,14 +39,14 @@ type Config struct {
 	DecisionGate DecisionGate
 	// Approvals holds host-issued single-use authorizations for calls that were
 	// refused only because no verdict could be obtained. Nil authorizes nothing.
-	Approvals                               *ApprovalStore
-	Provider                                ModelProvider
-	ContextBytes, KeepRecentTurns           int
-	HistoryFloor                            int
-	Thinking, ReasoningEffort               string
-	ResolveImage                            func(context.Context, media.Image) (string, error)
-	RequestID                               string
-	Recorder                                RunRecorder
+	Approvals                     *ApprovalStore
+	Provider                      ModelProvider
+	ContextBytes, KeepRecentTurns int
+	HistoryFloor                  int
+	Thinking, ReasoningEffort     string
+	ResolveImage                  func(context.Context, media.Image) (string, error)
+	RequestID                     string
+	Recorder                      RunRecorder
 }
 
 func DefaultConfig() Config {
@@ -106,6 +108,7 @@ type Event struct {
 	Type     EventType
 	Text     string
 	ToolCall *ToolCall
+	ToolView *ToolView
 	Result   *ToolResult
 	Error    error
 }
@@ -143,7 +146,15 @@ func New(c Config, sess *Session) (*Agent, error) {
 	if c.ReasoningEffort != "" && (c.Thinking != "enabled" || !validEffort(c.ReasoningEffort)) {
 		return nil, errors.New("invalid reasoning effort")
 	}
-	registry, err := NewToolRegistry(append([]Tool{clock()}, c.Tools...))
+	tools := c.Tools
+	if !c.DisableBuiltinClock {
+		definition := clock.Tool()
+		tools = append([]Tool{{Name: definition.Name, Order: definition.Order, Usage: definition.Usage, Description: definition.Description, Parameters: definition.Parameters, Execute: func(ctx context.Context, input json.RawMessage) (ToolResult, error) {
+			result, err := definition.Handler(ctx, input)
+			return ToolResult{Output: result.Output}, err
+		}}}, tools...)
+	}
+	registry, err := NewToolRegistry(tools)
 	if err != nil {
 		return nil, err
 	}
@@ -152,19 +163,6 @@ func New(c Config, sess *Session) (*Agent, error) {
 		provider = &ChatCompletionsProvider{endpoint: strings.TrimRight(c.BaseURL, "/") + "/chat/completions", key: c.APIKey, client: &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 	}
 	return &Agent{config: c, session: sess, registry: registry, executor: ToolExecutor{guards: append([]ToolGuard(nil), c.Guards...), gate: c.DecisionGate, approvals: c.Approvals}, provider: provider}, nil
-}
-
-func clock() Tool {
-	return Tool{Name: "get_current_time", Order: 100, Usage: "call it whenever the answer depends on the real current time instead of guessing.", Description: "Get current UTC server time in RFC3339 format.", Parameters: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`), Execute: func(ctx context.Context, input json.RawMessage) (ToolResult, error) {
-		if err := ctx.Err(); err != nil {
-			return ToolResult{}, err
-		}
-		var args map[string]json.RawMessage
-		if err := json.Unmarshal(input, &args); err != nil || args == nil || len(args) != 0 {
-			return ToolResult{}, errors.New("clock arguments must be an empty object")
-		}
-		return ToolResult{Output: time.Now().UTC().Format(time.RFC3339)}, nil
-	}}
 }
 
 // Run is synchronous; the response body is closed before returning. Callbacks
@@ -304,7 +302,8 @@ func RunMessages(ctx context.Context, a *Agent, timeout time.Duration, inputs []
 		results := []ToolResult{}
 		for i := range response.ToolCalls {
 			call := response.ToolCalls[i]
-			send(Event{Type: EventToolCallStart, ToolCall: &call})
+			view := presentTool(assembly.Tools, call)
+			send(Event{Type: EventToolCallStart, ToolCall: &call, ToolView: &view})
 			result := ToolResult{}
 			if ctx.Err() != nil {
 				result = normalizeToolResult(toolFailure("TOOL_CANCELED", "tool canceled before dispatch"))

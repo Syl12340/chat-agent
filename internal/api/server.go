@@ -22,14 +22,13 @@ import (
 
 	"pocket-agent/internal/companion"
 	"pocket-agent/internal/decision"
-	"pocket-agent/internal/imagegen"
 	"pocket-agent/internal/deviceauth"
+	"pocket-agent/internal/imagegen"
 	"pocket-agent/internal/interactive"
 	"pocket-agent/internal/media"
 	"pocket-agent/internal/memory"
 	"pocket-agent/internal/pluginapi"
 	"pocket-agent/internal/probe"
-	"pocket-agent/plugins/builtin/search"
 	"pocket-agent/internal/roles"
 	"pocket-agent/internal/runlog"
 	"pocket-agent/internal/semantic"
@@ -37,28 +36,31 @@ import (
 	"pocket-agent/internal/topics"
 	"pocket-agent/internal/turns"
 	"pocket-agent/internal/webtools"
+	"pocket-agent/plugins/builtin/clock"
+	"pocket-agent/plugins/builtin/search"
 	"pocket-agent/web"
 )
 
 type Config struct {
-	Agent                  probe.Config
-	DataDir                string
-	AccessToken            string
-	RolesDir               string
-	TimeZone               string
-	Web                    webtools.Config
-	AndroidReleaseDir      string
-	Speech                 SpeechConfig
-	Semantic               semantic.Config
-	Decision               decision.Config
-	Images                 imagegen.Config
+	Agent             probe.Config
+	DataDir           string
+	AccessToken       string
+	RolesDir          string
+	TimeZone          string
+	Web               webtools.Config
+	AndroidReleaseDir string
+	Speech            SpeechConfig
+	Semantic          semantic.Config
+	Decision          decision.Config
+	Images            imagegen.Config
 	// ImageRemote, when set, replaces Images: the GPU lives on another machine
 	// and is reached through a tunnel.
-	ImageRemote imagegen.RemoteConfig
+	ImageRemote            imagegen.RemoteConfig
 	ChatModels             []ChatModel
 	ThinkingMaxOutput      int
 	TurnCompletionObserver TurnCompletionObserver
 	OneBot                 OneBotConfig
+	HostTools              HostToolsConfig
 	// Plugins is the host's decision about installed plugins: which load, and
 	// which declared permissions are really granted. The zero value enables
 	// everything and grants nothing.
@@ -106,19 +108,24 @@ type Server struct {
 	pluginPolicy pluginapi.Policy
 	// approvals holds host-issued, single-use authorizations. It is the only
 	// source of consent for a call that could not be assessed.
-	approvals       *probe.ApprovalStore
-	topics          *topics.Store
-	topicSource     topicGateway
-	topicSweepMu    sync.Mutex
-	push            *pushStore
-	pushSlots       chan struct{}
-	images          *media.Store
-	mediaMu         sync.Mutex
-	onebot          *oneBotIntegration
-	turnObserver    TurnCompletionObserver
+	approvals      *probe.ApprovalStore
+	topics         *topics.Store
+	topicSource    topicGateway
+	topicSweepMu   sync.Mutex
+	push           *pushStore
+	pushSlots      chan struct{}
+	images         *media.Store
+	mediaMu        sync.Mutex
+	activeImageJob imageWork // protected by mediaMu
+	onebot         *oneBotIntegration
+	turnObserver   TurnCompletionObserver
 }
 
 func New(c Config) (*Server, error) {
+	hostPlugins, err := c.hostPlugins()
+	if err != nil {
+		return nil, err
+	}
 	if c.ThinkingMaxOutput < 0 {
 		return nil, errors.New("thinking output budget cannot be negative (0 uses provider default)")
 	}
@@ -265,6 +272,10 @@ func New(c Config) (*Server, error) {
 	loader := pluginapi.NewLoader()
 	loader.SetPolicy(c.Plugins)
 	loader.Add(search.New(webClient))
+	loader.Add(clock.Plugin{})
+	for _, p := range hostPlugins {
+		loader.Add(p)
+	}
 	pluginCatalog, err := loader.Load()
 	if err != nil {
 		return nil, err
@@ -311,6 +322,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/sessions/{id}/images", s.uploadImage)
 	mux.HandleFunc("GET /api/sessions/{id}/images/{image}", s.readImage)
 	mux.HandleFunc("DELETE /api/sessions/{id}/images/{image}", s.deleteImage)
+	mux.HandleFunc("GET /api/sessions/{id}/image-jobs/{job}", s.imageJobHTTP)
+	mux.HandleFunc("POST /api/sessions/{id}/image-jobs/{job}/cancel", s.imageJobHTTP)
 	mux.HandleFunc("GET /api/push/settings", s.getPushSettings)
 	mux.HandleFunc("PATCH /api/push/settings", s.updatePushSettings)
 	mux.HandleFunc("GET /api/push/inbox", s.pushInbox)
@@ -692,6 +705,8 @@ func (s *Server) message(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	send("ready", map[string]string{"id": id})
+	var toolEvent turns.ToolEvent
+	var toolStarted time.Time
 	err = probe.Run(ctx, agent, s.config.Agent.Timeout, input.Content, func(ev probe.Event) {
 		switch ev.Type {
 		case probe.EventTextDelta:
@@ -699,9 +714,12 @@ func (s *Server) message(w http.ResponseWriter, r *http.Request) {
 		case probe.EventReasoningDelta:
 			send("reasoning_delta", map[string]string{"text": ev.Text})
 		case probe.EventToolCallStart:
-			send("tool_start", map[string]string{"id": ev.ToolCall.ID, "name": ev.ToolCall.Function.Name})
+			toolStarted = time.Now()
+			toolEvent = startToolView(ev)
+			send("tool_start", toolEvent)
 		case probe.EventToolResult:
-			payload := map[string]any{"id": ev.ToolCall.ID, "name": ev.ToolCall.Function.Name, "output": ev.Result.Output, "error": ev.Result.Error, "code": ev.Result.Code}
+			finishToolView(&toolEvent, ev.Result, time.Since(toolStarted))
+			payload := map[string]any{"id": toolEvent.ID, "name": toolEvent.Name, "output": toolEvent.Output, "error": toolEvent.Error, "code": ev.Result.Code, "view": toolEvent.View, "status": toolEvent.Status, "elapsed_ms": toolEvent.ElapsedMS, "approval": toolEvent.Approval}
 			// The decision trace is only useful to the client when it can offer a
 			// human confirmation, so it travels with the result that needs one.
 			if ev.Result.Decision != nil {
@@ -819,6 +837,9 @@ func (s *Server) Close(ctx context.Context) error {
 		return context.Cause(ctx)
 	}
 	var err error
+	if s.plugins != nil {
+		s.plugins.StopAll(ctx)
+	}
 	if s.onebot != nil {
 		err = errors.Join(err, s.onebot.Close(ctx))
 	}

@@ -16,6 +16,7 @@ import (
 	"log"
 	"strings"
 	"time"
+	"unicode"
 
 	"pocket-agent/internal/pluginapi"
 	"pocket-agent/internal/webtools"
@@ -109,6 +110,8 @@ func (p *Plugin) Stop(context.Context) error { return nil }
 func (p *Plugin) searchTool() pluginapi.Tool {
 	return pluginapi.Tool{
 		Name:       "web_search",
+		Kind:       "search",
+		Present:    searchPresentation,
 		Capability: CapabilitySearch,
 		Order:      200,
 		Timeout:    10 * time.Second,
@@ -133,11 +136,38 @@ func (p *Plugin) searchTool() pluginapi.Tool {
 				return pluginapi.Result{}, err
 			}
 			return encode(struct {
-				Untrusted bool             `json:"untrusted"`
+				Untrusted bool              `json:"untrusted"`
 				Results   []webtools.Result `json:"results"`
 			}{true, results})
 		},
 	}
+}
+
+// Search is the first specialized view. Never serialize the arguments object
+// into the public view. URL-like and credential-like queries use a generic label.
+func searchPresentation(raw json.RawMessage) (string, string) {
+	const title = "联网搜索"
+	var args struct {
+		Query string `json:"query"`
+	}
+	if json.Unmarshal(raw, &args) != nil {
+		return title, ""
+	}
+	query := strings.Join(strings.Fields(args.Query), " ")
+	lower := strings.ToLower(query)
+	if strings.ContainsAny(query, "@/\\=&") || strings.Contains(lower, "sk-") || strings.Contains(lower, "token") || strings.Contains(lower, "password") || strings.Contains(lower, "bearer") {
+		return title, ""
+	}
+	for _, r := range query {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			return title, ""
+		}
+	}
+	runes := []rune(query)
+	if len(runes) > 60 {
+		query = string(runes[:60]) + "…"
+	}
+	return title, query
 }
 
 func (p *Plugin) fetchTool() pluginapi.Tool {
@@ -163,7 +193,7 @@ func (p *Plugin) fetchTool() pluginapi.Tool {
 				return pluginapi.Result{}, err
 			}
 			return encode(struct {
-				Untrusted bool         `json:"untrusted"`
+				Untrusted bool          `json:"untrusted"`
 				Page      webtools.Page `json:"page"`
 			}{true, page})
 		},

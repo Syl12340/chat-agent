@@ -19,7 +19,7 @@ import (
 // stays a host decision. Second, the produced file lands in the session's media
 // store under a host-assigned id — the model gets a reference, never a path it
 // could forge.
-func (s *Server) imageTools(role, sessionID string) []probe.Tool {
+func (s *Server) imageTools(role, sessionID string, requests ...string) []probe.Tool {
 	if s.imagegen == nil || s.images == nil {
 		return nil
 	}
@@ -48,7 +48,8 @@ func (s *Server) imageTools(role, sessionID string) []probe.Tool {
 		`"min_free_ram_gb":{"type":"number","minimum":1.5,"maximum":64,"description":"Override how much host memory must be free before this render starts. Only lower it when the user accepts a slower machine or a possible failure; omit to use the profile default."}`+
 		`},"required":["prompt"],"additionalProperties":false}`, profileSchema)
 
-	return []probe.Tool{s.imageHealthTool(), {
+	async := s.runtime != nil && len(requests) != 0 && requests[0] != ""
+	tools := []probe.Tool{s.imageHealthTool(), {
 		Name:  "image_generate",
 		Order: 660,
 		Usage: "use only when the user actually asks for a picture. It draws one image on the local GPU and usually takes 10-60 seconds, so do not call it speculatively, and never call it twice for the same request. Give a concrete visual description in the language the user used. The size must respect the profile: image_health lists each profile's width/height range and alignment, so check it when the user asks for a specific shape. If the renderer refuses for lack of memory, say how much it needed instead of retrying; lowering min_free_ram_gb is only right when the user accepts a slower machine. When it succeeds, tell the user what you drew in one short sentence; the picture appears by itself, so do not paste URLs or describe the file.",
@@ -63,30 +64,38 @@ func (s *Server) imageTools(role, sessionID string) []probe.Tool {
 				return probe.ToolResult{}, err
 			}
 			var args struct {
-				Prompt   string `json:"prompt"`
-				Negative string `json:"negative"`
-				Profile  string `json:"profile"`
-				Width    int    `json:"width"`
-				Height   int    `json:"height"`
-				Steps    int    `json:"steps"`
-				Seed     int64  `json:"seed"`
-				CFG           float64 `json:"cfg"`
-				MinFreeRAMGB  float64 `json:"min_free_ram_gb"`
+				Prompt       string  `json:"prompt"`
+				Negative     string  `json:"negative"`
+				Profile      string  `json:"profile"`
+				Width        int     `json:"width"`
+				Height       int     `json:"height"`
+				Steps        int     `json:"steps"`
+				Seed         int64   `json:"seed"`
+				CFG          float64 `json:"cfg"`
+				MinFreeRAMGB float64 `json:"min_free_ram_gb"`
 			}
 			if err := toolInput(data, &args); err != nil {
 				return probe.ToolResult{}, err
 			}
-			result, err := s.imagegen.Generate(ctx, imagegen.Request{
-				Profile:  args.Profile,
-				Prompt:   args.Prompt,
-				Negative: args.Negative,
-				Width:    args.Width,
-				Height:   args.Height,
-				Steps:    args.Steps,
-				Seed:     args.Seed,
-				CFG:      args.CFG,
+			req := imagegen.Request{
+				Profile:      args.Profile,
+				Prompt:       args.Prompt,
+				Negative:     args.Negative,
+				Width:        args.Width,
+				Height:       args.Height,
+				Steps:        args.Steps,
+				Seed:         args.Seed,
+				CFG:          args.CFG,
 				MinFreeRAMGB: args.MinFreeRAMGB,
-			})
+			}
+			if async {
+				job, err := s.submitImage(ctx, role, sessionID, requests[0], req)
+				if err != nil {
+					return probe.ToolResult{}, err
+				}
+				return imageJobResult(job)
+			}
+			result, err := s.imagegen.Generate(ctx, req)
 			if err != nil {
 				return probe.ToolResult{}, err
 			}
@@ -117,4 +126,10 @@ func (s *Server) imageTools(role, sessionID string) []probe.Tool {
 			return probe.ToolResult{Output: string(out)}, nil
 		},
 	}}
+	if async {
+		tools[1].Usage = "Use only when the user explicitly asks for a picture. This accepts one job per conversation turn. Say that the job was submitted, and let the job card show progress and the final image. Do not claim a picture is ready until its status is completed. Do not submit a second job after a connection loss."
+		tools[1].Description = "Submit one job to the configured image renderer and return its durable job_id immediately. Use image_status to query it and image_cancel only on the user's request."
+		tools = append(tools, s.imageControlTools(sessionID)...)
+	}
+	return tools
 }

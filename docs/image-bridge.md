@@ -1,5 +1,11 @@
 # 图像生成桥
 
+## 作业接口
+
+CA 的异步图像工具使用 imagebridge 1.1 的 `POST /jobs`、`GET /jobs/{id}/result` 和 `POST /jobs/{id}/cancel`。发布本轮 CA 时同步更新本机桥，可用 `.\scripts\tunnel.ps1 -Build` 重建后启动。旧的 `/generate` 供已有客户端使用。
+
+CA 在派发前为每轮请求保存一个作业 ID，返回后从会话内查询。渲染器受理后保存独立的 renderer ID，取消按此 ID 转发。界面将取消回执与最终渲染状态分开。服务中断或提交回执丢失时保留待核对状态，原请求不会自动重放。完成记录包含 profile、seed、原始尺寸、原始产物哈希和会话媒体引用。
+
 把本机的 GPU 接到服务器上的 chat-agent，服务器不需要 Python、不需要模型权重，也不开任何入站端口。
 
 ## 1. 拓扑

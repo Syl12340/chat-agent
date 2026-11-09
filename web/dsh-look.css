@@ -73,6 +73,9 @@ body{width:100%;overflow-x:hidden}
 /* 助手消息：无气泡，直接铺排 */
 .message.assistant .reply-bubble,
 .message.assistant .message-content{background:transparent;border:0;box-shadow:none;padding:0;border-radius:0}
+.message.assistant .reply-conversational{width:fit-content;background:var(--surface-container);border-radius:var(--dsh-radius-lg);padding:7px 13px;margin:0 0 6px;max-width:100%}
+.reply-conversational .rich-text-segment>p:first-child{margin-top:0}
+.reply-conversational .rich-text-segment>p:last-child{margin-bottom:0}
 .message-body{font-size:15px;line-height:1.75;color:var(--on-surface)}
 
 /* 用户消息：浅底气泡，右对齐，16px 圆角 */

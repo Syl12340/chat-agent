@@ -45,6 +45,10 @@ type Tool struct {
 	Description string
 	// Usage is the short guidance shown in the tool catalog, not the schema.
 	Usage string
+	// Prompt is an optional section attached only to admitted calls.
+	Prompt  string
+	Kind    string
+	Present func(json.RawMessage) (title, summary string)
 	// Order controls catalog position: lower first.
 	Order      int
 	Parameters json.RawMessage
@@ -108,6 +112,9 @@ func (r *Registry) Tool(tool Tool) error {
 	}
 	if tool.Timeout < 0 {
 		return fmt.Errorf("工具 %s 的超时不能为负", tool.Name)
+	}
+	if len(tool.Prompt) > 4096 {
+		return fmt.Errorf("工具 %s 的提示分区过长", tool.Name)
 	}
 	r.seen[tool.Name] = true
 	r.tools = append(r.tools, tool)

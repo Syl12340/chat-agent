@@ -866,7 +866,7 @@ func (r *Registry) ExportLegacy(dataRoot, destination string) error {
 		if readErr != nil {
 			return readErr
 		}
-		if _, readErr = turns.NormalizeLegacy(id, turnData); readErr != nil {
+		if turnData, readErr = turns.ExportV3(id, turnData); readErr != nil {
 			return readErr
 		}
 		if err = storage.Replace(filepath.Join(staging, "turns", id+".json"), turnData); err != nil {

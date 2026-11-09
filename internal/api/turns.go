@@ -233,6 +233,7 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 			text := ""
 			reasoning := ""
 			events := []turns.ToolEvent{}
+			var toolStarted time.Time
 			progressErr := error(nil)
 			if err == nil {
 				err = probe.RunMessages(ctx, agent, s.chatTimeout(choice), inputs, func(ev probe.Event) {
@@ -256,23 +257,11 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 						}
 						text += ev.Text
 					case probe.EventToolCallStart:
-						// Keep a bounded copy of the arguments so the page can show
-						// what the current call is doing instead of only its name.
-						args := ev.ToolCall.Function.Arguments
-						if len(args) > 240 {
-							args = args[:240] + "…"
-						}
-						events = append(events, turns.ToolEvent{ID: ev.ToolCall.ID, Name: ev.ToolCall.Function.Name, Arguments: args})
+						toolStarted = time.Now()
+						events = append(events, startToolView(ev))
 					case probe.EventToolResult:
-						for i := range events {
-							if events[i].ID == ev.ToolCall.ID {
-								output := ev.Result.Output
-								if len(output) > 4096 {
-									output = output[:4096] + "…"
-								}
-								events[i].Output = output
-								events[i].Error = ev.Result.Error
-							}
+						if last := len(events) - 1; last >= 0 && events[last].ID == ev.ToolCall.ID {
+							finishToolView(&events[last], ev.Result, time.Since(toolStarted))
 						}
 					}
 					if progressErr == nil {
