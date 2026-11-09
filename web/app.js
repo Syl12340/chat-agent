@@ -465,19 +465,47 @@ function toolLog(message, data, pending = false) {
   let log = message.tools.get(data.id);
   if (!log) {
     const details = document.createElement('details'); details.className = 'tool-log';
-    const summary = document.createElement('summary'), output = document.createElement('pre'); details.append(summary, output); message.logs.append(details);
-    log = { summary, output, node: details }; message.tools.set(data.id, log);
+    const summary = document.createElement('summary');
+    const heading = document.createElement('span'); heading.className = 'tool-title';
+    const meta = document.createElement('span'); meta.className = 'tool-meta';
+    const chevron = document.createElement('span'); chevron.className = 'tool-chevron'; chevron.setAttribute('aria-hidden', 'true');
+    // The status dot comes from the base stylesheet; the chevron goes last so the
+    // card reads left to right: state, what ran, when, and whether it opens.
+    summary.append(heading, meta, chevron);
+    const args = document.createElement('div'); args.className = 'tool-args';
+    const output = document.createElement('pre'); output.className = 'tool-output';
+    const body = document.createElement('div'); body.className = 'tool-body';
+    body.append(args, output);
+    details.append(summary, body);
+    message.logs.append(details);
+    log = { summary, heading, meta, args, output, body, node: details };
+    message.tools.set(data.id, log);
   }
   const view = describeTool(data, pending);
   log.node.dataset.kind = data.view?.kind || 'other';
   log.node.dataset.card = data.view?.card || 'generic';
   log.node.classList.toggle('running', view.status === 'running');
   log.node.classList.toggle('failed', view.status === 'unfinished');
-  log.summary.textContent = view.title;
+  log.heading.textContent = view.hint ? `${view.title} ${view.hint}` : view.title;
+  log.meta.replaceChildren(...view.meta.map(label => {
+    const chip = document.createElement('span'); chip.textContent = label; return chip;
+  }));
+  // The arguments are what make a result judgeable, so they sit above it and stay
+  // hidden when the tool takes none. The stream sends them with the start event
+  // only, so a later result event must not erase them.
+  const args = view.arguments || log.node.dataset.arguments || '';
+  if (view.arguments) log.node.dataset.arguments = view.arguments;
+  log.args.hidden = !args;
+  if (args) {
+    const label = document.createElement('span'); label.className = 'tool-args-label'; label.textContent = '参数';
+    const code = document.createElement('code'); code.textContent = args;
+    log.args.replaceChildren(label, code);
+  }
   log.output.textContent = view.detail;
+  log.output.hidden = view.empty;
   log.results?.remove();
   log.results = searchResults(data);
-  log.output.hidden = Boolean(log.results);
+  log.output.hidden = view.empty || Boolean(log.results);
   if (log.results) log.output.after(log.results);
   // A call that only lacked an assessment can be authorized by the person who is
   // actually here. The ticket is host-issued for this exact argument digest and

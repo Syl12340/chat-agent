@@ -9,7 +9,25 @@ import (
 )
 
 func startToolView(event probe.Event) turns.ToolEvent {
-	return turns.ToolEvent{ID: event.ToolCall.ID, Name: event.ToolCall.Function.Name, View: event.ToolView, Status: "running"}
+	return turns.ToolEvent{
+		ID:   event.ToolCall.ID,
+		Name: event.ToolCall.Function.Name,
+		// Keep a bounded copy of the arguments. Without them the card can say
+		// which tool ran but not what it was asked to do, which is the half a
+		// reader needs to judge the result.
+		Arguments: truncate(event.ToolCall.Function.Arguments, 512),
+		View:      event.ToolView,
+		Status:    "running",
+	}
+}
+
+// truncate shortens by bytes and marks the cut, so a long argument list cannot
+// push the rest of the record out of the retention window.
+func truncate(text string, limit int) string {
+	if len(text) <= limit {
+		return text
+	}
+	return strings.ToValidUTF8(text[:limit], "") + "…"
 }
 
 func finishToolView(tool *turns.ToolEvent, result *probe.ToolResult, elapsed time.Duration) {

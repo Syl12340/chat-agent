@@ -417,7 +417,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // version is the service version reported by /api/status.
-const version = "0.3.0"
+const version = "0.3.1"
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model
@@ -723,7 +723,7 @@ func (s *Server) message(w http.ResponseWriter, r *http.Request) {
 			send("tool_start", toolEvent)
 		case probe.EventToolResult:
 			finishToolView(&toolEvent, ev.Result, time.Since(toolStarted))
-			payload := map[string]any{"id": toolEvent.ID, "name": toolEvent.Name, "output": toolEvent.Output, "error": toolEvent.Error, "code": ev.Result.Code, "view": toolEvent.View, "status": toolEvent.Status, "elapsed_ms": toolEvent.ElapsedMS, "approval": toolEvent.Approval}
+			payload := map[string]any{"id": toolEvent.ID, "name": toolEvent.Name, "arguments": toolEvent.Arguments, "output": toolEvent.Output, "error": toolEvent.Error, "code": ev.Result.Code, "view": toolEvent.View, "status": toolEvent.Status, "elapsed_ms": toolEvent.ElapsedMS, "approval": toolEvent.Approval}
 			// The decision trace is only useful to the client when it can offer a
 			// human confirmation, so it travels with the result that needs one.
 			if ev.Result.Decision != nil {

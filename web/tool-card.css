@@ -1,0 +1,143 @@
+/* One tool card: a closed one-line summary, and the full record when opened.
+   Nothing here is decorative — every part answers "what ran, with what, and what
+   came back". */
+
+.tool-log {
+	display: block;
+	border: 1px solid var(--outline-variant);
+	border-radius: var(--radius-md);
+	background: var(--surface-low);
+	color: var(--on-surface-variant);
+	margin: 0 0 10px;
+	padding: 0;
+	overflow: hidden;
+}
+
+.tool-log summary {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: var(--control-md);
+	padding: 6px 12px;
+	cursor: pointer;
+	list-style: none;
+	font-size: var(--text-sm);
+	line-height: 1.5;
+}
+
+/* The disclosure marker is drawn, not inherited: the platform triangle differs
+   across WebView versions and cannot be aligned with the label. */
+.tool-log summary::-webkit-details-marker { display: none; }
+
+.tool-meta {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-left: auto;
+	flex-shrink: 0;
+	font-size: var(--text-2xs);
+	color: var(--on-surface-variant);
+}
+
+.tool-chevron {
+	width: 12px;
+	height: 12px;
+	flex-shrink: 0;
+	position: relative;
+	opacity: .55;
+}
+
+.tool-chevron::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	margin: auto;
+	width: 6px;
+	height: 6px;
+	border-right: 1.5px solid currentColor;
+	border-bottom: 1.5px solid currentColor;
+	transform: rotate(-45deg);
+	transition: transform 140ms var(--easing);
+}
+
+.tool-log[open] .tool-chevron::before { transform: rotate(45deg); }
+
+.tool-title {
+	font-weight: 550;
+	color: var(--on-surface);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	min-width: 0;
+}
+
+
+
+.tool-meta > span {
+	padding: 2px 7px;
+	border-radius: var(--radius-pill);
+	background: var(--surface-container);
+	white-space: nowrap;
+}
+
+.tool-log.running .tool-meta > span:first-child { color: var(--primary); }
+.tool-log.failed { border-color: var(--error); }
+.tool-log.failed .tool-meta > span:first-child { color: var(--error); }
+
+.tool-body {
+	border-top: 1px solid var(--outline-variant);
+	padding: 10px 12px 12px;
+	display: grid;
+	gap: 8px;
+}
+
+.tool-args {
+	display: flex;
+	gap: 8px;
+	align-items: baseline;
+	font-size: var(--text-2xs);
+}
+
+.tool-args-label {
+	flex-shrink: 0;
+	color: var(--on-surface-variant);
+	opacity: .7;
+}
+
+.tool-args code {
+	font-family: "Cascadia Code", Consolas, monospace;
+	background: var(--surface-container);
+	border-radius: var(--radius-xs);
+	padding: 3px 7px;
+	overflow-wrap: anywhere;
+	max-height: 6em;
+	overflow: auto;
+}
+
+.tool-output {
+	margin: 0;
+	font-family: "Cascadia Code", Consolas, monospace;
+	font-size: var(--text-2xs);
+	line-height: 1.65;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	max-height: 22em;
+	overflow: auto;
+	background: var(--surface-container);
+	border-radius: var(--radius-sm);
+	padding: 8px 10px;
+}
+
+.tool-results {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: grid;
+	gap: 5px;
+	font-size: var(--text-xs);
+}
+
+.tool-results a {
+	color: var(--green);
+	text-underline-offset: 2px;
+}
