@@ -87,7 +87,7 @@ func (s *Server) listTurns(w http.ResponseWriter, r *http.Request) {
 		turnFailure(w, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"items": items, "paused": paused})
+	writeJSON(w, 200, map[string]any{"items": items, "paused": paused, "protocol_version": remoteProtocolVersion, "generation": s.transportGeneration, "resync": s.transportResync(r)})
 }
 func (s *Server) resumeTurns(w http.ResponseWriter, r *http.Request) {
 	sess, ok := s.get(w, r)
@@ -164,10 +164,18 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 				return
 			case <-timer.C:
 			}
+			// Close the aggregation window and select its durable batch while holding
+			// the admission mutex. A sender arriving after this point cannot race into
+			// the batch after being told it was queued for the next turn.
+			s.mu.Lock()
+			if s.runs[id] == state {
+				state.queued = false
+			}
 			batch, err := s.turns.Begin(id, len(sess.Messages()), func(t turns.Turn) bool {
 				_, reserved, _ := interactive.ParseResponse(t.Content)
 				return !reserved
 			})
+			s.mu.Unlock()
 			if err != nil {
 				_ = s.turns.Pause(id, true)
 				return
@@ -184,6 +192,7 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 					s.mu.Unlock()
 					return
 				}
+				state.queued = true
 				s.mu.Unlock()
 				continue
 			}
@@ -338,6 +347,9 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 				s.mu.Unlock()
 				return
 			}
+			// Open a fresh short merge window for messages that accumulated while
+			// the previous provider call was running. They remain a separate turn.
+			state.queued = true
 			s.mu.Unlock()
 		}
 	}()

@@ -62,7 +62,7 @@ func TestCareProbabilityLifecycle(t *testing.T) {
 	if _, err = s.ClaimCare("companion", id, true, now, location); !errors.Is(err, ErrCareBlocked) || draws != 1 {
 		t.Fatal("restart redrew a settled opportunity")
 	}
-	if s.state.Version != 4 {
+	if s.state.Version != 5 {
 		t.Fatal("care state version was not upgraded")
 	}
 	// The next day's independent opportunity hits and reserves exactly once.

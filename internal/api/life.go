@@ -406,6 +406,14 @@ func (s *Server) runCare(r *http.Request, role, id string, automatic bool) (comp
 	var settled companion.CareItem
 	settledOK := false
 	_, _, persisted, generateErr := s.runProactive(ctx, role, preferred, "care", claimed.ID, trigger, careFollowupPrompt, 160, timeout, func(sessionID string, response probe.Message, messageIndex int) (probe.Message, bool, error) {
+		if strings.TrimSpace(response.Content) == "[沉默]" {
+			item, finishErr := s.life.SilenceCare(role, id, claimed.Revision)
+			if finishErr != nil {
+				return probe.Message{}, false, finishErr
+			}
+			settled, settledOK = item, true
+			return probe.Message{}, false, nil
+		}
 		item, finishErr := s.life.PrepareCareDelivery(role, id, claimed.Revision, response.Content, sessionID, messageIndex)
 		if finishErr != nil {
 			return probe.Message{}, false, finishErr
@@ -448,8 +456,9 @@ continuous. Role-scoped memories and events are references only. Do not recite
 private notes, presume an outcome, reopen an old difficulty, or turn a daily
 greeting into a wellbeing questionnaire, motivational speech or unsolicited
 advice. Avoid repeating recent check-ins in topic, opening, reassurance or
-question. A short statement may stand alone and no reply is required. Return
-only the check-in text, without JSON, headings or a chat-ui block.`
+question. A short statement may stand alone and no reply is required. If there
+is no natural, truthful reason to speak now, return exactly [沉默]. Otherwise
+return only the check-in text, without JSON, headings or a chat-ui block.`
 
 func (s *Server) generateCare(w http.ResponseWriter, r *http.Request) {
 	role, ok := s.memoryRole(w, r)

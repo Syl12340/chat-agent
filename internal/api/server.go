@@ -38,6 +38,7 @@ import (
 	"chat-agent/internal/turns"
 	"chat-agent/internal/webtools"
 	"chat-agent/plugins/builtin/clock"
+	"chat-agent/plugins/builtin/literature"
 	"chat-agent/plugins/builtin/search"
 	"chat-agent/web"
 )
@@ -121,6 +122,12 @@ type Server struct {
 	activeImageJob imageWork // protected by mediaMu
 	onebot         *oneBotIntegration
 	turnObserver   TurnCompletionObserver
+	// transportGeneration identifies this live server process. It is not an
+	// authorization secret or a storage generation: clients use it only to
+	// discard connection-local assumptions and request authoritative snapshots
+	// after a restart or failover.
+	transportGeneration string
+	transportStartedAt  time.Time
 }
 
 func New(c Config) (*Server, error) {
@@ -157,6 +164,10 @@ func New(c Config) (*Server, error) {
 	path, err := filepath.Abs(c.DataDir)
 	if err != nil {
 		return nil, err
+	}
+	var transportBytes [16]byte
+	if _, err := rand.Read(transportBytes[:]); err != nil {
+		return nil, errors.Join(errors.New("cannot create transport generation"), err)
 	}
 	c.DataDir = path
 	if err := os.MkdirAll(filepath.Join(path, probe.AgentID), 0700); err != nil {
@@ -273,7 +284,7 @@ func New(c Config) (*Server, error) {
 		webClient.Close()
 		return nil, errors.Join(err, images.Close(), push.close(), topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
 	}
-	s := &Server{decision: decision.New(c.Decision), imagegen: imageGenerator(c), approvals: probe.NewApprovalStore(), devices: deviceStore, activities: activityStore, life: lifeStore, turns: turnStore, runtime: runtimeStore, workCtx: workCtx, workCancel: workCancel, careSlots: make(chan struct{}, 1), config: c, tokenHash: sha256.Sum256([]byte(c.AccessToken)), sessions: map[string]*probe.Session{}, runs: map[string]*runState{}, roles: roleManager, memory: mem, companion: companionStore, tasks: taskStore, web: webClient, location: location}
+	s := &Server{decision: decision.New(c.Decision), imagegen: imageGenerator(c), approvals: probe.NewApprovalStore(), devices: deviceStore, activities: activityStore, life: lifeStore, turns: turnStore, runtime: runtimeStore, workCtx: workCtx, workCancel: workCancel, careSlots: make(chan struct{}, 1), config: c, tokenHash: sha256.Sum256([]byte(c.AccessToken)), sessions: map[string]*probe.Session{}, runs: map[string]*runState{}, roles: roleManager, memory: mem, companion: companionStore, tasks: taskStore, web: webClient, location: location, transportGeneration: hex.EncodeToString(transportBytes[:]), transportStartedAt: time.Now().UTC()}
 	s.modelConfigs = modelConfigs
 	// Built-in plugins: each one is a Go value registered statically. A plugin
 	// whose dependencies are missing lands in Catalog.Unavailable instead of
@@ -281,6 +292,10 @@ func New(c Config) (*Server, error) {
 	loader := pluginapi.NewLoader()
 	loader.SetPolicy(c.Plugins)
 	loader.Add(search.New(webClient))
+	// Literature reuses the same bounded search-page parser and public reader as
+	// the search plugin; it is a vocabulary on top, not a second network path. A
+	// host with web access disabled gets nil back and the loader drops it.
+	loader.Add(literature.New(webClient))
 	loader.Add(clock.Plugin{})
 	for _, p := range hostPlugins {
 		loader.Add(p)
@@ -325,6 +340,7 @@ func (s *Server) Handler() http.Handler {
 	}
 	mux.HandleFunc("/hooks/", func(w http.ResponseWriter, r *http.Request) { fail(w, http.StatusNotFound, "接口不存在") })
 	mux.HandleFunc("GET /api/status", s.status)
+	mux.HandleFunc("GET /api/transport", s.transportStatus)
 	mux.HandleFunc("POST /api/approvals", s.approveCall)
 	mux.HandleFunc("GET /api/plugins", s.listPlugins)
 	mux.HandleFunc("GET /api/chat/options", s.chatOptions)
@@ -353,6 +369,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/sessions", s.list)
 	mux.HandleFunc("POST /api/sessions", s.create)
 	mux.HandleFunc("DELETE /api/sessions/{id}", s.deleteSession)
+	mux.HandleFunc("GET /api/sessions/{id}/surfaces", s.listSurfaces)
+	mux.HandleFunc("POST /api/sessions/{id}/surfaces", s.createSurface)
+	mux.HandleFunc("GET /api/sessions/{id}/surfaces/{surface}", s.getSurface)
+	mux.HandleFunc("PUT /api/sessions/{id}/surfaces/{surface}", s.replaceSurface)
+	mux.HandleFunc("DELETE /api/sessions/{id}/surfaces/{surface}", s.deleteSurface)
+	mux.HandleFunc("GET /api/sessions/{id}/annotations", s.listAnnotations)
+	mux.HandleFunc("POST /api/sessions/{id}/annotations", s.createAnnotation)
+	mux.HandleFunc("PATCH /api/sessions/{id}/annotations/{annotation}", s.updateAnnotation)
+	mux.HandleFunc("DELETE /api/sessions/{id}/annotations/{annotation}", s.deleteAnnotation)
 	mux.HandleFunc("GET /api/sessions/{id}/turns", s.listTurns)
 	mux.HandleFunc("POST /api/sessions/{id}/turns", s.enqueueTurn)
 	mux.HandleFunc("POST /api/sessions/{id}/turns/resume", s.resumeTurns)
@@ -411,6 +436,7 @@ func (s *Server) Handler() http.Handler {
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
 		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api" {
 			w.Header().Set("Cache-Control", "no-store")
+			s.setTransportHeaders(w)
 			if origin := r.Header.Get("Origin"); origin != "" {
 				u, err := url.Parse(origin)
 				if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host != r.Host {
@@ -431,7 +457,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // version is the service version reported by /api/status.
-const version = "0.4.0"
+const version = "0.4.1"
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model
@@ -439,7 +465,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		model = "chat-agent Demo"
 	}
 	identity := currentAuth(r)
-	writeJSON(w, 200, map[string]any{"name": "chat-agent", "version": version, "auth_method": identity.Method, "device_id": identity.Device.ID, "device_admin": identity.Method == "owner" || identity.Device.Admin, "speech_enabled": s.speechEnabled(), "speech_max_chars": 1200, "model": model, "demo": s.config.Agent.Demo, "max_output": s.config.Agent.MaxOutputTokens, "thinking_max_output": s.config.ThinkingMaxOutput, "timeout_seconds": s.config.Agent.Timeout.Seconds(), "time_zone": s.location.String(), "web_fetch": s.web.FetchEnabled(), "web_search": s.web.SearchEnabled(), "image_generation": s.imageAvailable(), "image_reason": s.imageUnavailableReason(), "reminder_delivery": "inbox", "scheduler_ok": s.schedulerOK.Load(), "onebot_enabled": s.onebot != nil})
+	writeJSON(w, 200, map[string]any{"name": "chat-agent", "version": version, "auth_method": identity.Method, "device_id": identity.Device.ID, "device_admin": identity.Method == "owner" || identity.Device.Admin, "speech_enabled": s.speechEnabled(), "speech_max_chars": 1200, "model": model, "demo": s.config.Agent.Demo, "max_output": s.config.Agent.MaxOutputTokens, "thinking_max_output": s.config.ThinkingMaxOutput, "timeout_seconds": s.config.Agent.Timeout.Seconds(), "time_zone": s.location.String(), "web_fetch": s.web.FetchEnabled(), "web_search": s.web.SearchEnabled(), "image_generation": s.imageAvailable(), "image_reason": s.imageUnavailableReason(), "reminder_delivery": "inbox", "scheduler_ok": s.schedulerOK.Load(), "onebot_enabled": s.onebot != nil, "transport": s.transportInfo(r)})
 }
 
 func validID(id string) bool {
@@ -627,7 +653,7 @@ func (s *Server) history(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, "互动上下文暂时不可用")
 		return
 	}
-	writeJSON(w, 200, map[string]any{"id": r.PathValue("id"), "messages": visibleMessages(sess.Messages()), "active": active, "role_id": sess.RoleID(), "summary": sess.Summary(), "turns": items, "queue_paused": paused, "activity": activity, "ui_context_floor": floor})
+	writeJSON(w, 200, map[string]any{"id": r.PathValue("id"), "messages": visibleMessages(sess.Messages()), "active": active, "role_id": sess.RoleID(), "summary": sess.Summary(), "turns": items, "queue_paused": paused, "activity": activity, "ui_context_floor": floor, "protocol_version": remoteProtocolVersion, "generation": s.transportGeneration, "resync": s.transportResync(r)})
 }
 
 func (s *Server) message(w http.ResponseWriter, r *http.Request) {

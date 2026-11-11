@@ -15,8 +15,10 @@ import { createShellBridge } from '/shell-bridge.js';
 import { attachGeneratedImage, watchImageJob } from '/generated-image.js';
 import { describeTool, searchResults, workspaceFileResult } from '/tool-view.js';
 import { createUIRenderer } from '/ui/render.js';
+import { applyPresentationEffect, renderPresentation } from '/ui/presentation.js';
 import { createDesktopWorkspace } from '/desktop-workspace.js';
 import { createMarkdownRenderer } from '/markdown.js';
+import { adoptTransportInfo, createTransportState, observeTransport, transportFailed, transportHeaders, transportNetworkChanged } from '/transport.js';
 const $ = id => document.getElementById(id);
 const ui = Object.fromEntries(['sidebar','drawer-scrim','menu','new-chat','sessions','session-count','logout','chat-title','connection-label','demo-badge','conversation','welcome','messages','prompt','composer','send','stop','notice','model-label','login-overlay','login-form','access-token','login-button','login-error','settings','settings-dialog','close-settings','connection-info','reset-chat','delete-session','offline-banner','install'].map(id => [id, $(id)]));
 for (const id of ['memory-open','memory-count','role-open','memory-dialog','memory-close','memory-role-name','memory-list','memory-form','memory-content','memory-status','memory-save','memory-cancel-edit','memory-form-label','memory-export','memory-message','role-dialog','role-close','role-id-label','role-title','role-form','role-file','role-content','role-save','role-skills','role-message','compact-context','compact-message','summary-details','summary-content']) ui[id] = $(id);
@@ -54,7 +56,7 @@ function forgetToken() {
   storage.remove('chat-token'); persistent.clear();
   if (nativeShell) window.ChatAndroidAuth?.forget().catch(() => notice('清除本机登录信息失败，请重试退出登录。'));
 }
-const state = { token: storage.get('chat-token') || '', current: null, sessions: [], config: null, loading: false, streaming: false, external: false, stopping: false, controller: null, follow: true };
+const state = { token: storage.get('chat-token') || '', current: null, sessions: [], config: null, loading: false, streaming: false, external: false, stopping: false, controller: null, follow: true, transport: createTransportState(nativeShell ? 'securewire' : 'http') };
 let chatInput = null;
 let interactiveUI = null, historyRevision = 0, uiFloor = 0, uiSourceMessages = [];
 const workspace = createDesktopWorkspace();
@@ -148,7 +150,7 @@ function updateUI() {
   ui['compact-context'].disabled = navigationLocked || Boolean(state.queuedCount) || !state.current;
   ui.conversation.setAttribute('aria-busy', String(busy || state.loading));
   ui.sessions.querySelectorAll('button:not(.session-delete)').forEach(button => { button.disabled = navigationLocked; });
-  ui['connection-label'].textContent = state.loading ? '正在读取会话' : state.submitting ? '正在提交，你可以继续输入' : state.queuePaused ? '队列已暂停，可手动继续' : busy ? '正在回复，可以继续输入或停止' : state.config ? state.config.demo ? '本地演示 · 未连接真实模型' : '已连接 · 随时可以开始' : '等待连接';
+  ui['connection-label'].textContent = state.transport.phase === 'offline' ? '网络离线 · 状态会在恢复后同步' : state.transport.phase === 'reconnecting' ? '正在重新连接 · 不会重复提交' : state.loading ? '正在读取会话' : state.submitting ? '正在提交，你可以继续输入' : state.queuePaused ? '队列已暂停，可手动继续' : busy ? '正在回复，可以继续输入或停止' : state.config ? state.config.demo ? '本地演示 · 未连接真实模型' : '已连接 · 随时可以开始' : '等待连接';
   lifeUI.lock();
   topicsUI.lock();
   activitiesUI.lock();
@@ -202,8 +204,16 @@ async function renewDeviceSession() {
 async function request(path, options = {}) {
   const epoch = authEpoch, token = state.token;
   const {deviceRetried=false,...fetchOptions}=options;
-  const response = await fetch(path, { signal: connectionAbort?.signal, ...fetchOptions, headers: { 'Authorization': `Bearer ${token}`, ...(fetchOptions.body ? { 'Content-Type': 'application/json' } : {}), ...fetchOptions.headers }, cache: 'no-store' });
+  let response;
+  try {
+    response = await fetch(path, { signal: connectionAbort?.signal, ...fetchOptions, headers: { 'Authorization': `Bearer ${token}`, ...transportHeaders(state.transport), ...(fetchOptions.body ? { 'Content-Type': 'application/json' } : {}), ...fetchOptions.headers }, cache: 'no-store' });
+  } catch (error) {
+    if (epoch === authEpoch && token === state.token && error.name !== 'AbortError') { transportFailed(state.transport); updateUI(); }
+    throw error;
+  }
   if (epoch !== authEpoch || token !== state.token) throw staleAuth();
+  const transportObservation = observeTransport(state.transport,response);
+  if (transportObservation.changed) queueMicrotask(() => window.dispatchEvent(new CustomEvent('chat-transport-resync',{detail:transportObservation})));
   if(response.status===401 && state.authKind==='device' && !deviceRetried){
     try {await renewDeviceSession();}
     catch(error){
@@ -285,6 +295,7 @@ function connect(token, authKind = 'owner') {
     state.token = token; state.authKind = authKind;
     try {
       state.config = await step(json('/api/status'));
+      if (adoptTransportInfo(state.transport,state.config.transport)) window.dispatchEvent(new CustomEvent('chat-transport-resync'));
       await rememberToken(token, checkCurrent).catch(error => { checkCurrent(); notice(error.message || '无法记住登录状态'); });
       checkCurrent();
       ui['access-token'].value = '';
@@ -398,6 +409,7 @@ function card(role, text = '', key = '', images = [], context = null) {
   ui.welcome.hidden = true;
   const article = document.createElement('article'); article.className = `message ${role}`; article.dataset.role = role;
   if (key) article.dataset.messageId = key;
+  if (context?.messageID) article.dataset.sourceMessageId = context.messageID;
   const avatar = document.createElement('div'); avatar.className = 'message-avatar'; avatar.textContent = 'P'; avatar.setAttribute('aria-hidden', 'true');
   const content = document.createElement('div'); content.className = 'message-content';
   const label = document.createElement('span'); label.className = 'message-role'; label.textContent = roleName();
@@ -417,7 +429,7 @@ function card(role, text = '', key = '', images = [], context = null) {
       const budget=richText.createBudget();
       let cached=null, ordinal=0;
       if(source.messageIndex>=0){
-        const cacheKey=JSON.stringify([source.role,source.session,source.messageIndex]);
+        const cacheKey=JSON.stringify([source.role,source.session,source.messageID || source.messageIndex]);
         cached=richMessages.get(cacheKey);
         if(!cached || cached.raw!==value || cached.segmented!==source.segmented){cached={raw:value,index:source.messageIndex,segmented:source.segmented,pieces:[]};richMessages.set(cacheKey,cached);}
         while(richMessages.size>96){
@@ -475,12 +487,13 @@ function toolLog(message, data, pending = false) {
     // card reads left to right: state, what ran, when, and whether it opens.
     summary.append(heading, meta, chevron);
     const args = document.createElement('div'); args.className = 'tool-args';
+    const presentation = document.createElement('div'); presentation.className = 'tool-presentation';
     const output = document.createElement('pre'); output.className = 'tool-output';
     const body = document.createElement('div'); body.className = 'tool-body';
-    body.append(args, output);
+    body.append(args, presentation, output);
     details.append(summary, body);
     message.logs.append(details);
-    log = { summary, heading, meta, args, output, body, node: details };
+    log = { summary, heading, meta, args, presentation, output, body, node: details };
     message.tools.set(data.id, log);
   }
   const view = describeTool(data, pending);
@@ -505,6 +518,14 @@ function toolLog(message, data, pending = false) {
   }
   log.output.textContent = view.detail;
   log.output.hidden = view.empty;
+  log.presentation.replaceChildren();
+  let currentProjection=data.view?.presentation || log.currentProjection;
+  const placeProjection=next=>{currentProjection=next;log.currentProjection=next;const rendered=renderPresentation(next,{host:log.node,onEffect:runEffect});log.presentation.replaceChildren(...(rendered?[rendered]:[]));};
+  const runEffect=effect=>applyPresentationEffect(effect,{
+    insertDraft:restoreDraft,toast:notice,refresh:()=>turnUI.refresh(),replace:placeProjection,
+    patch:value=>{if(!currentProjection||!value?.root||!Number.isSafeInteger(value.revision)||value.revision<=Number(currentProjection.revision||0))throw new Error('界面更新版本已过期');placeProjection({...currentProjection,revision:value.revision,root:value.root});}
+  }).catch(handleError);
+  placeProjection(currentProjection);
   log.results?.remove();
   log.results = searchResults(data) || workspaceDownload(data);
   log.output.hidden = view.empty || Boolean(log.results);
@@ -641,11 +662,11 @@ function renderHistory(messages, turns = [], hashes = new Map()) {
   };
   for (let index=0;index<messages.length;index++) {
     for (const root of roots) if (['failed','canceled','interrupted'].includes(root.status) && root.end_index === index) incomplete(root);
-    const message = messages[index], root = owner(index), key = root ? `${state.current}:turn:${root.id}`:`${state.current}:message:${index}`;
-    if (message.role === 'user') { legacyUser = index; card('user',message.content,userKeys.get(index) || `${state.current}:message:${index}`,message.images || []); current = null; currentStart = -1; }
+    const message = messages[index], root = owner(index), stableKey=message.id || String(index), key = root ? `${state.current}:turn:${root.id}`:`${state.current}:message:${stableKey}`;
+    if (message.role === 'user') { legacyUser = index; const user=card('user',message.content,userKeys.get(index) || `${state.current}:message:${stableKey}`,message.images || []); if(message.id)user.node.dataset.sourceMessageId=message.id; current = null; currentStart = -1; }
     else if (message.role === 'assistant') {
       const final = !message.tool_calls?.length && (!root || root.status === 'completed' && index === root.end_index - 1);
-      const source={role:state.roleID,session:state.current,messageIndex:index,sha256:hashes.get(index) || '',eligible:Boolean(hashes.get(index) && root && final),floor:uiFloor,segmented:final};
+      const source={role:state.roleID,session:state.current,messageID:message.id || '',messageIndex:index,sha256:hashes.get(index) || '',eligible:Boolean(hashes.get(index) && root && final),floor:uiFloor,segmented:final};
       if (!current) { current = card('assistant',message.content,key,[],source); currentStart = index; }
       else if (message.content) current.appendSegment(message.content,source);
       if (!root && message.reasoning_content) showReasoning(current.node,message.reasoning_content,`${state.current}:reasoning:${index}`);
@@ -689,6 +710,7 @@ function renderHistory(messages, turns = [], hashes = new Map()) {
     }
   }
   updateLatest(!state.follow);
+  void refreshSurfaces();
   // Only the newest completed turn can be purged: removing an older one would
   // leave later turns pointing at message indexes that no longer exist.
   const newest = [...roots].filter(t => t.status === 'completed').pop();
@@ -703,6 +725,84 @@ function renderHistory(messages, turns = [], hashes = new Map()) {
     }
   }
 }
+
+// Persistent surfaces are host-stored views bound to one conversation. They are
+// fetched on every history render because the model may have created or replaced
+// one during the turn, and they live outside the message list so a later turn
+// cannot bury them. The epoch guard drops a response that arrives after the user
+// already switched conversations.
+let surfacesEpoch = 0;
+
+async function refreshSurfaces() {
+  const host = $('surface-stack');
+  const session = state.current;
+  const epoch = ++surfacesEpoch;
+  if (!host) return;
+  if (!session || !state.token) {
+    host.replaceChildren();
+    host.hidden = true;
+    return;
+  }
+  let items = [];
+  try {
+    const data = await json(`/api/sessions/${encodeURIComponent(session)}/surfaces`);
+    items = Array.isArray(data?.items) ? data.items : [];
+  } catch {
+    items = [];
+  }
+  if (epoch !== surfacesEpoch || state.current !== session || !host.isConnected) return;
+  renderSurfaceStack(host, items);
+}
+
+function renderSurfaceStack(host, items) {
+  host.replaceChildren();
+  host.hidden = items.length === 0;
+  for (const item of items) {
+    const view = item?.view;
+    if (!view) continue;
+    const rendered = renderPresentation(view, { onEffect: surfaceEffect });
+    if (!rendered) continue;
+    const card = document.createElement('article');
+    card.className = 'surface-card';
+    card.dataset.surface = String(item.id || '');
+    const header = document.createElement('header');
+    const label = document.createElement('span');
+    label.className = 'surface-label';
+    label.textContent = view.title || '界面';
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'surface-remove';
+    remove.textContent = '移除';
+    remove.addEventListener('click', () => void removeSurface(item.id));
+    header.append(label, remove);
+    card.append(header, rendered);
+    host.append(card);
+  }
+}
+
+// A stored surface may ask for the effects an inline one can, except the two that
+// would rewrite the surface itself: the host owns that copy, and a stale revision
+// must never overwrite a newer one.
+function surfaceEffect(effect) {
+  return applyPresentationEffect(effect, {
+    insertDraft: restoreDraft,
+    toast: notice,
+    refresh: () => turnUI.refresh(),
+  }).catch(handleError);
+}
+
+async function removeSurface(id) {
+  const session = state.current;
+  if (!session || !id) return;
+  try {
+    await json(`/api/sessions/${encodeURIComponent(session)}/surfaces/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  } catch (err) {
+    handleError(err);
+    return;
+  }
+  await refreshSurfaces();
+}
+
 // Physically removes one turn: its messages leave the journal file, not just the view.
 async function purgeTurn(turn) {
   if (!confirm('删除这一轮的对话记录？它会从服务器上的聊天记录中移除，无法撤销。')) return;
@@ -867,7 +967,7 @@ ui['reset-chat'].addEventListener('click', async () => {
 ui.settings.addEventListener('click', () => {
   if (!state.config) return;
   ui['connection-info'].replaceChildren();
-  for (const [label, value] of [['服务', location.host], ['模型', state.config.model], ['模式', state.config.demo ? '本地演示，无真实模型' : '自定义模型 API'], ['时区', state.config.time_zone], ['提醒', '服务端收件箱，无关闭应用推送'], ['网页抓取', state.config.web_fetch ? '限定域名，已开启' : '未开启'], ['网页搜索', state.config.web_search ? '自定义端点，已开启' : '未开启'], ['响应期限', `${state.config.timeout_seconds} 秒`]]) {
+  for (const [label, value] of [['服务', location.host], ['连接', `${state.transport.carrier === 'securewire' ? '加密直连' : 'HTTP/SSH'} · 协议 v${state.transport.protocol || '?'}`], ['模型', state.config.model], ['模式', state.config.demo ? '本地演示，无真实模型' : '自定义模型 API'], ['时区', state.config.time_zone], ['提醒', '服务端收件箱，无关闭应用推送'], ['网页抓取', state.config.web_fetch ? '限定域名，已开启' : '未开启'], ['网页搜索', state.config.web_search ? '自定义端点，已开启' : '未开启'], ['响应期限', `${state.config.timeout_seconds} 秒`]]) {
     const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = label; dd.textContent = value; ui['connection-info'].append(dt, dd);
   }
   ui['settings-dialog'].showModal(); deviceAuth.refreshManagement();
@@ -876,8 +976,13 @@ ui.settings.addEventListener('click', () => {
 ui['close-settings'].addEventListener('click', () => ui['settings-dialog'].close());
 window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); installPrompt = event; ui.install.hidden = false; });
 ui.install.addEventListener('click', async () => { if (installPrompt) { await installPrompt.prompt(); installPrompt = null; ui.install.hidden = true; } });
-function networkStatus() { ui['offline-banner'].hidden = navigator.onLine; }
+function networkStatus() { ui['offline-banner'].hidden = navigator.onLine; transportNetworkChanged(state.transport); updateUI(); }
 window.addEventListener('online', networkStatus); window.addEventListener('offline', networkStatus); networkStatus();
+window.addEventListener('chat-transport-resync', () => {
+  if (!state.token) return;
+  state.transport.resync = false;
+  Promise.allSettled([refreshSessions(), turnUI.refresh(), lifeUI.refresh({auto:false}), activitiesUI.refresh()]).finally(updateUI);
+});
 if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('/sw.js').catch(() => {});
 async function restoreConnection() {
   storage.remove('chat-token'); persistent.clear();

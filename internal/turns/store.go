@@ -53,6 +53,9 @@ type Turn struct {
 	Model            string        `json:"model,omitempty"`
 	Thinking         string        `json:"thinking,omitempty"`
 	Images           []media.Image `json:"images,omitempty"`
+	// QueueDisposition is response-only admission metadata. The store leaves it
+	// empty so restart recovery remains based solely on Status and BatchID.
+	QueueDisposition string `json:"queue_disposition,omitempty"`
 }
 type record struct {
 	Turn
@@ -147,7 +150,7 @@ func decodeState(id string, b []byte) (*state, bool, error) {
 	seen := map[string]bool{}
 	for i := range st.Items {
 		t := &st.Items[i]
-		if !storage.ValidID(t.ID) || seen[t.ID] || t.Sequence != i+1 || len(t.Digest) != 64 || t.StartIndex < 0 || t.EndIndex < 0 || len(t.Content) > 64<<10 || len(t.Text) > 4<<20 || len(t.ReasoningContent) > 1<<20 || st.Version < 3 && (t.ReasoningContent != "" || len(t.Text) > 64<<10) {
+		if !storage.ValidID(t.ID) || seen[t.ID] || t.Sequence != i+1 || len(t.Digest) != 64 || t.StartIndex < 0 || t.EndIndex < 0 || len(t.Content) > 64<<10 || len(t.Text) > 4<<20 || len(t.ReasoningContent) > 1<<20 || t.QueueDisposition != "" || st.Version < 3 && (t.ReasoningContent != "" || len(t.Text) > 64<<10) {
 			return nil, false, errors.New("invalid turn record")
 		}
 		if !validOptions(t.Model, t.Thinking, t.Images) {

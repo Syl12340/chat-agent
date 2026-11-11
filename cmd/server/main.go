@@ -1,4 +1,4 @@
-﻿package main
+package main
 
 import (
 	"context"
@@ -19,10 +19,10 @@ import (
 	"chat-agent/internal/api"
 	"chat-agent/internal/decision"
 	"chat-agent/internal/imagegen"
-	"chat-agent/internal/sandbox"
 	"chat-agent/internal/pluginapi"
 	"chat-agent/internal/probe"
 	"chat-agent/internal/runlog"
+	"chat-agent/internal/sandbox"
 	"chat-agent/internal/securewire"
 	"chat-agent/internal/semantic"
 	"chat-agent/internal/webtools"
@@ -218,7 +218,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	app, err := api.New(api.Config{Agent: c, ChatModels: chatModels, ThinkingMaxOutput: thinkingMax, Speech: api.SpeechConfig{Model: os.Getenv("CHAT_TTS_MODEL"), Voice: os.Getenv("CHAT_TTS_VOICE")}, DataDir: *data, RolesDir: *rolesDir, TimeZone: *timeZone, Web: webtools.Config{Enabled: *webEnabled, AllowedHosts: strings.Split(os.Getenv("CHAT_WEB_HOSTS"), ","), SearchURL: searchEngine(*webEnabled)}, AccessToken: os.Getenv("CHAT_ACCESS_TOKEN"), AndroidReleaseDir: os.Getenv("CHAT_ANDROID_RELEASE_DIR"), Semantic: semantic.Config{BaseURL: os.Getenv("CHAT_BASE_URL"), APIKey: os.Getenv("CHAT_API_KEY"), Model: os.Getenv("CHAT_RERANK_MODEL")}, Decision: decision.Config{BaseURL: os.Getenv("CHAT_BASE_URL"), APIKey: os.Getenv("CHAT_API_KEY"), Model: decisionModel()}, ImageRemote: imagegen.RemoteConfig{BaseURL: os.Getenv("CHAT_IMAGE_REMOTE"), Token: os.Getenv("CHAT_IMAGE_TOKEN")}, Images: imagegen.Config{Python: os.Getenv("CHAT_IMAGE_PYTHON"), Script: os.Getenv("CHAT_IMAGE_BRIDGE"), Profiles: splitList(os.Getenv("CHAT_IMAGE_PROFILES")), DefaultProfile: os.Getenv("CHAT_IMAGE_PROFILE")}, OneBot: onebotConfig, Plugins: pluginPolicy, HostTools: api.HostToolsConfig{Sessions: splitList(os.Getenv("CHAT_HOST_TOOL_SESSIONS")), WorkspaceRoot: os.Getenv("CHAT_WORKSPACE_ROOT"), WorkspaceActions: os.Getenv("CHAT_WORKSPACE_ACTIONS"), ServiceUnits: splitList(os.Getenv("CHAT_SERVICE_UNITS"))}})
+	app, err := api.New(api.Config{Agent: c, ChatModels: chatModels, ThinkingMaxOutput: thinkingMax, Speech: api.SpeechConfig{Model: os.Getenv("CHAT_TTS_MODEL"), Voice: os.Getenv("CHAT_TTS_VOICE")}, DataDir: *data, RolesDir: *rolesDir, TimeZone: *timeZone, Web: webtools.Config{Enabled: *webEnabled, AllowedHosts: strings.Split(os.Getenv("CHAT_WEB_HOSTS"), ","), SearchURL: searchEngine(*webEnabled)}, AccessToken: os.Getenv("CHAT_ACCESS_TOKEN"), AndroidReleaseDir: os.Getenv("CHAT_ANDROID_RELEASE_DIR"), Semantic: semantic.Config{BaseURL: os.Getenv("CHAT_BASE_URL"), APIKey: os.Getenv("CHAT_API_KEY"), Model: os.Getenv("CHAT_RERANK_MODEL")}, Decision: decision.Config{BaseURL: os.Getenv("CHAT_BASE_URL"), APIKey: os.Getenv("CHAT_API_KEY"), Model: decisionModel()}, ImageRemote: imagegen.RemoteConfig{BaseURL: os.Getenv("CHAT_IMAGE_REMOTE"), Token: os.Getenv("CHAT_IMAGE_TOKEN")}, Images: imagegen.Config{Python: os.Getenv("CHAT_IMAGE_PYTHON"), Script: os.Getenv("CHAT_IMAGE_BRIDGE"), Profiles: splitList(os.Getenv("CHAT_IMAGE_PROFILES")), DefaultProfile: os.Getenv("CHAT_IMAGE_PROFILE")}, OneBot: onebotConfig, Plugins: pluginPolicy, HostTools: api.HostToolsConfig{Sessions: splitList(os.Getenv("CHAT_HOST_TOOL_SESSIONS")), WorkspaceRoot: os.Getenv("CHAT_WORKSPACE_ROOT"), WorkspaceActions: os.Getenv("CHAT_WORKSPACE_ACTIONS"), ServiceUnits: splitList(os.Getenv("CHAT_SERVICE_UNITS")), ServiceActions: os.Getenv("CHAT_SERVICE_ACTIONS")}})
 	if err != nil {
 		return err
 	}

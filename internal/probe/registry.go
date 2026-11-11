@@ -33,6 +33,9 @@ type Tool struct {
 	Validate    func(json.RawMessage) error                      `json:"-"`
 	Guard       ToolGuard                                        `json:"-"`
 	Receipt     ReceiptCapability                                `json:"-"`
+	// ApprovalRequired forces a host-issued, single-use ticket even when an
+	// independent decision service considers the call safe.
+	ApprovalRequired bool `json:"-"`
 	// Decision is the host's requirement, not a suggestion: the executor enforces
 	// it even when the model never asks. Empty means DecisionNever.
 	Decision DecisionRequirement `json:"-"`

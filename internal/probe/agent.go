@@ -77,6 +77,9 @@ type ToolCall struct {
 	Function FunctionCall `json:"function"`
 }
 type Message struct {
+	// ID is a host-owned durable identity. It is persisted in history and shown
+	// to authenticated clients, but modelVisibleMessages always removes it.
+	ID string `json:"id,omitempty"`
 	// Source is host-only provenance for ephemeral request context.
 	Source           string        `json:"source,omitempty"`
 	Role             string        `json:"role"`

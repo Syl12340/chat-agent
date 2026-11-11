@@ -32,6 +32,9 @@ func (e *ToolExecutor) gateDecision(ctx context.Context, execution ToolExecution
 		requirement = DecisionNever
 	}
 	if requirement == DecisionNever {
+		if tool.ApprovalRequired {
+			return e.requireHumanApproval(execution, &DecisionRecord{Required: DecisionNever, Risk: tool.Risk})
+		}
 		return nil, nil
 	}
 	gate := e.gate
@@ -68,7 +71,26 @@ func (e *ToolExecutor) gateDecision(ctx context.Context, execution ToolExecution
 	if record.Outcome == "" {
 		record.Outcome = "allowed"
 	}
+	if tool.ApprovalRequired {
+		return e.requireHumanApproval(execution, record)
+	}
 	return record, nil
+}
+
+func (e *ToolExecutor) requireHumanApproval(execution ToolExecution, record *DecisionRecord) (*DecisionRecord, error) {
+	digest := ApprovalDigest(execution.Name, execution.Arguments)
+	roleID, sessionID := execution.Step.RoleID, execution.Step.SessionID
+	if ticket, ok := e.approvals.Consume(sessionID, roleID, execution.Name, digest); ok {
+		record.Outcome = "user_override"
+		record.Approval = &ApprovalRequest{Tool: execution.Name, Digest: digest}
+		record.ApprovalID = ticket.ID
+		return record, nil
+	}
+	const reason = "该主机操作被配置为必须由用户逐次批准"
+	record.Outcome = "needs_approval"
+	record.Approval = &ApprovalRequest{Tool: execution.Name, Digest: digest, Reason: reason}
+	e.approvals.NoteDenied(sessionID, roleID, execution.Name, digest, reason)
+	return record, fmt.Errorf("%w（原因：%s）", ErrNeedsApproval, reason)
 }
 
 // degraded completes a record when no verdict was obtained.

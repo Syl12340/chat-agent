@@ -124,8 +124,8 @@ export function createLifeUI({ state, json, onError, drawer, onOpenSession, onCa
   }
   function renderCare() {
     ui['care-list'].replaceChildren();
-    const labels = {due:'等待生成',generating:'正在生成',ready:'待查看',seen:'已看过',canceled:'已取消',failed:'生成未完成',interrupted:'生成已中断',skipped:'本次未主动搭话（未调用模型）'};
-    const rank = {ready:0,due:1,generating:2,failed:3,interrupted:3,seen:4,skipped:5,canceled:6};
+    const labels = {due:'等待生成',generating:'正在生成',ready:'待查看',seen:'已看过',canceled:'已取消',failed:'生成未完成',interrupted:'生成已中断',skipped:'本次未主动搭话（未调用模型）',silent:'这次想过后没有开口'};
+    const rank = {ready:0,due:1,generating:2,failed:3,interrupted:3,seen:4,silent:5,skipped:5,canceled:6};
     const items = [...care].sort((a,b) => (rank[a.status] ?? 9) - (rank[b.status] ?? 9) || new Date(b.created_at) - new Date(a.created_at));
     if (!items.length) ui['care-list'].append(element('p','memory-empty',settings?.enabled ? '暂时没有到期关怀。可以给已确认事件设置跟进时间，或设置每日轻问候。' : '关怀默认关闭。你可以在下面按自己的节奏开启。'));
     for (const item of items.slice(0,100)) {
@@ -135,6 +135,7 @@ export function createLifeUI({ state, json, onError, drawer, onOpenSession, onCa
         const probability = Number.isInteger(item.probability) ? `（本次主动概率 ${item.probability}%）` : '';
         article.append(element('p','life-meta',`这次自动闲聊未被随机选中${probability}。明确的事件跟进仍按设置进行。`));
       }
+      if (item.status === 'silent') article.append(element('p','life-meta','模型已完成这次判断并计入尝试额度，但决定不打扰你。'));
       if (item.content) article.append(element('p','life-content care-content',item.content));
       if (item.error) article.append(element('p','life-meta',item.error));
       const actions = element('div','life-actions');

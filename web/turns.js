@@ -151,6 +151,9 @@ export function createTurnsUI({ state, json, storage, onError, onHistory, onStat
         const accepted = await json(path(sid,'/turns'),{method:'POST',body:JSON.stringify(body)});
         if (!current(sid,stamp) || submission !== ticket) return true;
         pending = null; savePending(); cancelRead(); onAccepted?.(payload);
+        if (accepted.queue_disposition === 'merge_window') say('已收到，会和刚才连发的内容一起理解。');
+        else if (accepted.queue_disposition === 'next_turn') say('已排到当前回复之后；不会改写正在执行的这一轮。');
+        else if (accepted.queue_disposition === 'duplicate') say('这条消息已经进入队列，没有重复提交。');
         const optimistic = history || {id:sid,messages:[],turns:[],role_id:state.roleID};
         const turns = [...(optimistic.turns || [])]; const old = turns.findIndex(item => item.id === accepted.id);
         if (old < 0) turns.push(accepted); else turns[old] = accepted;

@@ -118,8 +118,17 @@ func (s *Server) SubmitTurn(ctx context.Context, input TurnSubmission) (turns.Tu
 			return turns.Turn{}, false, submissionError(http.StatusConflict, err.Error(), err)
 		}
 	}
-	if current := s.runs[input.SessionID]; current != nil && !current.queued {
-		return turns.Turn{}, false, submissionError(http.StatusConflict, "旧版聊天请求正在生成，请先停止", nil)
+	disposition := "start"
+	if current := s.runs[input.SessionID]; current != nil {
+		// The runtime cannot safely inject into an in-flight provider request.
+		// Messages inside the short admission window may join its batch; later
+		// messages are durably queued for the next turn instead of pretending to
+		// have steered the active model call.
+		if current.queued {
+			disposition = "merge_window"
+		} else {
+			disposition = "next_turn"
+		}
 	}
 	_, paused, err := s.turns.HasQueued(input.SessionID)
 	if err != nil {
@@ -133,6 +142,7 @@ func (s *Server) SubmitTurn(ctx context.Context, input TurnSubmission) (turns.Tu
 		}
 		for _, turn := range existing {
 			if turn.ID == input.RequestID && turn.Content == input.Content && turn.Mode == input.Mode && turn.Model == input.Model && turn.Thinking == input.Thinking && sameImages(turn.Images, input.Images) {
+				turn.QueueDisposition = "duplicate"
 				return turn, true, nil
 			}
 		}
@@ -141,6 +151,11 @@ func (s *Server) SubmitTurn(ctx context.Context, input TurnSubmission) (turns.Tu
 	turn, duplicate, err := s.turns.EnqueueWithOptions(input.SessionID, input.RequestID, input.Content, input.Mode, input.Model, input.Thinking, input.Images)
 	if err != nil {
 		return turns.Turn{}, false, err
+	}
+	if duplicate {
+		turn.QueueDisposition = "duplicate"
+	} else {
+		turn.QueueDisposition = disposition
 	}
 	if !duplicate && !paused && !input.DeferStart {
 		s.startTurnWorkerLocked(input.SessionID, sess)

@@ -3,6 +3,7 @@ package probe
 import (
 	"bufio"
 	"bytes"
+	"chat-agent/internal/media"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -13,7 +14,6 @@ import (
 	"io"
 	"mime"
 	"net/http"
-	"chat-agent/internal/media"
 	"sort"
 	"strings"
 )
@@ -137,6 +137,7 @@ func cloneMessages(messages []Message) []Message {
 func modelVisibleMessages(messages []Message) []Message {
 	out := cloneMessages(messages)
 	for i := range out {
+		out[i].ID = ""
 		if len(out[i].ToolCalls) == 0 {
 			out[i].ReasoningContent = ""
 		}

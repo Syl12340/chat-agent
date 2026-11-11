@@ -113,8 +113,8 @@ button,input,textarea,select{font:inherit}button{min-height:48px;transition:back
 .role-proposal-card .life-actions{margin-top:16px}
 .role-proposal-card .role-proposal-approve{background:var(--primary-container);color:var(--on-primary-container)}
 .role-proposal-card .role-proposal-delete{background:transparent;color:var(--error)}
-.care-skipped{background:var(--surface-container);border-color:var(--outline-variant)}
-.care-skipped .life-card-title{font-size:16px;color:var(--on-surface-variant)}
+.care-skipped,.care-silent{background:var(--surface-container);border-color:var(--outline-variant)}
+.care-skipped .life-card-title,.care-silent .life-card-title{font-size:16px;color:var(--on-surface-variant)}
 /* Public-topic settings and factual run records share the M3 dialog surfaces. */
 .topics-dialog{max-width:780px}
 .topics-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px}

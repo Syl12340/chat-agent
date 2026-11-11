@@ -303,7 +303,7 @@ func initialHistory(roleID string) ([]byte, error) {
 	return json.Marshal(struct {
 		Version int    `json:"version"`
 		RoleID  string `json:"role_id"`
-	}{Version: 2, RoleID: roleID})
+	}{Version: 3, RoleID: roleID})
 }
 
 func (r *Registry) Create(id, roleID string) error {

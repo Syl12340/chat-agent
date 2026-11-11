@@ -58,6 +58,11 @@ type Tool struct {
 	// as authorization.
 	Decision string
 	Risk     string
+	// ApprovalRequired makes every invocation wait for a host-issued one-shot
+	// ticket. A model argument can never satisfy this requirement.
+	ApprovalRequired bool
+	// Receipt declares whether the handler returns an atomic business receipt.
+	Receipt string
 	// Capability is the manifest capability this tool needs. The core exposes the
 	// tool only when that capability is enabled for the current turn.
 	Capability string
@@ -71,8 +76,20 @@ type Handler func(ctx context.Context, args json.RawMessage) (Result, error)
 // Result is what a tool returns. Output is what the model reads; Data is for the
 // host and never crosses the model boundary unless the handler folds it in.
 type Result struct {
-	Output string
-	Data   json.RawMessage
+	Output  string
+	Data    json.RawMessage
+	Receipt *Receipt
+}
+
+// Receipt is a plugin-neutral business receipt. The core supplies the role and
+// validates it against the run recorder before accepting it.
+type Receipt struct {
+	Store              string
+	OperationID        string
+	ArgumentsSHA256    string
+	EntityIDs          []string
+	ResultingRevisions []int
+	OutcomeDigest      string
 }
 
 // Service is a synchronous contract another plugin may depend on.
@@ -123,6 +140,9 @@ func (r *Registry) Tool(tool Tool) error {
 	}
 	if tool.Risk != "" && tool.Risk != "none" && tool.Risk != "low" && tool.Risk != "medium" && tool.Risk != "high" && tool.Risk != "critical" {
 		return fmt.Errorf("工具 %s 的风险等级无效", tool.Name)
+	}
+	if tool.Receipt != "" && tool.Receipt != "none" && tool.Receipt != "atomic" {
+		return fmt.Errorf("工具 %s 的回执能力无效", tool.Name)
 	}
 	if len(tool.Prompt) > 4096 {
 		return fmt.Errorf("工具 %s 的提示分区过长", tool.Name)

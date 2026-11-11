@@ -1,6 +1,6 @@
 # chat-agent 推进目标与架构路线
 
-更新：2026-11-09。用户确认的主方向；优先于此前“主要推进消息身份与 GenUI”的排期。本文为设计目标，不表示功能已经实施或授予运行时无限权限。
+更新：2026-11-10。用户确认的主方向；优先于此前“主要推进消息身份与 GenUI”的排期。本文为设计目标，不表示功能已经实施或授予运行时无限权限。dsh-Go、AstrBot 与 Aurabot 已固定到具体提交并完成源码级比较，详细结论与 Remote/Presentation/Conversation 三条协议路线见[参考项目源码调研](reference-architecture-dsh-go-astrbot-aurabot.md)。
 
 ## 1. 产品目标
 
@@ -138,8 +138,8 @@ Agent 请求重启自身服务时，回执先持久化，再由外部 helper 执
 | 批次 | 交付 | 前置 / 最小验证 |
 | --- | --- | --- |
 | M0 基线收口 | 已提交能力与发布证据核对、授权来源修正、ComfyUI 健康口径 | 现有会话可继续使用、能力失败可解释、两端实际版本可追溯 |
-| M1 陪伴与插件框架 | 聊天接续与表达改进、首批能力入目录、现有 UI 接入插件状态、小精灵 O0 | 插件启停后聊天可用、执行检查授权、巡检输出脱敏 |
-| M2 双端执行 | Linux 沙箱、Windows 本地 agent、配对/工作区授权、任务回执和产物；ComfyUI 作业查询 | 一条隔离文件任务；取消和断线不重做；越界访问拒绝 |
+| M1 陪伴与插件框架 | Carrier seam 与连接状态、聊天接续与表达改进、首批能力入目录、现有 UI 接入插件状态、小精灵 O0 | 两种 carrier 行为一致；插件启停后聊天可用；执行检查授权；巡检输出脱敏 |
+| M2 双端执行 | generation/resync、Linux 沙箱、Windows 本地 agent、配对/工作区授权、任务回执和有类型产物；ComfyUI 作业查询 | 一条隔离文件任务；重连不重复终态；取消和断线不重做；越界访问拒绝 |
 | M3 身份与成果 | message ID 显式迁移、持久 surface、选段批注/侧聊、文献插件 | 删除不误绑定；刷新重建；旧组件兼容；批注来源可核查 |
 | M4 受限管理与组合能力 | 小精灵 O1/O2、一个业务动作回执闭环；逐步迁移 memory/activity/companion 等插件 | 双击/断线不重复操作；管理范围不可扩大；失败可核对/恢复 |
 
@@ -149,10 +149,11 @@ ComfyUI、仿生表达与 UI 是贯穿各批次的持续方向，不只在最后
 
 ## 10. 上游证据与复用纪律
 
-2026-11-09 公开资料核对：
+2026-11-10 公开资料与固定源码核对：
 
-- 用户指定 [aureth-labs/dsh-aurabot-qq](https://github.com/aureth-labs/dsh-aurabot-qq)：聊天、模块、表达与记忆机制的参考。
-- [AstrBotDevs/AstrBot](https://github.com/AstrBotDevs/AstrBot)：平台与能力扩展的参考；代码复用前逐文件核对其许可和本项目分发方式。
+- 用户指定 [aureth-labs/dsh-aurabot-qq](https://github.com/aureth-labs/dsh-aurabot-qq)，固定 `5eb5b9463f5f0ce14964a2c7d5dcba44ad67fabe`（MIT）：聊天、队列、主动性结算、模块与表达机制的参考。
+- [AstrBotDevs/AstrBot](https://github.com/AstrBotDevs/AstrBot)，固定 `68acac91b1ab92c2ac4cfd811c0898913a1391c8`（AGPL-3.0）：有类型运行事实、session/turn 和媒体契约只作架构参考，不复制源码。
+- [ccch1mneyyy/dsh-Go](https://github.com/ccch1mneyyy/dsh-Go)，固定 `a9877420ab9aee121134faf01b6a92a39ce0b05b`（v1.0.15）：根仓库 AGPL-3.0，只作架构参考；`sdk/plugin-kit` 独立 MIT，可作为 Presentation schema/validator 的复用候选。
 - DeepSeek Harness 是优先代码复用来源。先定位现有实现，再决定直接采用、移植或补写。已固定参考版本的 MIT 许可见上游。 [DSH LICENSE](https://github.com/deepseek-ai/deepseek-harness/blob/8bd073392eef6f54e921a093b95076248eb08cbb/LICENSE)
 - 用户指定 [ECNU/EduWork](https://github.com/ECNU/EduWork)：公共教育插件与成果工作台参考；许可范围以 [LICENSING.md](https://github.com/ECNU/EduWork/blob/main/LICENSING.md) 及所选文件为准。
 

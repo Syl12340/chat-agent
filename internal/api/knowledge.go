@@ -439,7 +439,7 @@ func (s *Server) agentForTurn(sess *probe.Session, inputs []string, sessionID st
 	)
 	c.Tools = append(c.Tools, s.taskTools(role.ID, sessionID)...)
 	c.DisableBuiltinClock = true
-	c.Tools = append(c.Tools, s.pluginTools(s.toolCapabilities(), sessionID)...)
+	c.Tools = append(c.Tools, s.pluginTools(s.toolCapabilities(), sessionID, role.ID)...)
 	c.Tools = append(c.Tools, s.decisionTool()...)
 	c.Tools = append(c.Tools, s.imageTools(role.ID, sessionID, c.RequestID)...)
 	if strings.TrimSpace(strings.Join(inputs, "\n")) == "" || len(uiResponses) > 0 {

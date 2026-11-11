@@ -66,6 +66,13 @@ reply pipeline in `src/chat/hub.js`. chat-agent keeps Markdown-heavy answers
 atomic, caps a reply at three bubbles, adds no artificial delivery delay, and
 does not embed the DSH/Cordis or QQ runtimes.
 
+Additional source review revision:
+`5eb5b9463f5f0ce14964a2c7d5dcba44ad67fabe` (2026-11-10, MIT). The message
+coalescing, steer-or-queue boundary, delivery settlement, approval queue and
+purpose scheduling implementations were inspected for the design documented in
+`docs/reference-architecture-dsh-go-astrbot-aurabot.md`. No additional source
+from that revision has been copied by this documentation change.
+
 ## AstrBot
 
 Source: https://github.com/AstrBotDevs/AstrBot
@@ -75,6 +82,33 @@ Reference revision: `6b10af75e118714335aff3aab047bf7689fa1388`.
 AstrBot is licensed under AGPL-3.0. Its provider-management, durable task and
 typed media designs were inspected as architectural references only. No
 AstrBot source code or assets are copied into chat-agent.
+
+Additional source review revision:
+`68acac91b1ab92c2ac4cfd811c0898913a1391c8` (2026-11-10, AGPL-3.0). Its typed
+runtime events, serial session/turn ownership, steering receipts, portable
+input/output components and expiring file-token service informed only the
+architecture document above. No code or assets from this revision are copied.
+
+## dsh-Go
+
+Source: https://github.com/ccch1mneyyy/dsh-Go
+
+Reference revision: `a9877420ab9aee121134faf01b6a92a39ce0b05b`
+(v1.0.15, 2026-11-10).
+
+The repository root is licensed under AGPL-3.0. Its Dart Carrier/Mux and remote
+connection, pairing, trust, capability and resynchronization implementations
+were inspected as architectural references only. No AGPL source code or assets
+are copied into chat-agent.
+
+The upstream `sdk/plugin-kit` directory carries a separate MIT License,
+Copyright (c) 2026 DSH-TUI (ccch1mneyyy). Its declarative view schemas,
+surface budgets, capability degradation and effect-validation design informed
+CA's independently written `internal/presentation` and `web/ui/presentation.js`.
+No dsh-Go Dart or TypeScript source, schema file, generated code or asset is
+copied into those implementations. If selected upstream files are introduced
+later, their source and target paths, modifications and complete MIT notice must
+be recorded at that time.
 
 ## KaTeX 0.19.1
 

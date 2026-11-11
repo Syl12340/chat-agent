@@ -17,6 +17,9 @@ type HostToolsConfig struct {
 	// ServiceUnits is the allow-list of systemd units the diagnostics plugin may
 	// inspect. Empty leaves the per-unit tool unregistered.
 	ServiceUnits []string
+	// ServiceActions is an operator-owned JSON map of action id to fixed argv.
+	// It is inert unless the maintenance permission is separately granted.
+	ServiceActions string
 }
 
 func (c Config) hostPlugins() ([]pluginapi.Plugin, error) {
@@ -37,7 +40,15 @@ func (c Config) hostPlugins() ([]pluginapi.Plugin, error) {
 		plugins = append(plugins, p)
 	}
 	if c.Plugins.Grant(serverdiag.ID, serverdiag.Permission) {
-		if p := serverdiag.New(c.HostTools.ServiceUnits); p != nil {
+		actions := ""
+		if c.Plugins.Grant(serverdiag.ID, serverdiag.MaintenancePermission) {
+			actions = c.HostTools.ServiceActions
+		}
+		p, err := serverdiag.NewWithActions(c.HostTools.ServiceUnits, actions)
+		if err != nil {
+			return nil, err
+		}
+		if p != nil {
 			plugins = append(plugins, p)
 		}
 	}

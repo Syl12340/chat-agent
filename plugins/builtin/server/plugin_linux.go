@@ -4,6 +4,8 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -17,10 +19,12 @@ import (
 	"time"
 
 	"chat-agent/internal/pluginapi"
+	"chat-agent/internal/probe"
 )
 
 const ID = "builtin.server"
 const Permission = "filesystem:diagnostics://host"
+const MaintenancePermission = "filesystem:maintenance://host"
 
 // New builds the diagnostics plugin for an explicit set of units.
 //
@@ -28,6 +32,13 @@ const Permission = "filesystem:diagnostics://host"
 // it, so the capability stays "look at these services" rather than "query
 // systemd". An empty list means the service tool is not registered at all.
 func New(units []string) pluginapi.Plugin {
+	plugin, _ := NewWithActions(units, "")
+	return plugin
+}
+
+// NewWithActions optionally registers fixed, operator-supplied maintenance
+// commands. JSON shape: {"action-id":["/absolute/helper","fixed-arg"]}.
+func NewWithActions(units []string, rawActions string) (pluginapi.Plugin, error) {
 	clean := make([]string, 0, len(units))
 	for _, unit := range units {
 		if name, ok := normalizeUnit(unit); ok {
@@ -35,28 +46,45 @@ func New(units []string) pluginapi.Plugin {
 		}
 	}
 	slices.Sort(clean)
-	return Plugin{units: slices.Compact(clean)}
+	actions, err := parseActions(rawActions)
+	if err != nil {
+		return nil, err
+	}
+	return Plugin{units: slices.Compact(clean), actions: actions}, nil
 }
 
 // Plugin carries the unit allow-list.
-type Plugin struct{ units []string }
+type Plugin struct {
+	units   []string
+	actions map[string][]string
+}
 
 func (p Plugin) Manifest() pluginapi.Manifest {
 	tools := []string{"server_status", "server_releases", "server_logs"}
 	if len(p.units) > 0 {
 		tools = append(tools, "server_service")
 	}
+	capabilities := []string{"diagnostics.host"}
+	permissions := []string{"diagnostics://host"}
+	if len(p.actions) > 0 {
+		tools = append(tools, "server_action")
+		capabilities = append(capabilities, "maintenance.host")
+		permissions = append(permissions, "maintenance://host")
+	}
 	return pluginapi.Manifest{
 		APIVersion: pluginapi.APIVersion, Kind: pluginapi.Kind,
-		Metadata: pluginapi.Metadata{ID: ID, Name: "服务器只读巡检", Version: "0.2.0"},
-		Spec: pluginapi.Spec{Runtime: pluginapi.RuntimeBuiltin, Capabilities: []string{"diagnostics.host"},
-			Permissions: pluginapi.Permissions{Filesystem: []string{"diagnostics://host"}},
+		Metadata: pluginapi.Metadata{ID: ID, Name: "服务器巡检与受限维护", Version: "0.3.0"},
+		Spec: pluginapi.Spec{Runtime: pluginapi.RuntimeBuiltin, Capabilities: capabilities,
+			Permissions: pluginapi.Permissions{Filesystem: permissions},
 			Tools:       tools},
 	}
 }
 func (p Plugin) Start(_ context.Context, host pluginapi.Host) error {
 	if !host.Allowed(Permission) {
 		return errors.New("server diagnostics permission denied")
+	}
+	if len(p.actions) > 0 && !host.Allowed(MaintenancePermission) {
+		return errors.New("server maintenance permission denied")
 	}
 	return nil
 }
@@ -79,8 +107,35 @@ func (p Plugin) Register(registry *pluginapi.Registry) error {
 			Handler:     p.service,
 		})
 	}
+	if len(p.actions) > 0 {
+		names := make([]string, 0, len(p.actions))
+		for name := range p.actions {
+			names = append(names, name)
+		}
+		slices.Sort(names)
+		enum, _ := json.Marshal(names)
+		tools = append(tools, pluginapi.Tool{
+			Name:             "server_action",
+			Description:      "Run one operator-configured server maintenance action. The command and arguments are fixed by server configuration; every call requires one-time human approval.",
+			Usage:            "use only after explaining the exact configured action, expected impact and recovery path.",
+			Parameters:       json.RawMessage(`{"type":"object","properties":{"action":{"type":"string","enum":` + string(enum) + `}},"required":["action"],"additionalProperties":false}`),
+			Capability:       "maintenance.host",
+			Decision:         "required",
+			Risk:             "critical",
+			ApprovalRequired: true,
+			Receipt:          "atomic",
+			Timeout:          2 * time.Minute,
+			Handler:          p.action,
+		})
+	}
 	for i, tool := range tools {
-		tool.Capability, tool.Order, tool.Timeout = "diagnostics.host", 730+i, 8*time.Second
+		if tool.Capability == "" {
+			tool.Capability = "diagnostics.host"
+		}
+		tool.Order = 730 + i
+		if tool.Timeout == 0 {
+			tool.Timeout = 8 * time.Second
+		}
 		if tool.Parameters == nil {
 			tool.Parameters = json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`)
 		}
@@ -89,6 +144,90 @@ func (p Plugin) Register(registry *pluginapi.Registry) error {
 		}
 	}
 	return nil
+}
+
+func parseActions(raw string) (map[string][]string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	var actions map[string][]string
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	if err := decoder.Decode(&actions); err != nil {
+		return nil, errors.New("invalid server maintenance actions")
+	}
+	var extra any
+	if decoder.Decode(&extra) != io.EOF {
+		return nil, errors.New("invalid server maintenance actions")
+	}
+	for name, argv := range actions {
+		// Maintenance is only delegated to an operator-installed narrow helper.
+		// Generic shells/system utilities would turn this fixed-action map into an
+		// accidental root command runner even though the model cannot edit it.
+		if !actionName(name) || len(argv) == 0 || len(argv) > 16 || !filepath.IsAbs(argv[0]) || !strings.HasPrefix(filepath.Base(argv[0]), "chat-agent-") {
+			return nil, errors.New("invalid server maintenance action")
+		}
+		for _, value := range argv {
+			if value == "" || len(value) > 512 || strings.ContainsRune(value, 0) {
+				return nil, errors.New("invalid server maintenance action argument")
+			}
+		}
+	}
+	return actions, nil
+}
+
+func actionName(value string) bool {
+	if value == "" || len(value) > 63 {
+		return false
+	}
+	for _, r := range value {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' && r != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+func (p Plugin) action(ctx context.Context, raw json.RawMessage) (pluginapi.Result, error) {
+	var args struct {
+		Action string `json:"action"`
+	}
+	if json.Unmarshal(raw, &args) != nil {
+		return pluginapi.Result{}, errors.New("invalid request")
+	}
+	argv, ok := p.actions[args.Action]
+	if !ok {
+		return pluginapi.Result{}, errors.New("action is not in the allow-list")
+	}
+	operationID := probe.ToolOperationID(ctx)
+	if operationID == "" {
+		return pluginapi.Result{}, errors.New("durable operation identity is unavailable")
+	}
+	call := append(append([]string(nil), argv[1:]...), "--operation-id", operationID)
+	cmd := exec.CommandContext(ctx, argv[0], call...)
+	cmd.Env = []string{"PATH=/usr/bin:/bin", "LANG=C", "CHAT_OPERATION_ID=" + operationID}
+	cmd.WaitDelay = time.Second
+	var stdout, stderr cappedBuffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		detail := strings.TrimSpace(stderr.String())
+		if detail == "" {
+			detail = "no diagnostic output"
+		}
+		return pluginapi.Result{}, errors.New("configured maintenance helper failed: " + detail)
+	}
+	detail := strings.TrimSpace(stdout.String())
+	value := map[string]any{"action": args.Action, "operation_id": operationID, "status": "completed"}
+	if detail != "" {
+		value["detail"] = detail
+	}
+	encodedValue, _ := json.Marshal(value)
+	argumentsDigest := sha256.Sum256(raw)
+	outcomeDigest := sha256.Sum256(encodedValue)
+	return pluginapi.Result{Output: string(encodedValue), Data: encodedValue, Receipt: &pluginapi.Receipt{
+		Store: "server-ops", OperationID: operationID,
+		ArgumentsSHA256: hex.EncodeToString(argumentsDigest[:]), EntityIDs: []string{args.Action},
+		ResultingRevisions: []int{1}, OutcomeDigest: hex.EncodeToString(outcomeDigest[:]),
+	}}, nil
 }
 
 func status(ctx context.Context, _ json.RawMessage) (pluginapi.Result, error) {

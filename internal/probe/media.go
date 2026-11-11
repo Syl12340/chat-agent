@@ -1,10 +1,18 @@
 package probe
 
 import (
-	"errors"
 	"chat-agent/internal/media"
 	"chat-agent/internal/storage"
+	"errors"
+	"strings"
 )
+
+func validMessageID(value string) bool {
+	if !strings.HasPrefix(value, "msg_") {
+		return false
+	}
+	return storage.ValidID(strings.TrimPrefix(value, "msg_"))
+}
 
 func validEffort(value string) bool {
 	switch value {
@@ -41,9 +49,22 @@ func persistentMessageValid(message Message) bool {
 	if validateImages(message.Images) != nil {
 		return false
 	}
+	if message.ID != "" && !validMessageID(message.ID) {
+		return false
+	}
 	return message.ReasoningContent == "" || message.Role == "assistant" && len(message.ReasoningContent) <= 256<<10
 }
 
 func messageExtended(message Message) bool {
 	return len(message.Images) > 0 || message.ReasoningContent != ""
+}
+
+func messageFormat(message Message) int {
+	if message.ID != "" {
+		return 3
+	}
+	if messageExtended(message) {
+		return 2
+	}
+	return 1
 }

@@ -3,6 +3,9 @@ package probe
 import (
 	"bufio"
 	"bytes"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -98,6 +101,9 @@ func openSessionFile(path, lockPath string) (_ *Session, openErr error) {
 	}
 	scanner := bufio.NewScanner(s.file)
 	scanner.Buffer(make([]byte, 4096), 16<<20)
+	messageOrdinal := 0
+	seenMessageIDs := map[string]bool{}
+	sessionIdentity := historySessionIdentity(path)
 	for scanner.Scan() {
 		var record sessionRecord
 		decoder := json.NewDecoder(bytes.NewReader(scanner.Bytes()))
@@ -119,24 +125,30 @@ func openSessionFile(path, lockPath string) (_ *Session, openErr error) {
 		if record.Summary != nil {
 			kinds++
 		}
-		if (record.Version != 1 && record.Version != 2) || kinds != 1 || decoder.Decode(&extra) != io.EOF {
+		if (record.Version < 1 || record.Version > 3) || kinds != 1 || decoder.Decode(&extra) != io.EOF {
 			return nil, errors.New("unsupported or damaged session record")
 		}
-		for _, m := range record.Messages {
-			if !persistentMessageValid(m) || record.Version == 1 && messageExtended(m) {
+		var raw struct {
+			Messages []map[string]json.RawMessage `json:"messages"`
+		}
+		_ = json.Unmarshal(scanner.Bytes(), &raw)
+		for i := range record.Messages {
+			fields := raw.Messages[i]
+			if record.Version == 1 && (fields["images"] != nil || fields["reasoning_content"] != nil) {
+				return nil, errors.New("v1 session contains v2 fields")
+			}
+			if record.Version < 3 && fields["id"] != nil {
+				return nil, errors.New("legacy session contains message identity")
+			}
+			if record.Version < 3 {
+				record.Messages[i].ID = legacyMessageID(sessionIdentity, messageOrdinal)
+			}
+			messageOrdinal++
+			m := record.Messages[i]
+			if !persistentMessageValid(m) || record.Version == 1 && messageExtended(m) || record.Version >= 3 && m.ID == "" || seenMessageIDs[m.ID] {
 				return nil, errors.New("invalid session message")
 			}
-		}
-		if record.Version == 1 {
-			var raw struct {
-				Messages []map[string]json.RawMessage `json:"messages"`
-			}
-			_ = json.Unmarshal(scanner.Bytes(), &raw)
-			for _, message := range raw.Messages {
-				if message["images"] != nil || message["reasoning_content"] != nil {
-					return nil, errors.New("v1 session contains v2 fields")
-				}
-			}
+			seenMessageIDs[m.ID] = true
 		}
 		s.format = max(s.format, record.Version)
 		if record.Reset {
@@ -178,12 +190,28 @@ func openSessionFile(path, lockPath string) (_ *Session, openErr error) {
 
 // append is called only while Run owns mu. Persist before publishing to memory.
 func (s *Session) append(messages ...Message) error {
-	for _, message := range messages {
+	known := map[string]bool{}
+	for _, message := range s.messages {
+		known[message.ID] = true
+	}
+	for i := range messages {
+		if messages[i].ID == "" {
+			id, err := newMessageID()
+			if err != nil {
+				return err
+			}
+			messages[i].ID = id
+		}
+		message := messages[i]
 		if message.Source != "" || !persistentMessageValid(message) {
 			return errors.New("invalid or ephemeral conversation message")
 		}
+		if known[message.ID] {
+			return errors.New("duplicate conversation message identity")
+		}
+		known[message.ID] = true
 	}
-	return s.commit(sessionRecord{Version: 1, Messages: cloneMessages(messages)})
+	return s.commit(sessionRecord{Version: 3, Messages: cloneMessages(messages)})
 }
 
 func (s *Session) commit(record sessionRecord) error {
@@ -192,9 +220,7 @@ func (s *Session) commit(record sessionRecord) error {
 	}
 	record.Version = max(1, s.format)
 	for _, message := range record.Messages {
-		if messageExtended(message) {
-			record.Version = 2
-		}
+		record.Version = max(record.Version, messageFormat(message))
 	}
 	if s.file != nil {
 		data, err := json.Marshal(record)
@@ -231,6 +257,26 @@ func (s *Session) commit(record sessionRecord) error {
 	}
 	s.dataMu.Unlock()
 	return nil
+}
+
+func historySessionIdentity(path string) string {
+	if filepath.Base(path) == "history.json" {
+		return filepath.Base(filepath.Dir(filepath.Dir(path)))
+	}
+	return strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+}
+
+func legacyMessageID(session string, ordinal int) string {
+	digest := sha256.Sum256([]byte("chat-agent/message/v1\x00" + session + "\x00" + fmt.Sprint(ordinal)))
+	return "msg_" + hex.EncodeToString(digest[:16])
+}
+
+func newMessageID() (string, error) {
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", fmt.Errorf("create message identity: %w", err)
+	}
+	return "msg_" + hex.EncodeToString(raw[:]), nil
 }
 
 func (s *Session) RoleID() string {
@@ -368,7 +414,10 @@ func (s *Session) DropTail(count int) (int, error) {
 	}
 	encoder := json.NewEncoder(file)
 	for _, record := range records {
-		record.Version = max(1, s.format)
+		// Rewriting is the explicit migration boundary: in-memory legacy messages
+		// already carry deterministic IDs, so the replacement journal must declare
+		// the identity-aware format instead of emitting v1 records with v3 fields.
+		record.Version = max(3, s.format)
 		if err := encoder.Encode(record); err != nil {
 			file.Close()
 			os.Remove(temporary)

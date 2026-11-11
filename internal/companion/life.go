@@ -107,7 +107,7 @@ type LifeStore struct {
 }
 
 func newLifeSnapshot() lifeSnapshot {
-	return lifeSnapshot{Version: 4, Episodes: []Episode{}, Settings: map[string]CareSettings{}, Care: []CareItem{}, Cuts: map[string]map[string]int{}, Scheduled: map[string]string{}, Attempts: map[string]int{}}
+	return lifeSnapshot{Version: 5, Episodes: []Episode{}, Settings: map[string]CareSettings{}, Care: []CareItem{}, Cuts: map[string]map[string]int{}, Scheduled: map[string]string{}, Attempts: map[string]int{}}
 }
 func OpenLife(dir string) (_ *LifeStore, openErr error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
@@ -202,8 +202,9 @@ func (s *LifeStore) save(next lifeSnapshot) error {
 	if s.closed {
 		return errors.New("life store closed")
 	}
-	// v4 binds delivered proactive messages to a durable conversation index.
-	next.Version = 4
+	// v4 binds delivered proactive messages to a durable conversation index;
+	// v5 adds the terminal silent outcome for a paid no-output decision.
+	next.Version = 5
 	b, err := json.Marshal(next)
 	if err != nil {
 		return err
@@ -245,7 +246,7 @@ func validCareSettings(p CareSettings) bool {
 	return storage.ValidID(p.RoleID) && p.Revision >= 0 && p.DailyLimit >= 1 && p.DailyLimit <= 5 && start && end && (p.DailyTime == "" || daily) && p.MinIntervalMinutes >= 15 && p.MinIntervalMinutes <= 1440 && (p.SnoozeUntil == nil || !p.SnoozeUntil.IsZero()) && (p.AutoProbability == nil || (*p.AutoProbability >= 0 && *p.AutoProbability <= 100))
 }
 func validLife(state lifeSnapshot) bool {
-	if (state.Version < 1 || state.Version > 4) || len(state.Episodes) > 2000 || len(state.Care) > 2000 || len(state.Settings) > 128 || state.Settings == nil || state.Cuts == nil || state.Scheduled == nil || state.Attempts == nil || len(state.TopicAttempts) > 4096 {
+	if (state.Version < 1 || state.Version > 5) || len(state.Episodes) > 2000 || len(state.Care) > 2000 || len(state.Settings) > 128 || state.Settings == nil || state.Cuts == nil || state.Scheduled == nil || state.Attempts == nil || len(state.TopicAttempts) > 4096 {
 		return false
 	}
 	ids := map[string]bool{}
@@ -273,7 +274,7 @@ func validLife(state lifeSnapshot) bool {
 		}
 		ids[c.ID] = true
 		switch c.Status {
-		case "due", "generating", "delivering", "ready", "seen", "canceled", "failed", "interrupted", "skipped":
+		case "due", "generating", "delivering", "ready", "seen", "canceled", "failed", "interrupted", "skipped", "silent":
 		default:
 			return false
 		}
@@ -727,7 +728,7 @@ func (s *LifeStore) Tick(role string, now time.Time, location *time.Location) er
 	// Only trim old, terminal inbox entries; current-day dedup records remain.
 	filtered := next.Care[:0]
 	for _, c := range next.Care {
-		terminal := c.Status == "ready" || c.Status == "seen" || c.Status == "canceled" || c.Status == "failed" || c.Status == "interrupted" || c.Status == "skipped"
+		terminal := c.Status == "ready" || c.Status == "seen" || c.Status == "canceled" || c.Status == "failed" || c.Status == "interrupted" || c.Status == "skipped" || c.Status == "silent"
 		if terminal && c.CreatedAt.Before(now.AddDate(0, 0, -30)) {
 			continue
 		}
@@ -865,6 +866,37 @@ func (s *LifeStore) ClaimCare(role, id string, automatic bool, now time.Time, lo
 }
 func (s *LifeStore) FinishCare(role, id string, revision int, text, safeError string) (CareItem, error) {
 	return s.FinishCareInSession(role, id, revision, text, safeError, "", -1)
+}
+
+// SilenceCare settles a paid proactive attempt without publishing a message.
+// Silence is a successful host decision, not a failure and not a retry signal.
+func (s *LifeStore) SilenceCare(role, id string, revision int) (CareItem, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ready(role); err != nil {
+		return CareItem{}, err
+	}
+	next := cloneLife(s.state)
+	for i, c := range next.Care {
+		if c.RoleID != role || c.ID != id {
+			continue
+		}
+		if c.Status != "generating" || c.Revision != revision {
+			return CareItem{}, ErrConflict
+		}
+		c.Status = "silent"
+		c.Content = ""
+		c.Error = ""
+		c.SessionID = ""
+		c.MessageIndex = nil
+		c.Revision++
+		next.Care[i] = c
+		if err := s.save(next); err != nil {
+			return CareItem{}, err
+		}
+		return c, nil
+	}
+	return CareItem{}, ErrLifeNotFound
 }
 
 func (s *LifeStore) FinishCareInSession(role, id string, revision int, text, safeError, sessionID string, messageIndex int) (CareItem, error) {

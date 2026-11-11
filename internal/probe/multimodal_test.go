@@ -178,7 +178,7 @@ func TestMultimodalThinkingLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(filepath.Join(dir, AgentID, "images.jsonl"))
-	if !strings.Contains(string(raw), `"version":2`) || strings.Contains(string(raw), url) {
+	if !strings.Contains(string(raw), `"version":3`) || strings.Contains(string(raw), url) {
 		t.Fatal("transcript format or image persistence wrong")
 	}
 	sess, err = OpenSession(dir, AgentID, "images")

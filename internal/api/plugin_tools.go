@@ -66,7 +66,7 @@ func newPluginHost(manifest pluginapi.Manifest, dataDir string, policy pluginapi
 //
 // The wrap keeps the error surface identical to built-in tools so callers cannot
 // tell a plugin tool from a core one.
-func (s *Server) pluginTools(enable pluginapi.Enablement, sessionID string) []probe.Tool {
+func (s *Server) pluginTools(enable pluginapi.Enablement, sessionID, roleID string) []probe.Tool {
 	if s.plugins == nil {
 		return nil
 	}
@@ -78,17 +78,19 @@ func (s *Server) pluginTools(enable pluginapi.Enablement, sessionID string) []pr
 		}
 		tool := loaded.Tool
 		definition := probe.Tool{
-			Name:        tool.Name,
-			Description: tool.Description,
-			Usage:       tool.Usage,
-			Prompt:      tool.Prompt,
-			Kind:        tool.Kind,
-			Present:     tool.Present,
-			Order:       tool.Order,
-			Timeout:     tool.Timeout,
-			Decision:    probe.DecisionRequirement(tool.Decision),
-			Risk:        probe.RiskLevel(tool.Risk),
-			Parameters:  tool.Parameters,
+			Name:             tool.Name,
+			Description:      tool.Description,
+			Usage:            tool.Usage,
+			Prompt:           tool.Prompt,
+			Kind:             tool.Kind,
+			Present:          tool.Present,
+			Order:            tool.Order,
+			Timeout:          tool.Timeout,
+			Decision:         probe.DecisionRequirement(tool.Decision),
+			Risk:             probe.RiskLevel(tool.Risk),
+			ApprovalRequired: tool.ApprovalRequired,
+			Receipt:          probe.ReceiptCapability(tool.Receipt),
+			Parameters:       tool.Parameters,
 			Execute: func(ctx context.Context, data json.RawMessage) (probe.ToolResult, error) {
 				result, err := tool.Handler(ctx, data)
 				if err != nil {
@@ -97,6 +99,9 @@ func (s *Server) pluginTools(enable pluginapi.Enablement, sessionID string) []pr
 				out := probe.ToolResult{Output: result.Output}
 				if len(result.Data) > 0 {
 					out.Value = result.Data
+				}
+				if receipt := result.Receipt; receipt != nil {
+					out.Receipt = &probe.BusinessReceipt{Store: receipt.Store, RoleID: roleID, OperationID: receipt.OperationID, ArgumentsSHA256: receipt.ArgumentsSHA256, EntityIDs: append([]string(nil), receipt.EntityIDs...), ResultingRevisions: append([]int(nil), receipt.ResultingRevisions...), OutcomeDigest: receipt.OutcomeDigest}
 				}
 				return out, nil
 			},
