@@ -103,3 +103,4 @@
 }
 @media(max-height:620px) and (min-width:761px){.welcome{padding-top:32px}.suggestions{margin-top:20px}.suggestion,.suggestion:nth-child(2),.suggestion:nth-child(3){min-height:76px}.welcome-icon{display:none}}
 @media(prefers-color-scheme:dark){.composer{background:var(--surface-container)}.topbar{background:var(--surface)}.sidebar-footer{background:var(--sidebar)}.suggestion:hover{background:var(--surface-high)}.session-row.active-row{background:var(--surface-container)}}
+.session-group{margin-top:10px;color:var(--on-surface-variant);font-weight:600;letter-spacing:.04em}

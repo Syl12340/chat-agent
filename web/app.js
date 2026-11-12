@@ -340,6 +340,18 @@ function sessionDate(value) {
   if (date.toDateString() === new Date().toDateString()) return '今天';
   return date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
 }
+// Sessions arrive newest-first, so a heading is emitted whenever the bucket changes
+// rather than by pre-grouping: the filtered list stays a single pass and the order the
+// server chose is preserved.
+function sessionBucket(value) {
+  const date = new Date(value);
+  const today = new Date();
+  if (date.toDateString() === today.toDateString()) return '今天';
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) return '昨天';
+  return '更早';
+}
 function renderSessions() {
   ui.sessions.replaceChildren();
   ui['session-count'].textContent = String(state.sessions.length);
@@ -349,7 +361,16 @@ function renderSessions() {
   const filter=($('session-filter')?.value || '').trim().toLocaleLowerCase();
   const visible=state.sessions.filter(item=>!filter || `${item.title || ''} ${roleName(item.role_id || 'companion')}`.toLocaleLowerCase().includes(filter));
   if (filter && !visible.length) { const empty=document.createElement('p'); empty.className='list-empty'; empty.textContent='没有匹配的会话标题'; ui.sessions.append(empty); }
+  let bucket = '';
   for (const item of visible) {
+    const next = sessionBucket(item.updated_at);
+    if (next !== bucket) {
+      bucket = next;
+      const heading = document.createElement('p');
+      heading.className = 'list-heading session-group';
+      heading.textContent = bucket;
+      ui.sessions.append(heading);
+    }
     const row = document.createElement('div');
     row.className = `session-row${item.id === state.current ? ' active-row' : ''}`;
     const button = document.createElement('button');
