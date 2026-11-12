@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -55,7 +56,9 @@ func (e *Executor) Execute(parent context.Context, task Task) Receipt {
 	case "exec":
 		receipt.Output, err = e.runAction(ctx, task.Action, task.OperationID)
 	default:
-		err = errors.New("unsupported local agent task")
+		// Name the accepted kinds: a caller that guessed "action" for the fixed
+		// allow-list has no way to discover "exec" from a bare refusal.
+		err = fmt.Errorf("unsupported local agent task kind %q; expected one of %s", task.Kind, strings.Join(Kinds, ", "))
 	}
 	if err == nil && len(task.Artifacts) > 16 {
 		err = errors.New("a task may publish at most 16 artifacts")
@@ -92,7 +95,11 @@ func (e *Executor) runAction(ctx context.Context, name, operationID string) (str
 	if len(argv) == 0 || !filepath.IsAbs(argv[0]) {
 		return "", errors.New("action is not in the local allow-list")
 	}
-	args := append(append([]string(nil), argv[1:]...), "--operation-id", operationID)
+	// The operation id travels in the environment (CHAT_OPERATION_ID), not on the
+	// command line. Appending it as an argument made every ordinary program reject
+	// the call: `go version --operation-id op_x` fails with an unknown flag, so no
+	// allow-listed action could run at all.
+	args := append([]string(nil), argv[1:]...)
 	cmd := exec.CommandContext(ctx, argv[0], args...)
 	cmd.Dir = e.Guard.Path()
 	cmd.Env = processEnvironment(operationID)

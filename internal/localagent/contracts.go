@@ -9,14 +9,21 @@ import "time"
 
 const Protocol = "ca.local-agent.v1"
 
+// Kinds lists the task kinds the executor accepts. It is exported so the error a
+// caller gets for an unknown kind can name the alternatives instead of only
+// saying that something was unsupported.
+var Kinds = []string{"list", "read", "search", "exec"}
+
 type Task struct {
-	Protocol    string   `json:"protocol"`
-	OperationID string   `json:"operation_id"`
-	Kind        string   `json:"kind"`
-	Path        string   `json:"path,omitempty"`
-	Query       string   `json:"query,omitempty"`
-	Action      string   `json:"action,omitempty"`
-	Artifacts   []string `json:"artifacts,omitempty"`
+	Protocol    string `json:"protocol"`
+	OperationID string `json:"operation_id"`
+	// Kind is one of Kinds. "exec" runs the named entry of the operator's fixed
+	// action allow-list; it is not a command line and takes no arguments.
+	Kind      string   `json:"kind"`
+	Path      string   `json:"path,omitempty"`
+	Query     string   `json:"query,omitempty"`
+	Action    string   `json:"action,omitempty"`
+	Artifacts []string `json:"artifacts,omitempty"`
 }
 
 type Artifact struct {
