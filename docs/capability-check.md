@@ -108,6 +108,26 @@ if status != "completed" { next.Paused = true }
 本轮就是这样恢复的，之后 `image_reason` 从"无法连接到桥"变成"ComfyUI 没有运行"——
 链路是通的，缺的只是本机那个 ComfyUI 进程。
 
+## care_preferences：实测可用
+
+读取路径在 0.6.2 上验证通过：
+
+    {"role_id":"companion","revision":18,"enabled":true,"auto_generate":false,
+     "auto_probability":100,"daily_limit":5,"quiet_start":"22:00","quiet_end":"08:00",
+     "min_interval_minutes":180,"snooze_until":null}
+
+模型读得准，还自己接上了当前时间：
+
+    关怀功能：已开启，但自动生成是关闭的（auto_probability 100% 目前不起作用）
+    ...
+    顺便提醒一下～现在是凌晨一点多，正处在安静时段里，你还没睡呀？
+
+注意 `auto_generate:false` 时 `auto_probability:100` 不起作用——它只影响可选的每日自动
+问候，不是关怀总开关。这一点模型解释对了。
+
+写入路径（update / snooze / resume）尚未实测：它们要求当前轮用户消息里的原话作为依据，
+我没有拿用户的真实消息去试。
+
 ## 尚未实测## 尚未实测## 尚未实测
 
 以下有代码、有工具，但没有任何一次真实调用记录：
