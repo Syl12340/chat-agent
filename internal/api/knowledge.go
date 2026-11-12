@@ -404,23 +404,8 @@ func (s *Server) agentForTurn(sess *probe.Session, inputs []string, sessionID st
 			out, _ := json.Marshal(entry)
 			return probe.ToolResult{Output: string(out)}, nil
 		}},
-		probe.Tool{Name: "skill_load", Usage: "read a role skill when its workflow would genuinely help this turn; it grants no extra permissions.", Order: 400, Description: "Read a Markdown skill from the current role workspace. Does not execute code or grant permissions.", Parameters: json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"}},"required":["name"],"additionalProperties":false}`), Execute: func(ctx context.Context, data json.RawMessage) (probe.ToolResult, error) {
-			if err := ctx.Err(); err != nil {
-				return probe.ToolResult{}, err
-			}
-			var args struct {
-				Name string `json:"name"`
-			}
-			if err := toolInput(data, &args); err != nil {
-				return probe.ToolResult{}, err
-			}
-			for _, skill := range role.Skills {
-				if skill.ID == args.Name {
-					return probe.ToolResult{Output: skill.Body}, nil
-				}
-			}
-			return probe.ToolResult{}, errors.New("当前角色没有此 Skill")
-		}},
+		// skill_load moved to plugins/builtin/skill.
+
 	)
 	c.Tools = append(c.Tools, s.taskTools(role.ID, sessionID)...)
 	c.DisableBuiltinClock = true

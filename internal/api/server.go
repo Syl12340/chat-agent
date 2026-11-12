@@ -42,6 +42,7 @@ import (
 	"chat-agent/plugins/builtin/literature"
 	memoryplugin "chat-agent/plugins/builtin/memory"
 	"chat-agent/plugins/builtin/search"
+	skillplugin "chat-agent/plugins/builtin/skill"
 	"chat-agent/web"
 )
 
@@ -312,6 +313,9 @@ func New(c Config) (*Server, error) {
 	// The renderer health probe needs nothing but the generator interface, so it
 	// lives in a plugin; a host with no renderer gets nil and the tool disappears.
 	// Memory search is role-scoped, which is what probe.ToolRole exists for.
+	// Skills come from the same role manager the turn uses; the plugin learns which
+	// role from the tool context rather than from a captured variable.
+	loader.Add(skillplugin.New(roleManager))
 	loader.Add(memoryplugin.New(mem))
 	loader.Add(image.New(imageGen))
 	loader.Add(clock.Plugin{})
@@ -480,7 +484,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // version is the service version reported by /api/status.
-const version = "0.5.6"
+const version = "0.5.7"
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model
