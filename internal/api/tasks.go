@@ -153,12 +153,10 @@ func (s *Server) taskTools(role, sessionID string) []probe.Tool {
 	out := []probe.Tool{}
 	for _, kind := range []string{"todo", "reminder"} {
 		kind := kind
-		addName, listName, finishName := "todo_add", "todo_list", "todo_complete"
-		status := "done"
+		addName := "todo_add"
 		addSchema := `{"type":"object","properties":{"title":{"type":"string"}},"required":["title"],"additionalProperties":false}`
 		if kind == "reminder" {
-			addName, listName, finishName = "reminder_add", "reminder_list", "reminder_cancel"
-			status = "canceled"
+			addName = "reminder_add"
 			addSchema = `{"type":"object","properties":{"title":{"type":"string"},"due_at":{"type":"string","description":"RFC3339 timestamp with an explicit time-zone offset; use the configured user timezone."}},"required":["title","due_at"],"additionalProperties":false}`
 		}
 		out = append(out, probe.Tool{Name: addName, Usage: "create only the requested item; reminder timestamps require an explicit timezone offset and deliver to the inbox.", Order: 710, Receipt: probe.ReceiptAtomic, Description: "Create a role-scoped " + kind + " only when the user asks. Reminders are one-shot inbox items, not closed-app push notifications. Identical active items are deduplicated.", Parameters: json.RawMessage(addSchema), Execute: func(ctx context.Context, data json.RawMessage) (probe.ToolResult, error) {
@@ -201,54 +199,8 @@ func (s *Server) taskTools(role, sessionID string) []probe.Tool {
 			}
 			return encoded(item)
 		}})
-		out = append(out, probe.Tool{Name: listName, Usage: "read actual IDs and revisions before changing a saved item.", Order: 700, Description: "List only the current role's " + kind + " items, including IDs, states and revisions.", Parameters: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`), Execute: func(ctx context.Context, data json.RawMessage) (probe.ToolResult, error) {
-			if err := ctx.Err(); err != nil {
-				return probe.ToolResult{}, err
-			}
-			var args struct{}
-			if err := toolInput(data, &args); err != nil {
-				return probe.ToolResult{}, err
-			}
-			items, err := s.tasks.List(role, kind)
-			if err != nil {
-				return probe.ToolResult{}, errors.New("任务读取失败")
-			}
-			truncated := len(items) > 50
-			if truncated {
-				items = items[:50]
-			}
-			return encoded(struct {
-				Items     []tasks.Item `json:"items"`
-				Truncated bool         `json:"truncated"`
-			}{items, truncated})
-		}})
-		out = append(out, probe.Tool{Name: finishName, Usage: "change only the requested item using its latest ID and revision.", Order: 720, Description: "Set the current role's " + kind + " to " + status + " only when explicitly requested. Read its ID and current revision from the list first.", Parameters: json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"},"revision":{"type":"integer"}},"required":["id","revision"],"additionalProperties":false}`), Execute: func(ctx context.Context, data json.RawMessage) (probe.ToolResult, error) {
-			if err := ctx.Err(); err != nil {
-				return probe.ToolResult{}, err
-			}
-			var args struct {
-				ID       string `json:"id"`
-				Revision int    `json:"revision"`
-			}
-			if err := toolInput(data, &args); err != nil {
-				return probe.ToolResult{}, err
-			}
-			items, err := s.tasks.List(role, kind)
-			if err != nil {
-				return probe.ToolResult{}, errors.New("任务读取失败")
-			}
-			for _, item := range items {
-				if item.ID == args.ID {
-					updated, err := s.tasks.Update(role, args.ID, status, args.Revision, time.Now())
-					if err != nil {
-						return probe.ToolResult{}, errors.New("记录已变化，请重新读取后操作")
-					}
-					return encoded(updated)
-				}
-			}
-			return probe.ToolResult{}, errors.New("当前角色没有此任务")
-		}})
+		// todo_list and reminder_list moved to plugins/builtin/tasks.
+		// The list and finish tools moved to plugins/builtin/tasks.
 	}
 	return out
 }
-

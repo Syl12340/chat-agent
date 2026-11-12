@@ -43,6 +43,7 @@ import (
 	memoryplugin "chat-agent/plugins/builtin/memory"
 	"chat-agent/plugins/builtin/search"
 	skillplugin "chat-agent/plugins/builtin/skill"
+	tasksplugin "chat-agent/plugins/builtin/tasks"
 	"chat-agent/web"
 )
 
@@ -315,6 +316,9 @@ func New(c Config) (*Server, error) {
 	// Memory search is role-scoped, which is what probe.ToolRole exists for.
 	// Skills come from the same role manager the turn uses; the plugin learns which
 	// role from the tool context rather than from a captured variable.
+	// Listing tasks is store access only; creating one carries an idempotency key
+	// and a receipt, so the add side stays in the host for now.
+	loader.Add(tasksplugin.New(taskStore))
 	loader.Add(skillplugin.New(roleManager))
 	loader.Add(memoryplugin.New(mem))
 	loader.Add(image.New(imageGen))
@@ -484,7 +488,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // version is the service version reported by /api/status.
-const version = "0.5.8"
+const version = "0.6.0"
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model
