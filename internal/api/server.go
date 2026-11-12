@@ -105,7 +105,12 @@ type Server struct {
 	speechSlots     chan struct{}
 	speechAttempt   time.Time
 	decision        *decision.Client
-	imagegen        imagegen.Generator
+	// decisionDown records that the decision endpoint answered with a failure. The
+	// tool is withdrawn for the rest of the process instead of being offered again:
+	// an endpoint that does not exist will not start existing between turns, and every
+	// offer costs the model a call that can only fail.
+	decisionDown atomic.Bool
+	imagegen     imagegen.Generator
 
 	plugins *pluginapi.Catalog
 	// pluginPolicy is the host's grant for the loaded catalog. Capability
@@ -472,7 +477,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // version is the service version reported by /api/status.
-const version = "0.5.4"
+const version = "0.5.5"
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model

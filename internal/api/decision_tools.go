@@ -19,7 +19,7 @@ import (
 // the model. What it buys is calibrated probabilities for the narrow class of
 // questions that have a fixed label set.
 func (s *Server) decisionTool() []probe.Tool {
-	if s.decision == nil {
+	if s.decision == nil || s.decisionDown.Load() {
 		return nil
 	}
 	return []probe.Tool{{
@@ -69,6 +69,11 @@ func (s *Server) decisionTool() []probe.Tool {
 			}
 			result, err := s.decision.Decide(ctx, request)
 			if err != nil {
+				// Withdraw the tool rather than let the model keep asking. The scheme this
+				// client speaks (/systemone) is not served here, so the next attempt would
+				// fail the same way; a caller that reconfigures the endpoint restarts the
+				// process and gets it back.
+				s.decisionDown.Store(true)
 				return probe.ToolResult{}, err
 			}
 			out, err := json.Marshal(struct {
@@ -168,14 +173,14 @@ func buildDecisionRequest(state json.RawMessage, questions []struct {
 }
 
 type decisionAnswer struct {
-	ID         string             `json:"id"`
-	Type       string             `json:"type"`
-	Label      string             `json:"label,omitempty"`
-	Holds      *float64           `json:"holds,omitempty"`
-	Score      *float64           `json:"score,omitempty"`
-	Scale      map[string]string  `json:"scale,omitempty"`
+	ID          string             `json:"id"`
+	Type        string             `json:"type"`
+	Label       string             `json:"label,omitempty"`
+	Holds       *float64           `json:"holds,omitempty"`
+	Score       *float64           `json:"score,omitempty"`
+	Scale       map[string]string  `json:"scale,omitempty"`
 	Probability map[string]float64 `json:"probability,omitempty"`
-	Confidence float64            `json:"confidence"`
+	Confidence  float64            `json:"confidence"`
 }
 
 // flattenAnswers keeps the tool output compact and ordered, and drops the
