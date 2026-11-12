@@ -2,9 +2,6 @@ package api
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log"
@@ -143,64 +140,5 @@ func encoded(value any) (probe.ToolResult, error) {
 	data, err := json.Marshal(value)
 	return probe.ToolResult{Output: string(data)}, err
 }
-func (s *Server) taskTools(role, sessionID string) []probe.Tool {
-	var nonce [16]byte
-	_, nonceErr := rand.Read(nonce[:])
-	key := func(ctx context.Context) string {
-		digest := sha256.Sum256([]byte(hex.EncodeToString(nonce[:]) + "\x00" + probe.ToolCallID(ctx)))
-		return hex.EncodeToString(digest[:])
-	}
-	out := []probe.Tool{}
-	for _, kind := range []string{"todo", "reminder"} {
-		kind := kind
-		addName := "todo_add"
-		addSchema := `{"type":"object","properties":{"title":{"type":"string"}},"required":["title"],"additionalProperties":false}`
-		if kind == "reminder" {
-			addName = "reminder_add"
-			addSchema = `{"type":"object","properties":{"title":{"type":"string"},"due_at":{"type":"string","description":"RFC3339 timestamp with an explicit time-zone offset; use the configured user timezone."}},"required":["title","due_at"],"additionalProperties":false}`
-		}
-		out = append(out, probe.Tool{Name: addName, Usage: "create only the requested item; reminder timestamps require an explicit timezone offset and deliver to the inbox.", Order: 710, Receipt: probe.ReceiptAtomic, Description: "Create a role-scoped " + kind + " only when the user asks. Reminders are one-shot inbox items, not closed-app push notifications. Identical active items are deduplicated.", Parameters: json.RawMessage(addSchema), Execute: func(ctx context.Context, data json.RawMessage) (probe.ToolResult, error) {
-			if err := ctx.Err(); err != nil {
-				return probe.ToolResult{}, err
-			}
-			if nonceErr != nil {
-				return probe.ToolResult{}, errors.New("无法生成任务请求标识")
-			}
-			var args struct {
-				Title string     `json:"title"`
-				DueAt *time.Time `json:"due_at"`
-			}
-			if err := toolInput(data, &args); err != nil {
-				return probe.ToolResult{}, err
-			}
-			operationID := probe.ToolOperationID(ctx)
-			if operationID != "" {
-				digest := sha256.Sum256(data)
-				item, receipt, replayed, err := s.tasks.AddWithReceipt(role, kind, args.Title, operationID, hex.EncodeToString(digest[:]), addName, "agent", sessionID, args.DueAt, time.Now())
-				if err != nil {
-					return probe.ToolResult{}, errors.New("任务创建失败，请检查标题或带时区的提醒时间")
-				}
-				var current *tasks.Item
-				if item.ID != "" {
-					current = &item
-				}
-				result, encodeErr := encoded(struct {
-					Committed bool          `json:"committed"`
-					Replayed  bool          `json:"replayed"`
-					Item      *tasks.Item   `json:"item,omitempty"`
-					Receipt   tasks.Receipt `json:"receipt"`
-				}{true, replayed, current, receipt})
-				result.Receipt = &probe.BusinessReceipt{Store: "tasks", RoleID: receipt.RoleID, OperationID: receipt.OperationID, ArgumentsSHA256: receipt.ArgumentsSHA256, EntityIDs: append([]string(nil), receipt.EntityIDs...), ResultingRevisions: append([]int(nil), receipt.ResultingRevisions...), OutcomeDigest: receipt.OutcomeDigest}
-				return result, encodeErr
-			}
-			item, err := s.tasks.Add(role, kind, args.Title, key(ctx), "agent", sessionID, args.DueAt, time.Now())
-			if err != nil {
-				return probe.ToolResult{}, errors.New("任务创建失败，请检查标题或带时区的提醒时间")
-			}
-			return encoded(item)
-		}})
-		// todo_list and reminder_list moved to plugins/builtin/tasks.
-		// The list and finish tools moved to plugins/builtin/tasks.
-	}
-	return out
-}
+
+// taskTools is empty: todos and reminders are served by plugins/builtin/tasks.
