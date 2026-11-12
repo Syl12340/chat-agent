@@ -34,6 +34,29 @@
 | 服务器维护动作 `server_action` | 未配置。需要一个 basename 以 `chat-agent-` 开头、接受 `--operation-id` 的 helper |
 | ECNU eduwork | 服务器解析不到相关域名，未接入 |
 
+## 主动消息：搞清了它为什么不发
+
+这轮想验证主动消息（proactive），结论是**它不会自己发**，原因有三层，前两层是
+配置，第三层是设计：
+
+1. `auto_generate` 为 `false`——自动生成关着。
+2. 静默时段 `quiet_start=22:00`、`quiet_end=08:00`——晚上本来就不该打扰。
+3. **没有事件（episode）可跟进。**
+
+第三点最关键。`Tick` 不是按时间随机打招呼，它只遍历 `status=open`、`allow_followup=true`
+且 `followup_at` 已到的 episode，把它们转成 care 条目；`checkCare` 再把这些条目交给模型
+生成消息。**没有未完结的事件，就没有主动消息**。
+
+把前两层手动打开（概率 100、限制放宽、静默窗口挪开）再连调五次 `check`，每次都是
+`{"generated": false}`，因为 `/api/episodes` 是空的。这不是故障，是链路上游没料。
+
+顺带记下一条没写在别处的约束：`min_interval_minutes` 最小 15，传 0 会被 400 拒绝；
+`quiet_start` 与 `quiet_end` 相同也会被拒。
+
+要真正跑通一次，得先建一个带 `followup_at` 的 episode，而新建的 episode 是否直接
+以 `open` 状态落库、还是先要审核，这轮没有确认到——`POST /api/episodes` 用
+`content` 而不是 `summary`，我第一次传错了字段。留到下次。
+
 ## 尚未实测
 
 以下有代码、有工具，但没有任何一次真实调用记录：
