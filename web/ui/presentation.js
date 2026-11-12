@@ -70,8 +70,8 @@ function normalizedCapabilities(value={}) {
 export function validatePresentation(value, supported={}) {
   try {
     const caps=normalizedCapabilities(supported), budget=budgets[value?.surface];
-    if(!ownKeys(value,['protocol','version','surface','id','revision','operation_id','min_app','root','fallback'])||value.protocol!==protocol||value.version!==1||!budget)return {view:null,error:'不支持的呈现协议'};
-    if(value.id!==undefined&&!safeID.test(value.id)||value.operation_id!==undefined&&!safeID.test(value.operation_id)||value.revision!==undefined&&(!Number.isSafeInteger(value.revision)||value.revision<0)||value.min_app!==undefined&&!/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(value.min_app)||!text(value.fallback,1000))return {view:null,error:'呈现元数据无效'};
+    if(!ownKeys(value,['protocol','version','surface','id','revision','operation_id','min_app','title','root','fallback'])||value.protocol!==protocol||value.version!==1||!budget)return {view:null,error:'不支持的呈现协议'};
+    if(value.id!==undefined&&!safeID.test(value.id)||value.operation_id!==undefined&&!safeID.test(value.operation_id)||value.revision!==undefined&&(!Number.isSafeInteger(value.revision)||value.revision<0)||value.min_app!==undefined&&!/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(value.min_app)||!text(value.title,60)||!text(value.fallback,1000))return {view:null,error:'呈现元数据无效'};
     if(new TextEncoder().encode(JSON.stringify(value)).length>budget.bytes)return {view:null,error:'呈现内容过大'};
     if(!nodeValid(value.root,1,budget,{nodes:0},caps))return {view:null,error:'呈现结构不受支持'};
     return {view:value,error:''};

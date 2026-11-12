@@ -41,8 +41,12 @@ type View struct {
 	Revision    int     `json:"revision,omitempty"`
 	OperationID string  `json:"operation_id,omitempty"`
 	MinApp      string  `json:"min_app,omitempty"`
-	Root        Node    `json:"root"`
-	Fallback    string  `json:"fallback,omitempty"`
+	// Title names the stored view in the client's surface list. Without it every
+	// persistent surface is labelled by its type alone, so several of them look
+	// identical.
+	Title    string `json:"title,omitempty"`
+	Root     Node   `json:"root"`
+	Fallback string `json:"fallback,omitempty"`
 }
 
 type Node struct {
@@ -119,6 +123,9 @@ func Validate(view *View) error {
 	}
 	if utf8.RuneCountInString(view.Fallback) > 1000 {
 		return errors.New("presentation fallback is too long")
+	}
+	if utf8.RuneCountInString(view.Title) > 60 {
+		return errors.New("presentation title is too long")
 	}
 	raw, err := json.Marshal(view)
 	if err != nil || len(raw) > b.Bytes {

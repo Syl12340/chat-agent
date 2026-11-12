@@ -768,7 +768,10 @@ function renderSurfaceStack(host, items) {
     const header = document.createElement('header');
     const label = document.createElement('span');
     label.className = 'surface-label';
-    label.textContent = view.title || '界面';
+    // A stored view is named by its own title when it has one; otherwise the
+    // surface type is more useful than the word "界面" repeated on every card.
+    const typeNames = { panel: '面板', strip: '提示', tool_card: '卡片' };
+    label.textContent = view.title || typeNames[view.surface] || '界面';
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'surface-remove';
