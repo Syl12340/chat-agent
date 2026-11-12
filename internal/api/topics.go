@@ -359,7 +359,7 @@ func (s *Server) discoverTopic(parent context.Context, record topics.Record) (se
 		if item.Status != "delivering" {
 			return probe.Message{}, false, nil
 		}
-		return probe.Message{Role: "assistant", Content: item.Content}, true, nil
+		return probe.Message{Role: "assistant", Content: item.Content, Origin: "proactive"}, true, nil
 	})
 	if settledOK {
 		if settled.Status == "delivering" && persisted {

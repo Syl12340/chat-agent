@@ -412,7 +412,7 @@ function card(role, text = '', key = '', images = [], context = null) {
   if (context?.messageID) article.dataset.sourceMessageId = context.messageID;
   const avatar = document.createElement('div'); avatar.className = 'message-avatar'; avatar.textContent = 'P'; avatar.setAttribute('aria-hidden', 'true');
   const content = document.createElement('div'); content.className = 'message-content';
-  const label = document.createElement('span'); label.className = 'message-role'; label.textContent = roleName();
+  const label = document.createElement('span'); label.className = 'message-role'; const proactive = context?.origin === 'proactive'; if (proactive) article.classList.add('message-proactive'); label.textContent = proactive ? roleName() + ' · 主动关心' : roleName();
   const logs = document.createElement('div'); logs.className = 'tool-logs';
   const body = document.createElement('div'); body.className = 'message-body';
   const status = document.createElement('div'); status.className = 'message-status';
@@ -666,7 +666,7 @@ function renderHistory(messages, turns = [], hashes = new Map()) {
     if (message.role === 'user') { legacyUser = index; const user=card('user',message.content,userKeys.get(index) || `${state.current}:message:${stableKey}`,message.images || []); if(message.id)user.node.dataset.sourceMessageId=message.id; current = null; currentStart = -1; }
     else if (message.role === 'assistant') {
       const final = !message.tool_calls?.length && (!root || root.status === 'completed' && index === root.end_index - 1);
-      const source={role:state.roleID,session:state.current,messageID:message.id || '',messageIndex:index,sha256:hashes.get(index) || '',eligible:Boolean(hashes.get(index) && root && final),floor:uiFloor,segmented:final};
+      const source={role:state.roleID,session:state.current,messageID:message.id || '',messageIndex:index,sha256:hashes.get(index) || '',eligible:Boolean(hashes.get(index) && root && final),floor:uiFloor,segmented:final,origin:message.origin || ''};
       if (!current) { current = card('assistant',message.content,key,[],source); currentStart = index; }
       else if (message.content) current.appendSegment(message.content,source);
       if (!root && message.reasoning_content) showReasoning(current.node,message.reasoning_content,`${state.current}:reasoning:${index}`);

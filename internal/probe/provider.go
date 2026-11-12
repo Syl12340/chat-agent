@@ -138,6 +138,9 @@ func modelVisibleMessages(messages []Message) []Message {
 	out := cloneMessages(messages)
 	for i := range out {
 		out[i].ID = ""
+		// Provenance is for the client, not for the model: telling the model a
+		// message was self-initiated changes how it reads its own history.
+		out[i].Origin = ""
 		if len(out[i].ToolCalls) == 0 {
 			out[i].ReasoningContent = ""
 		}

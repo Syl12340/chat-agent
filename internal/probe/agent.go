@@ -81,7 +81,12 @@ type Message struct {
 	// to authenticated clients, but modelVisibleMessages always removes it.
 	ID string `json:"id,omitempty"`
 	// Source is host-only provenance for ephemeral request context.
-	Source           string        `json:"source,omitempty"`
+	Source string `json:"source,omitempty"`
+	// Origin marks a persisted message the user did not ask for, so the client can
+	// present it differently from a reply. Empty for ordinary turns, "proactive"
+	// for messages the assistant started on its own. It is persisted and shown to
+	// clients, and removed for the model just like ID.
+	Origin           string        `json:"origin,omitempty"`
 	Role             string        `json:"role"`
 	Content          string        `json:"content"`
 	ToolCalls        []ToolCall    `json:"tool_calls,omitempty"`

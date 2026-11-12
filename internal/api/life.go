@@ -422,7 +422,7 @@ func (s *Server) runCare(r *http.Request, role, id string, automatic bool) (comp
 		if item.Status != "delivering" {
 			return probe.Message{}, false, nil
 		}
-		return probe.Message{Role: "assistant", Content: item.Content}, true, nil
+		return probe.Message{Role: "assistant", Content: item.Content, Origin: "proactive"}, true, nil
 	})
 	if settledOK {
 		if settled.Status == "delivering" && persisted {

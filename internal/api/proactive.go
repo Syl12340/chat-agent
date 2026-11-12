@@ -174,7 +174,17 @@ func (s *Server) runProactive(parent context.Context, role, preferred, kind, tri
 		return target.id, probe.Message{}, false, err
 	}
 	message, persisted, err = probe.RunFollowup(target.ctx, agent, timeout, func(response probe.Message, messageIndex int) (probe.Message, bool, error) {
-		return finalize(target.id, response, messageIndex)
+		// Finalizers build the message they persist, so marking the argument alone is
+		// not enough — each one stamps the result too. This marks whatever version
+		// comes back, so a finalizer added later inherits the flag without opting in.
+		if response.Role == "assistant" && response.Content != "" {
+			response.Origin = "proactive"
+		}
+		marked, stored, finalizeErr := finalize(target.id, response, messageIndex)
+		if marked.Role == "assistant" && marked.Content != "" {
+			marked.Origin = "proactive"
+		}
+		return marked, stored, finalizeErr
 	}, nil)
 	if err != nil {
 		return target.id, message, persisted, fmt.Errorf("proactive followup: %w", err)
