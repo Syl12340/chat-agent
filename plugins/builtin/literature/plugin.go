@@ -126,7 +126,14 @@ func (p *Plugin) searchTool() pluginapi.Tool {
 				kind, identifier := identify(result.URL + " " + result.Title + " " + result.Snippet)
 				items = append(items, candidate{Title: result.Title, URL: result.URL, Snippet: result.Snippet, Kind: kind, Identifier: identifier})
 			}
-			return encode(map[string]any{"untrusted": true, "query": strings.Join(parts, " "), "candidates": items})
+			return encode(map[string]any{
+				"untrusted":  true,
+				"query":      strings.Join(parts, " "),
+				"candidates": items,
+				// Same reason as web_search: candidates that share no term with the
+				// question must be labelled, not silently offered as sources.
+				"relevance": webtools.AssessRelevance(strings.Join(parts, " "), results),
+			})
 		},
 	}
 }
