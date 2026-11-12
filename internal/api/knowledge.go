@@ -385,23 +385,8 @@ func (s *Server) agentForTurn(sess *probe.Session, inputs []string, sessionID st
 	c.Tools = append(c.Tools, s.careTools(role.ID, inputs, sessionID)...)
 	c.Tools = append(c.Tools, s.topicPreferenceTools(role.ID, inputs)...)
 	c.Tools = append(c.Tools,
-		probe.Tool{Name: "memory_search", Usage: "look up this role's approved facts before asking the user to repeat something they already told you.", Order: 300, Description: "Search only approved long-term memory for this role. Empty query returns recent approved facts.", Parameters: json.RawMessage(`{"type":"object","properties":{"query":{"type":"string"}},"required":["query"],"additionalProperties":false}`), Execute: func(ctx context.Context, data json.RawMessage) (probe.ToolResult, error) {
-			if err := ctx.Err(); err != nil {
-				return probe.ToolResult{}, err
-			}
-			var args struct {
-				Query string `json:"query"`
-			}
-			if err := toolInput(data, &args); err != nil {
-				return probe.ToolResult{}, err
-			}
-			entries, err := s.memory.SearchContext(ctx, role.ID, args.Query, 5)
-			if err != nil {
-				return probe.ToolResult{}, errors.New("记忆查询失败")
-			}
-			out, _ := json.Marshal(entries)
-			return probe.ToolResult{Output: string(out)}, nil
-		}},
+		// memory_search moved to plugins/builtin/memory.
+
 		probe.Tool{Name: "memory_write", Decision: probe.DecisionAdvisory, Risk: probe.RiskLow, Usage: "use only when the user explicitly asks you to remember something; it proposes a candidate the user still has to approve.", Order: 310, Description: "Propose a memory only when the user explicitly asks. Always creates a pending candidate, never an approved fact.", Parameters: json.RawMessage(`{"type":"object","properties":{"content":{"type":"string"}},"required":["content"],"additionalProperties":false}`), Execute: func(ctx context.Context, data json.RawMessage) (probe.ToolResult, error) {
 			if err := ctx.Err(); err != nil {
 				return probe.ToolResult{}, err

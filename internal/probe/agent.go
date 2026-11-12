@@ -55,6 +55,7 @@ func DefaultConfig() Config {
 
 type toolCallKey struct{}
 type toolSessionKey struct{}
+type toolRoleKey struct{}
 
 // ToolCallID lets a tool scope an idempotency key to the current invocation.
 func ToolCallID(ctx context.Context) string { id, _ := ctx.Value(toolCallKey{}).(string); return id }

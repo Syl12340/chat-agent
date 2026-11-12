@@ -40,6 +40,7 @@ import (
 	"chat-agent/plugins/builtin/clock"
 	"chat-agent/plugins/builtin/image"
 	"chat-agent/plugins/builtin/literature"
+	memoryplugin "chat-agent/plugins/builtin/memory"
 	"chat-agent/plugins/builtin/search"
 	"chat-agent/web"
 )
@@ -310,6 +311,8 @@ func New(c Config) (*Server, error) {
 	loader.Add(literature.New(webClient))
 	// The renderer health probe needs nothing but the generator interface, so it
 	// lives in a plugin; a host with no renderer gets nil and the tool disappears.
+	// Memory search is role-scoped, which is what probe.ToolRole exists for.
+	loader.Add(memoryplugin.New(mem))
 	loader.Add(image.New(imageGen))
 	loader.Add(clock.Plugin{})
 	for _, p := range hostPlugins {
@@ -477,7 +480,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // version is the service version reported by /api/status.
-const version = "0.5.5"
+const version = "0.5.6"
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model

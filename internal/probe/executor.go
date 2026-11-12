@@ -107,6 +107,7 @@ func (e *ToolExecutor) Execute(ctx context.Context, set *ToolSet, call ToolCall,
 	dispatched = true
 	execCtx := context.WithValue(ctx, toolCallKey{}, call.ID)
 	execCtx = context.WithValue(execCtx, toolSessionKey{}, set.step.SessionID)
+	execCtx = context.WithValue(execCtx, toolRoleKey{}, set.step.RoleID)
 	if operationID != "" {
 		execCtx = context.WithValue(execCtx, toolOperationKey{}, operationID)
 	}

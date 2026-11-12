@@ -82,6 +82,19 @@ func ToolSession(ctx context.Context) string {
 	return id
 }
 
+// ToolRole returns the role a tool call belongs to.
+//
+// Memory, skills and preferences are all scoped to a role, so a plugin that offers
+// any of those needs this. Before it existed, those tools could only live in the API
+// package where the server object already knew the role.
+func ToolRole(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	id, _ := ctx.Value(toolRoleKey{}).(string)
+	return id
+}
+
 func recordingError(stage string, err error) error {
 	if err == nil {
 		return nil
