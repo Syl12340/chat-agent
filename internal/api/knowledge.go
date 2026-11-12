@@ -384,29 +384,9 @@ func (s *Server) agentForTurn(sess *probe.Session, inputs []string, sessionID st
 	c.Tools = append(c.Tools, s.knowledgeTools(role.ID, inputs, sessionID)...)
 	c.Tools = append(c.Tools, s.careTools(role.ID, inputs, sessionID)...)
 	c.Tools = append(c.Tools, s.topicPreferenceTools(role.ID, inputs)...)
-	c.Tools = append(c.Tools,
-		// memory_search moved to plugins/builtin/memory.
+	// memory_search, memory_write and skill_load moved into plugins; the host no
+	// longer contributes them here.
 
-		probe.Tool{Name: "memory_write", Decision: probe.DecisionAdvisory, Risk: probe.RiskLow, Usage: "use only when the user explicitly asks you to remember something; it proposes a candidate the user still has to approve.", Order: 310, Description: "Propose a memory only when the user explicitly asks. Always creates a pending candidate, never an approved fact.", Parameters: json.RawMessage(`{"type":"object","properties":{"content":{"type":"string"}},"required":["content"],"additionalProperties":false}`), Execute: func(ctx context.Context, data json.RawMessage) (probe.ToolResult, error) {
-			if err := ctx.Err(); err != nil {
-				return probe.ToolResult{}, err
-			}
-			var args struct {
-				Content string `json:"content"`
-			}
-			if err := toolInput(data, &args); err != nil {
-				return probe.ToolResult{}, err
-			}
-			entry, err := s.memory.Create(role.ID, args.Content, "pending", "agent", sessionID)
-			if err != nil {
-				return probe.ToolResult{}, errors.New("记忆候选保存失败")
-			}
-			out, _ := json.Marshal(entry)
-			return probe.ToolResult{Output: string(out)}, nil
-		}},
-		// skill_load moved to plugins/builtin/skill.
-
-	)
 	c.Tools = append(c.Tools, s.taskTools(role.ID, sessionID)...)
 	c.DisableBuiltinClock = true
 	c.Tools = append(c.Tools, s.pluginTools(s.toolCapabilities(), sessionID, role.ID)...)

@@ -18,13 +18,15 @@ import (
 
 const PluginID = "builtin.memory"
 
-// Searcher is the narrow slice of the memory store this plugin uses.
-type Searcher interface {
+// Store is the narrow slice of the memory store this plugin uses. Reads return
+// approved facts; writes always create a pending candidate, never an approved one.
+type Store interface {
 	SearchContext(ctx context.Context, role, query string, limit int) ([]memory.Entry, error)
+	Create(role, content, status, source, sessionID string) (memory.Entry, error)
 }
 
 // New returns nil when no memory store is configured, matching the other builtins.
-func New(store Searcher) pluginapi.Plugin {
+func New(store Store) pluginapi.Plugin {
 	if store == nil {
 		return nil
 	}
@@ -37,12 +39,12 @@ func New(store Searcher) pluginapi.Plugin {
 				ID:          PluginID,
 				Name:        "记忆检索",
 				Version:     "0.1.0",
-				Description: "按角色检索已批准的长期记忆",
+				Description: "按角色检索已批准的长期记忆，并提出新的记忆候选",
 			},
 			Spec: pluginapi.Spec{
 				Runtime:      pluginapi.RuntimeBuiltin,
 				Capabilities: []string{"memory.search"},
-				Tools:        []string{"memory_search"},
+				Tools:        []string{"memory_search", "memory_write"},
 			},
 		},
 	}
@@ -50,7 +52,7 @@ func New(store Searcher) pluginapi.Plugin {
 
 // Plugin answers "what does this role already know".
 type Plugin struct {
-	store    Searcher
+	store    Store
 	manifest pluginapi.Manifest
 }
 
@@ -59,7 +61,14 @@ func (p *Plugin) Start(context.Context, pluginapi.Host) error { return nil }
 func (p *Plugin) Stop(context.Context) error                  { return nil }
 
 func (p *Plugin) Register(registry *pluginapi.Registry) error {
-	return registry.Tool(pluginapi.Tool{
+	if err := registry.Tool(p.searchTool()); err != nil {
+		return err
+	}
+	return registry.Tool(p.writeTool())
+}
+
+func (p *Plugin) searchTool() pluginapi.Tool {
+	return pluginapi.Tool{
 		Name:  "memory_search",
 		Order: 300,
 		Usage: "look up this role's approved facts before asking the user to repeat something they already told you.",
@@ -87,5 +96,40 @@ func (p *Plugin) Register(registry *pluginapi.Registry) error {
 			}
 			return pluginapi.Result{Output: string(out)}, nil
 		},
-	})
+	}
+}
+
+func (p *Plugin) writeTool() pluginapi.Tool {
+	return pluginapi.Tool{
+		Name:     "memory_write",
+		Order:    310,
+		Decision: string(probe.DecisionAdvisory),
+		Risk:     string(probe.RiskLow),
+		Usage:    "use only when the user explicitly asks you to remember something; it proposes a candidate the user still has to approve.",
+		Description: "Propose a memory only when the user explicitly asks. " +
+			"Always creates a pending candidate, never an approved fact.",
+		Parameters: json.RawMessage(`{"type":"object","properties":{"content":{"type":"string"}},"required":["content"],"additionalProperties":false}`),
+		Handler: func(ctx context.Context, data json.RawMessage) (pluginapi.Result, error) {
+			var args struct {
+				Content string `json:"content"`
+			}
+			if err := json.Unmarshal(data, &args); err != nil {
+				return pluginapi.Result{}, err
+			}
+			role := probe.ToolRole(ctx)
+			if role == "" {
+				return pluginapi.Result{}, errors.New("工具上下文缺少角色")
+			}
+			session := probe.ToolSession(ctx)
+			entry, err := p.store.Create(role, args.Content, "pending", "agent", session)
+			if err != nil {
+				return pluginapi.Result{}, errors.New("记忆候选保存失败")
+			}
+			out, err := json.Marshal(entry)
+			if err != nil {
+				return pluginapi.Result{}, err
+			}
+			return pluginapi.Result{Output: string(out)}, nil
+		},
+	}
 }
