@@ -85,6 +85,29 @@ if status != "completed" { next.Paused = true }
 **影响**：任何需要独立评估的操作（`ApprovalRequired` 的工具，例如 `server_action`）
 都会卡在审批。修这条路要么找到可用的 SystemOne 端点，要么把审批改成不依赖它的形式。
 
+## 图像链路：桥和隧道通了，ComfyUI 没开
+
+`/api/status` 的 `image_reason` 会区分三种状态，它们指向完全不同的位置：
+
+| 文案 | 含义 | 该看哪里 |
+|---|---|---|
+| 无法连接到图像生成桥，检查隧道是否在线 | 服务器够不到本机 bridge | 反向隧道 |
+| ComfyUI 没有运行 | bridge 通了，它后面没东西 | 本机 ComfyUI |
+| （空，`image_generation: true`） | 全链路可用 | — |
+
+**隧道断了的一个隐蔽原因**：在客户端 `Stop-Process -Force` 掉 `serve-local.py` 之后，
+服务器端的 sshd 会继续占着反向端口。下次启动就是
+
+    Error: remote port forwarding failed for listen port 18190
+
+客户端看起来是"隧道起不来"，实际服务器上还有一个僵尸监听。清理方式：
+
+    ss -tlnp | grep 18190          # 找到 sshd 的 pid
+    kill <pid>                      # 释放端口后再起隧道
+
+本轮就是这样恢复的，之后 `image_reason` 从"无法连接到桥"变成"ComfyUI 没有运行"——
+链路是通的，缺的只是本机那个 ComfyUI 进程。
+
 ## 尚未实测## 尚未实测## 尚未实测
 
 以下有代码、有工具，但没有任何一次真实调用记录：
