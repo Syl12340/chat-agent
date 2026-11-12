@@ -63,6 +63,8 @@ type Config struct {
 	TurnCompletionObserver TurnCompletionObserver
 	OneBot                 OneBotConfig
 	HostTools              HostToolsConfig
+	// LocalAgent registers the Windows execution endpoints this host will accept.
+	LocalAgent LocalAgentConfig
 	// Plugins is the host's decision about installed plugins: which load, and
 	// which declared permissions are really granted. The zero value enables
 	// everything and grants nothing.
@@ -103,11 +105,14 @@ type Server struct {
 	speechAttempt   time.Time
 	decision        *decision.Client
 	imagegen        imagegen.Generator
+
 	plugins         *pluginapi.Catalog
 	// pluginPolicy is the host's grant for the loaded catalog. Capability
 	// admission and host permissions both read it, so "declared" never silently
 	// becomes "authorized".
 	pluginPolicy pluginapi.Policy
+	// localQueue hands tasks to paired execution endpoints and waits for receipts.
+	localQueue *localQueue
 	// approvals holds host-issued, single-use authorizations. It is the only
 	// source of consent for a call that could not be assessed.
 	approvals      *probe.ApprovalStore
@@ -284,7 +289,7 @@ func New(c Config) (*Server, error) {
 		webClient.Close()
 		return nil, errors.Join(err, images.Close(), push.close(), topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
 	}
-	s := &Server{decision: decision.New(c.Decision), imagegen: imageGenerator(c), approvals: probe.NewApprovalStore(), devices: deviceStore, activities: activityStore, life: lifeStore, turns: turnStore, runtime: runtimeStore, workCtx: workCtx, workCancel: workCancel, careSlots: make(chan struct{}, 1), config: c, tokenHash: sha256.Sum256([]byte(c.AccessToken)), sessions: map[string]*probe.Session{}, runs: map[string]*runState{}, roles: roleManager, memory: mem, companion: companionStore, tasks: taskStore, web: webClient, location: location, transportGeneration: hex.EncodeToString(transportBytes[:]), transportStartedAt: time.Now().UTC()}
+	s := &Server{decision: decision.New(c.Decision), imagegen: imageGenerator(c), localQueue: newLocalQueue(), approvals: probe.NewApprovalStore(), devices: deviceStore, activities: activityStore, life: lifeStore, turns: turnStore, runtime: runtimeStore, workCtx: workCtx, workCancel: workCancel, careSlots: make(chan struct{}, 1), config: c, tokenHash: sha256.Sum256([]byte(c.AccessToken)), sessions: map[string]*probe.Session{}, runs: map[string]*runState{}, roles: roleManager, memory: mem, companion: companionStore, tasks: taskStore, web: webClient, location: location, transportGeneration: hex.EncodeToString(transportBytes[:]), transportStartedAt: time.Now().UTC()}
 	s.modelConfigs = modelConfigs
 	// Built-in plugins: each one is a Go value registered statically. A plugin
 	// whose dependencies are missing lands in Catalog.Unavailable instead of
@@ -378,6 +383,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/sessions/{id}/annotations", s.createAnnotation)
 	mux.HandleFunc("PATCH /api/sessions/{id}/annotations/{annotation}", s.updateAnnotation)
 	mux.HandleFunc("DELETE /api/sessions/{id}/annotations/{annotation}", s.deleteAnnotation)
+	// The execution endpoint authenticates with its own device token, not the
+	// operator access token, so these two sit in the same mux but not behind the
+	// admin check.
+	mux.HandleFunc("POST /api/local-agent/v1/tasks/claim", s.localAgentClaim)
+	mux.HandleFunc("POST /api/local-agent/v1/tasks/{operation}/complete", s.localAgentComplete)
 	mux.HandleFunc("GET /api/sessions/{id}/turns", s.listTurns)
 	mux.HandleFunc("POST /api/sessions/{id}/turns", s.enqueueTurn)
 	mux.HandleFunc("POST /api/sessions/{id}/turns/resume", s.resumeTurns)
@@ -457,7 +467,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // version is the service version reported by /api/status.
-const version = "0.4.4"
+const version = "0.4.5"
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model

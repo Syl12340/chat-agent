@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -22,7 +23,12 @@ type Carrier struct {
 
 func (c *Carrier) Validate() error {
 	u, err := url.Parse(c.BaseURL)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return errors.New("local agent server must be an HTTPS origin")
+	}
+	// A loopback origin never crosses a network, so requiring TLS there only makes
+	// local testing impossible. Anything else must be HTTPS.
+	if u.Scheme != "https" && !(u.Scheme == "http" && isLoopbackHost(u.Hostname())) {
 		return errors.New("local agent server must be an HTTPS origin")
 	}
 	if c.Device == "" || c.Token == "" {
@@ -33,6 +39,14 @@ func (c *Carrier) Validate() error {
 		c.Client = &http.Client{Timeout: 35 * time.Second}
 	}
 	return nil
+}
+
+func isLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func (c *Carrier) Claim(ctx context.Context) (*Task, error) {

@@ -28,6 +28,13 @@ func publicDeviceRequest(r *http.Request) bool {
 	if r.Method != http.MethodPost {
 		return false
 	}
+	// The execution endpoint authenticates with its own configured device token,
+	// which the operator session check below does not know about. Letting these two
+	// through the session gate is what makes a paired machine reachable at all;
+	// each handler re-checks the token before touching the queue.
+	if strings.HasPrefix(r.URL.Path, "/api/local-agent/v1/tasks/") {
+		return true
+	}
 	switch r.URL.Path {
 	case "/api/device/register", "/api/device/challenge", "/api/device/verify":
 		return true
