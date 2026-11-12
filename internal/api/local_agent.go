@@ -165,7 +165,8 @@ func (s *Server) localAgentTools() []probe.Tool {
 		Name:    "local_workspace",
 		Order:   780,
 		Timeout: s.localAgentWait() + 5*time.Second,
-		Usage:   "use when the user asks about files on their own computer rather than on the server. One of the paired machines must be online; if the call times out, the endpoint is off and you should say so instead of retrying.",
+		Usage: "when the user mentions a file, folder or program on their own computer — 我的电脑, 本机, 桌面, 本地, \"on my machine\" — try this before answering that you have no access, because a paired machine may be online. " +
+			"A refusal here is a fact (the endpoint was off); guessing that no channel exists is not. If the call times out, say the endpoint is not running.",
 		Description: "Read, list or search files in the workspace of a paired computer, or run one of its allow-listed actions. " +
 			"Paths are relative to that workspace; anything escaping it is refused. Actions are fixed argv entries the owner configured — you choose a name, never a command line.",
 		Parameters: json.RawMessage(`{"type":"object","properties":{` +
