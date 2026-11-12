@@ -210,7 +210,11 @@ func (r *Remote) refresh(ctx context.Context) {
 		r.mu.Unlock()
 	}()
 
-	probeCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	// The bridge probes ComfyUI before answering, and a closed ComfyUI makes that
+	// probe wait out its own timeout: measured 4.4s on this host. A 4s budget here
+	// lost that race every time, so a closed ComfyUI was reported as an unreachable
+	// tunnel — the one diagnosis that sends the reader to check the wrong thing.
+	probeCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	request, err := http.NewRequestWithContext(probeCtx, http.MethodGet, r.baseURL+"/health", nil)
 	if err != nil {
