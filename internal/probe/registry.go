@@ -72,12 +72,24 @@ type ToolSet struct {
 // selection quality falls as the list grows, not because of a storage cost, so
 // raising it needs a reason beyond "one more capability arrived".
 //
-// It has now been raised twice for the second kind of reason: the host tools
-// (diagnostics plus the confined workspace) are only admitted to conversations
-// the operator named, so the larger ceiling applies to a narrow case rather than
-// to every turn. The real answer is still per-turn scoping; until then the bound
-// is generous for a scoped session and the refusal names every tool it saw.
-const MaxTools = 36
+// It has now been raised three times, and the third raise is the instructive one.
+// The second raise assumed host tools were the whole story: they are admitted only to
+// conversations the operator named, so a larger ceiling applied to a narrow case. Then
+// local_workspace and a maintenance action were added, and every conversation in the
+// granted session went over the limit — including plain "how is the server doing".
+//
+// The refusal is logged as "turn agent unavailable: too many tools", but the turn's
+// category says generation_failed, which reads like an upstream fault. It is not; the
+// request never left the host.
+//
+// The real answer remains per-turn scoping. Until then this is generous, and the
+// refusal names every tool it saw.
+const MaxTools = 48
+
+// ErrTooManyTools marks a registry that refused to build. Callers wrap it so the
+// failure is not mistaken for a model-side problem: the request never leaves the
+// host, and reporting it as a generation failure sends the reader to the wrong place.
+var ErrTooManyTools = errors.New("too many tools")
 
 func NewToolRegistry(definitions []Tool) (*ToolRegistry, error) {
 	if len(definitions) > MaxTools {
@@ -85,7 +97,7 @@ func NewToolRegistry(definitions []Tool) (*ToolRegistry, error) {
 		for _, tool := range definitions {
 			names = append(names, tool.Name)
 		}
-		return nil, fmt.Errorf("too many tools: %d registered, limit %d: %s", len(definitions), MaxTools, strings.Join(names, ", "))
+		return nil, fmt.Errorf("%w: %d registered, limit %d: %s", ErrTooManyTools, len(definitions), MaxTools, strings.Join(names, ", "))
 	}
 	r := &ToolRegistry{}
 	names := map[string]bool{}

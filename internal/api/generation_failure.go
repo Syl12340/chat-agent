@@ -14,6 +14,11 @@ func generationFailure(err error) (string, string) {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return "timeout", "模型响应超时，本次没有自动重试。可以缩短问题或调低思考强度后重新发送。"
 	}
+	// This one never reached the model. Reporting it as generation_failed reads like
+	// an upstream fault and sends the reader to check the provider.
+	if errors.Is(err, probe.ErrTooManyTools) {
+		return "tool_limit", "本会话可用工具超出上限，这次请求没有发给模型。需要调整工具配置。"
+	}
 	var model *probe.ModelError
 	if errors.As(err, &model) {
 		switch model.Kind {
