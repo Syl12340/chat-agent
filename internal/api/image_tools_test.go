@@ -64,12 +64,12 @@ func imageTool(t *testing.T, tools []probe.Tool, name string) probe.Tool {
 func TestImageToolSchemaRegisters(t *testing.T) {
 	server := stubServer(t)
 	tools := server.imageTools("role", "session")
-	// The capability exposes two tools: one to draw, one to report readiness.
-	if len(tools) != 2 {
-		t.Fatalf("expected image_generate and image_health, got %d tools", len(tools))
+	// image_health moved to plugins/builtin/image; the host keeps only the drawing
+	// tool, which needs the session and the runtime.
+	if len(tools) != 1 {
+		t.Fatalf("expected only image_generate here, got %d tools", len(tools))
 	}
 	generate := imageTool(t, tools, "image_generate")
-	_ = imageTool(t, tools, "image_health")
 	if _, err := probe.NewToolRegistry(tools); err != nil {
 		t.Fatalf("schema rejected by registry: %v", err)
 	}

@@ -69,6 +69,19 @@ func ToolOperationID(ctx context.Context) string {
 	return id
 }
 
+// ToolSession returns the session a tool call belongs to.
+//
+// A plugin that keeps per-conversation state needs this: the executor already puts
+// the session in the context next to the operation id, but until now only host code
+// could read it, so anything session-scoped stayed hardwired in the API package.
+func ToolSession(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	id, _ := ctx.Value(toolSessionKey{}).(string)
+	return id
+}
+
 func recordingError(stage string, err error) error {
 	if err == nil {
 		return nil

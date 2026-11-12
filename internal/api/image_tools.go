@@ -49,7 +49,7 @@ func (s *Server) imageTools(role, sessionID string, requests ...string) []probe.
 		`},"required":["prompt"],"additionalProperties":false}`, profileSchema)
 
 	async := s.runtime != nil && len(requests) != 0 && requests[0] != ""
-	tools := []probe.Tool{s.imageHealthTool(), {
+	tools := []probe.Tool{{
 		Name:  "image_generate",
 		Order: 660,
 		Usage: "use only when the user actually asks for a picture. It draws one image on the local GPU and usually takes 10-60 seconds, so do not call it speculatively, and never call it twice for the same request. Give a concrete visual description in the language the user used. The size must respect the profile: image_health lists each profile's width/height range and alignment, so check it when the user asks for a specific shape. If the renderer refuses for lack of memory, say how much it needed instead of retrying; lowering min_free_ram_gb is only right when the user accepts a slower machine. When it succeeds, tell the user what you drew in one short sentence; the picture appears by itself, so do not paste URLs or describe the file.",

@@ -38,6 +38,7 @@ import (
 	"chat-agent/internal/turns"
 	"chat-agent/internal/webtools"
 	"chat-agent/plugins/builtin/clock"
+	"chat-agent/plugins/builtin/image"
 	"chat-agent/plugins/builtin/literature"
 	"chat-agent/plugins/builtin/search"
 	"chat-agent/web"
@@ -106,7 +107,7 @@ type Server struct {
 	decision        *decision.Client
 	imagegen        imagegen.Generator
 
-	plugins         *pluginapi.Catalog
+	plugins *pluginapi.Catalog
 	// pluginPolicy is the host's grant for the loaded catalog. Capability
 	// admission and host permissions both read it, so "declared" never silently
 	// becomes "authorized".
@@ -289,7 +290,8 @@ func New(c Config) (*Server, error) {
 		webClient.Close()
 		return nil, errors.Join(err, images.Close(), push.close(), topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
 	}
-	s := &Server{decision: decision.New(c.Decision), imagegen: imageGenerator(c), localQueue: newLocalQueue(), approvals: probe.NewApprovalStore(), devices: deviceStore, activities: activityStore, life: lifeStore, turns: turnStore, runtime: runtimeStore, workCtx: workCtx, workCancel: workCancel, careSlots: make(chan struct{}, 1), config: c, tokenHash: sha256.Sum256([]byte(c.AccessToken)), sessions: map[string]*probe.Session{}, runs: map[string]*runState{}, roles: roleManager, memory: mem, companion: companionStore, tasks: taskStore, web: webClient, location: location, transportGeneration: hex.EncodeToString(transportBytes[:]), transportStartedAt: time.Now().UTC()}
+	imageGen := imageGenerator(c)
+	s := &Server{decision: decision.New(c.Decision), imagegen: imageGen, localQueue: newLocalQueue(), approvals: probe.NewApprovalStore(), devices: deviceStore, activities: activityStore, life: lifeStore, turns: turnStore, runtime: runtimeStore, workCtx: workCtx, workCancel: workCancel, careSlots: make(chan struct{}, 1), config: c, tokenHash: sha256.Sum256([]byte(c.AccessToken)), sessions: map[string]*probe.Session{}, runs: map[string]*runState{}, roles: roleManager, memory: mem, companion: companionStore, tasks: taskStore, web: webClient, location: location, transportGeneration: hex.EncodeToString(transportBytes[:]), transportStartedAt: time.Now().UTC()}
 	s.modelConfigs = modelConfigs
 	// Built-in plugins: each one is a Go value registered statically. A plugin
 	// whose dependencies are missing lands in Catalog.Unavailable instead of
@@ -301,6 +303,9 @@ func New(c Config) (*Server, error) {
 	// the search plugin; it is a vocabulary on top, not a second network path. A
 	// host with web access disabled gets nil back and the loader drops it.
 	loader.Add(literature.New(webClient))
+	// The renderer health probe needs nothing but the generator interface, so it
+	// lives in a plugin; a host with no renderer gets nil and the tool disappears.
+	loader.Add(image.New(imageGen))
 	loader.Add(clock.Plugin{})
 	for _, p := range hostPlugins {
 		loader.Add(p)
@@ -467,7 +472,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // version is the service version reported by /api/status.
-const version = "0.5.0"
+const version = "0.5.1"
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model
