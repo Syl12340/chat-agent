@@ -13,10 +13,15 @@ import (
 const browserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
 var (
-	resultBlock = regexp.MustCompile(`(?is)<li[^>]*class="[^"]*\bb_algo\b[^"]*"[^>]*>(.*?)</li>`)
-	resultLink  = regexp.MustCompile(`(?is)<h2[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>`)
-	resultPara  = regexp.MustCompile(`(?is)<p[^>]*>(.*?)</p>`)
-	anyTag      = regexp.MustCompile(`(?s)<[^>]*>`)
+	// The block start is matched on its own, and a block is then taken to run until
+	// the next block starts. Matching `<li ...>(.*?)</li>` instead ends at the first
+	// `</li>`, and a result whose summary contains a nested list ends there too — the
+	// block is cut before its <h2>, the link is not found, and (worse) whatever
+	// anchor happens to fall inside the truncated range becomes the "result".
+	resultBlockStart = regexp.MustCompile(`(?is)<li[^>]*class="[^"]*\bb_algo\b[^"]*"[^>]*>`)
+	resultLink       = regexp.MustCompile(`(?is)<h2[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>`)
+	resultPara       = regexp.MustCompile(`(?is)<p[^>]*>(.*?)</p>`)
+	anyTag           = regexp.MustCompile(`(?s)<[^>]*>`)
 	// Engines highlight matched words with inline emphasis; those must not
 	// become spaces or a title reads "蓝色 大肥鱼 形象 大 合集".
 	inlineTag = regexp.MustCompile(`(?i)</?(?:strong|b|em|i|mark)\s*>`)
@@ -55,11 +60,21 @@ func unwrapEngineLink(raw string) string {
 }
 
 // parseResults extracts ordered candidates from an engine results page.
+//
+// Blocks are delimited by where the next one starts rather than by a closing tag,
+// because a result's own markup may contain nested lists. The link and the snippet
+// are then read from the head of the block, which is where the engine puts them.
 func parseResults(page string) []Result {
 	out := []Result{}
 	seen := map[string]bool{}
-	for _, block := range resultBlock.FindAllStringSubmatch(page, 20) {
-		link := resultLink.FindStringSubmatch(block[1])
+	starts := resultBlockStart.FindAllStringIndex(page, 20)
+	for index, start := range starts {
+		end := len(page)
+		if index+1 < len(starts) {
+			end = starts[index+1][0]
+		}
+		block := page[start[1]:end]
+		link := resultLink.FindStringSubmatch(block)
 		if link == nil {
 			continue
 		}
@@ -68,8 +83,8 @@ func parseResults(page string) []Result {
 		if err != nil {
 			continue
 		}
-		link_URL := parsed.String()
-		if seen[link_URL] {
+		linkURL := parsed.String()
+		if seen[linkURL] {
 			continue
 		}
 		title := text(link[2])
@@ -77,11 +92,11 @@ func parseResults(page string) []Result {
 			continue
 		}
 		snippet := ""
-		if para := resultPara.FindStringSubmatch(block[1]); para != nil {
+		if para := resultPara.FindStringSubmatch(block); para != nil {
 			snippet = text(para[1])
 		}
-		seen[link_URL] = true
-		out = append(out, Result{Title: bounded(title, 512), URL: link_URL, Snippet: bounded(snippet, 2048)})
+		seen[linkURL] = true
+		out = append(out, Result{Title: bounded(title, 512), URL: linkURL, Snippet: bounded(snippet, 2048)})
 	}
 	return out
 }

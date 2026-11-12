@@ -96,6 +96,9 @@ func searchEngine(enabled bool) string {
 		return value
 	}
 	if enabled {
+		// Keep this a bare results-page URL: startup validates that it carries no
+		// query parameters. The engine flags that actually change what is returned
+		// belong on the request, where they can depend on the query.
 		return "https://cn.bing.com/search"
 	}
 	return ""

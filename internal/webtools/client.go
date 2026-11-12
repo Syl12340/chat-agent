@@ -372,6 +372,23 @@ func (c *Client) SearchSingle(ctx context.Context, query string) ([]Result, erro
 	return c.searchOnce(ctx, query)
 }
 
+// latinQuery reports whether a query is mostly Latin script, which is when asking
+// an engine for its English index is meaningful.
+func latinQuery(query string) bool {
+	latin, other := 0, 0
+	for _, r := range query {
+		switch {
+		case r < 0x250:
+			if r > 0x7F || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				latin++
+			}
+		default:
+			other++
+		}
+	}
+	return latin > other
+}
+
 // searchOnce reads the engine's public results page and parses candidates from
 // its HTML. No third-party JSON/RSS wrapper sits in between: what the engine
 // renders is what the model sees.
@@ -383,6 +400,15 @@ func (c *Client) searchOnce(ctx context.Context, query string) ([]Result, error)
 	values := u.Query()
 	values.Set("q", query)
 	values.Set("count", "10")
+	// Bing serves unrelated popular pages to this host unless the English index is
+	// requested explicitly: a query for "Landlock unprivileged access control"
+	// returned Zhihu threads about phone repairs, with zero on-topic result blocks;
+	// with ensearch=1 the same request yielded six. Only ask for it when the query
+	// is Latin, since forcing the English index cannot help a Chinese query and
+	// would only change what the engine pretends to have found.
+	if strings.HasSuffix(strings.ToLower(u.Hostname()), "bing.com") && latinQuery(query) {
+		values.Set("ensearch", "1")
+	}
 	u.RawQuery = values.Encode()
 	data, kind, truncated, err := c.readAs(ctx, u, "", browserAgent)
 	if err != nil {
