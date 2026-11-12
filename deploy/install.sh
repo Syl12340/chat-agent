@@ -18,6 +18,13 @@ target=/opt/chat-agent/releases/$release
 install -d -m 0755 "$target"
 install -m 0755 "$here/chat-agent" "$target/chat-agent"
 install -m 0755 "$here/start.sh" "$target/start.sh"
+# Maintenance helpers live outside the release tree on purpose: they are operator
+# tools whose path is pinned in CHAT_SERVICE_ACTIONS, so a rollback must not move
+# them. Installing on every deploy keeps them current without being versioned.
+if [ -f "$here/chat-agent-prune" ]; then
+    install -d -o root -g chat-agent -m 0755 /opt/chat-agent/bin
+    install -o root -g chat-agent -m 0755 "$here/chat-agent-prune" /opt/chat-agent/bin/chat-agent-prune
+fi
 install -d -o root -g chat-agent -m 0750 /etc/chat-agent
 if [ ! -e /etc/chat-agent/chat-agent.env ]; then
     cat "$here/chat-agent.env.example" > /etc/chat-agent/chat-agent.env
