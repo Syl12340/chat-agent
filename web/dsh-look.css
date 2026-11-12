@@ -188,3 +188,22 @@ body{width:100%;overflow-x:hidden}
 .tool-approval-button:hover:not(:disabled){border-color:var(--primary);color:var(--primary)}
 .tool-approval-button:disabled{cursor:default;opacity:.7}
 .tool-approval-hint{font-size:11px;line-height:1.6;color:var(--on-surface-variant)}
+
+/* A reply that arrives as several messages is drawn as separate bubbles so each
+   one lands on its own on a phone. At desktop width those bubbles sit side by
+   side in a column and read as fragments rather than one answer, so they become
+   plain paragraphs: same text, same order, one flow. Only multi-segment replies
+   carry reply-conversational, so a single-message answer is untouched. */
+@media (min-width: 1024px) {
+	.message.assistant .message-body .reply-bubble.reply-conversational {
+		background: transparent;
+		border: 0;
+		border-radius: 0;
+		padding: 0;
+		margin: 0 0 1em;
+		max-width: 100%;
+	}
+	.message.assistant .message-body .reply-bubble.reply-conversational:last-child {
+		margin-bottom: 0;
+	}
+}
