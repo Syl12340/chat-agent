@@ -127,8 +127,10 @@ func (s *Server) imageTools(role, sessionID string, requests ...string) []probe.
 		},
 	}}
 	if async {
-		tools[1].Usage = "Use only when the user explicitly asks for a picture. This accepts one job per conversation turn. Say that the job was submitted, and let the job card show progress and the final image. Do not claim a picture is ready until its status is completed. Do not submit a second job after a connection loss."
-		tools[1].Description = "Submit one job to the configured image renderer and return its durable job_id immediately. Use image_status to query it and image_cancel only on the user's request."
+		// The drawing tool is the only one this function builds; image_health moved
+		// to plugins/builtin/image, which is why this indexes 0 rather than 1.
+		tools[0].Usage = "Use only when the user explicitly asks for a picture. This accepts one job per conversation turn. Say that the job was submitted, and let the job card show progress and the final image. Do not claim a picture is ready until its status is completed. Do not submit a second job after a connection loss."
+		tools[0].Description = "Submit one job to the configured image renderer and return its durable job_id immediately. Use image_status to query it and image_cancel only on the user's request."
 		tools = append(tools, s.imageControlTools(sessionID)...)
 	}
 	return tools

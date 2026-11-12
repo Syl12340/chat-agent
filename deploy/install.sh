@@ -32,6 +32,18 @@ install -m 0644 "$here/chat-agent.service" /etc/systemd/system/chat-agent.servic
 systemd-analyze verify /etc/systemd/system/chat-agent.service
 systemctl daemon-reload
 systemctl enable chat-agent.service
+# Each store takes an exclusive lock file on startup and does not remove it when the
+# process is killed hard. A plain restart then fails with "store lock unavailable",
+# systemd retries, hits its start limit and leaves the service down — so stop first,
+# wait for the process to actually leave, and clear the locks it left behind.
+systemctl stop chat-agent.service 2>/dev/null || true
+waited=0
+while pgrep -x chat-agent >/dev/null 2>&1 && [ "$waited" -lt 10 ]; do
+    waited=$((waited + 1))
+    sleep 1
+done
+find /var/lib/chat-agent -name '*.lock' -delete 2>/dev/null || true
+systemctl reset-failed chat-agent.service 2>/dev/null || true
 systemctl restart chat-agent.service
 attempt=0
 until curl --fail --silent --max-time 2 http://127.0.0.1:9991/healthz >/dev/null; do
