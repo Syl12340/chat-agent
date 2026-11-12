@@ -68,6 +68,23 @@ if status != "completed" { next.Paused = true }
 **判定方法**：会话持续失败时先开一个新会话对照。新会话正常、老会话全失败，就是
 `paused`，点按钮或调 `turns/resume` 即可，不是服务故障。
 
+## decide：实测不可用
+
+`decide` 工具依赖 `/systemone` 端点（SystemOne 协议，专用模型 `ecnu-decision`）。
+在当前的 ECNU 平台上这个端点不存在：
+
+- 默认 `ecnu-decision` + `/systemone` → `决策模型连接失败`
+- 把模型改成 `ecnu-max` → `422 missing field messages`（chat 端点不接受这个请求体）
+
+两个都不是参数问题：第一个是端点缺失，第二个是端点选错了。**`decide` 从未成功返回过。**
+
+上一轮为了让审批流程能跑，把 `CHAT_DECISION_MODEL` 设成了 `ecnu-max`，依据是
+`ecnu-decision` 在 `/chat/completions` 上返回 500。那个前提就是错的——决策客户端
+根本不走 chat 端点。该行已删除，默认值恢复。
+
+**影响**：任何需要独立评估的操作（`ApprovalRequired` 的工具，例如 `server_action`）
+都会卡在审批。修这条路要么找到可用的 SystemOne 端点，要么把审批改成不依赖它的形式。
+
 ## 尚未实测## 尚未实测## 尚未实测
 
 以下有代码、有工具，但没有任何一次真实调用记录：
