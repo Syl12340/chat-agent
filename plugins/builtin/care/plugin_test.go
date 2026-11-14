@@ -46,12 +46,12 @@ type fakeGate struct {
 	calls int
 }
 
-func (g *fakeGate) WithRoleWrite(_, _ string, write func() error) error {
+func (g *fakeGate) WithRoleWrite(_, _ string, write func(pluginapi.WriteScope) error) error {
 	g.calls++
 	if g.err != nil {
 		return g.err
 	}
-	return write()
+	return write(pluginapi.WriteScope{})
 }
 
 func newTool(t *testing.T, store Store, gate pluginapi.WriteGate) pluginapi.Tool {

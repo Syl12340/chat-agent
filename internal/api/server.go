@@ -39,7 +39,9 @@ import (
 	"chat-agent/internal/webtools"
 	careplugin "chat-agent/plugins/builtin/care"
 	"chat-agent/plugins/builtin/clock"
+	episodeplugin "chat-agent/plugins/builtin/episode"
 	"chat-agent/plugins/builtin/image"
+	knowledgeplugin "chat-agent/plugins/builtin/knowledge"
 	"chat-agent/plugins/builtin/literature"
 	memoryplugin "chat-agent/plugins/builtin/memory"
 	"chat-agent/plugins/builtin/search"
@@ -83,20 +85,20 @@ type runState struct {
 	queued bool
 }
 type Server struct {
-	config          Config
-	tokenHash       [32]byte
-	mu              sync.Mutex
-	sessions        map[string]*probe.Session
-	runs            map[string]*runState
-	closing         bool
-	roles           *roles.Manager
-	memory          *memory.Store
-	companion       *companion.Store
-	life            *companion.LifeStore
-	activities      *companion.ActivityStore
-	devices         *deviceauth.Store
+	config     Config
+	tokenHash  [32]byte
+	mu         sync.Mutex
+	sessions   map[string]*probe.Session
+	runs       map[string]*runState
+	closing    bool
+	roles      *roles.Manager
+	memory     *memory.Store
+	companion  *companion.Store
+	life       *companion.LifeStore
+	activities *companion.ActivityStore
+	devices    *deviceauth.Store
 	// hostGrants narrows or widens host tooling per conversation at runtime.
-	hostGrants *hostGrants
+	hostGrants      *hostGrants
 	turns           *turns.Store
 	runtime         *runlog.Registry
 	workCtx         context.Context
@@ -334,6 +336,11 @@ func New(c Config) (*Server, error) {
 	// gate that keeps two conversations of one role from interleaving a
 	// read-modify-write on the same revisioned settings.
 	loader.Add(careplugin.New(lifeStore, s))
+	// Knowledge and episodes need the same two seams: the turn's user text for an
+	// evidence quote, and a write serialized against other conversations of the
+	// role. Knowledge also publishes the barrier that hides what it just removed.
+	loader.Add(knowledgeplugin.New(mem, lifeStore, s))
+	loader.Add(episodeplugin.New(lifeStore))
 	// Discovery writes the same revisioned settings from a conversation, so it
 	// needs the same evidence and write gate; it also refuses to switch on when
 	// the deployment cannot search or read the public web at all.
@@ -510,7 +517,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // version is the service version reported by /api/status.
-const version = "0.6.6"
+const version = "0.6.7"
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model

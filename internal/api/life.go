@@ -517,30 +517,3 @@ func (s *Server) checkCare(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]bool{"generated": false})
 }
-func (s *Server) episodeTools(role string, inputs []string, sessionID string) []probe.Tool {
-	return []probe.Tool{{Name: "episode_propose", Decision: probe.DecisionAdvisory, Risk: probe.RiskLow, Usage: "use only for a dated personal event or an unfinished topic the user asked to keep for later.", Order: 330, Description: "Propose a pending, role-scoped event or unfinished topic only when the current user explicitly requests remembering or continuing it later. Copy a short exact quote from the latest message into evidence. Never save credentials or diagnose emotional traits. Pending events are not used across sessions until the user approves them in the Events panel. Followup requires an explicit request to check in later and an RFC3339 time with timezone; otherwise omit it and set allow_followup false.", Parameters: json.RawMessage(`{"type":"object","properties":{"title":{"type":"string","maxLength":256},"content":{"type":"string","maxLength":4096},"evidence":{"type":"string","maxLength":1024},"event_at":{"type":["string","null"]},"followup_at":{"type":["string","null"]},"allow_followup":{"type":"boolean"}},"required":["title","content","evidence"],"additionalProperties":false}`), Execute: func(ctx context.Context, data json.RawMessage) (probe.ToolResult, error) {
-		if err := ctx.Err(); err != nil {
-			return probe.ToolResult{}, err
-		}
-		var args struct {
-			Title         string     `json:"title"`
-			Content       string     `json:"content"`
-			Evidence      string     `json:"evidence"`
-			EventAt       *time.Time `json:"event_at"`
-			FollowupAt    *time.Time `json:"followup_at"`
-			AllowFollowup bool       `json:"allow_followup"`
-		}
-		if err := toolInput(data, &args); err != nil {
-			return probe.ToolResult{}, err
-		}
-		if !probe.TurnHasEvidence(inputs, args.Evidence) {
-			return probe.ToolResult{}, errors.New("事件候选缺少当前用户消息中的依据")
-		}
-		item, err := s.life.AddEpisode(role, companion.EpisodeDraft{Title: args.Title, Content: args.Content, Status: "pending", EventAt: args.EventAt, FollowupAt: args.FollowupAt, AllowFollowup: args.AllowFollowup, SourceSessionID: sessionID, SourceText: args.Evidence})
-		if err != nil {
-			return probe.ToolResult{}, errors.New("事件候选保存失败，请在事件面板检查内容与时间")
-		}
-		out, _ := json.Marshal(item)
-		return probe.ToolResult{Output: string(out)}, nil
-	}}}
-}

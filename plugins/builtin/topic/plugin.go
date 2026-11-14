@@ -157,7 +157,7 @@ func (p *Plugin) handle(ctx context.Context, raw json.RawMessage) (pluginapi.Res
 		return pluginapi.Result{}, err
 	}
 	saved := p0
-	err = p.gate.WithRoleWrite(role, session, func() error {
+	err = p.gate.WithRoleWrite(role, session, func(pluginapi.WriteScope) error {
 		next, err := p.store.UpdateSettings(role, saved)
 		if err != nil {
 			return err

@@ -39,7 +39,18 @@ type Host interface {
 	Allowed(permission string) bool
 }
 
-// WriteGate is the host's serialization point for role-scoped settings writes.
+// WriteScope is what the host knows while it holds the write lock.
+//
+// Cuts is how many messages each conversation of this role holds right now. A
+// tool that hides old content — forgetting a record, correcting a fact — publishes
+// those counts as a barrier so the next context assembly cannot reintroduce what
+// the user just removed. The counts are read under the same lock as the write, so
+// no conversation can grow between the measurement and the commit.
+type WriteScope struct {
+	Cuts map[string]int
+}
+
+// WriteGate is the host's serialization point for role-scoped writes.
 //
 // A tool that reads a revision, patches it and writes it back must do the whole
 // read-modify-write inside WithRoleWrite. The host holds its run lock across the
@@ -52,8 +63,9 @@ type Host interface {
 type WriteGate interface {
 	// WithRoleWrite runs write only while sessionID's turn is still live and no
 	// other conversation of role is generating a turn. Otherwise it returns
-	// ErrWriteSessionEnded or ErrWriteRoleBusy without calling write.
-	WithRoleWrite(role, sessionID string, write func() error) error
+	// ErrWriteSessionEnded, ErrWriteRoleBusy or ErrWriteContextUnavailable without
+	// calling write.
+	WithRoleWrite(role, sessionID string, write func(WriteScope) error) error
 }
 
 var (
@@ -63,6 +75,9 @@ var (
 	// ErrWriteRoleBusy means another conversation of the same role is generating
 	// a turn, so an interleaved read-modify-write could lose an update.
 	ErrWriteRoleBusy = errors.New("write refused: another conversation of this role is running")
+	// ErrWriteContextUnavailable means the host could not measure the role's
+	// context boundaries, so a write that has to advance them cannot be safe.
+	ErrWriteContextUnavailable = errors.New("write refused: role context boundaries unavailable")
 )
 
 // Tool is one callable capability offered to the model.

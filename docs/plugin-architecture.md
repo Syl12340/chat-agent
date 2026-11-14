@@ -173,7 +173,7 @@ manifest 按客户端**实际能力**生成：没配搜索端点就没有 `web_s
 `internal/api` 里原来的 `webTools()` 和 `internal/api/tasks.go` 里的
 150 行硬编码已删除。Core 不再知道这两个工具存在。
 
-### 当前清单（0.6.3：11 个插件 / 27 个工具）
+### 当前清单（0.6.7：13 个插件 / 29 个工具）
 
 | 插件 | 工具 |
 | --- | --- |
@@ -184,13 +184,15 @@ manifest 按客户端**实际能力**生成：没配搜索端点就没有 `web_s
 | `builtin.tasks` | `todo_add` `todo_list` `todo_complete` `reminder_add` `reminder_list` `reminder_cancel` |
 | `builtin.care` | `care_preferences` |
 | `builtin.topic` | `topic_preferences` |
+| `builtin.episode` | `episode_propose` |
+| `builtin.knowledge` | `knowledge_manage` |
 | `builtin.image` | `image_health` |
 | `builtin.clock` | `get_current_time` |
 | `builtin.server` | `server_status` `server_service` `server_logs` `server_releases` `server_action` |
 | `builtin.workspace` | `workspace_list` `workspace_read` `workspace_search` `workspace_share` `workspace_shell` |
 
-还留在 `internal/api` 的：`episode_propose`、`knowledge_manage`、`shared_activity_open`、
-`shared_activity_update`，以及图像三件套和 `local_workspace`。
+宿主里只剩 `shared_activity_open`、`shared_activity_update`，外加图像三件套和
+`local_workspace`——后两者依赖跨请求的作业状态，不是「搬不搬」的问题。
 
 ### 宿主机工具的可见性是按会话算的，不是按部署算的
 
@@ -220,9 +222,13 @@ manifest 按客户端**实际能力**生成：没配搜索端点就没有 `web_s
 
 - `probe.WithToolInputs` / `probe.ToolInputs(ctx)` —— 只有本轮用户消息。助手输出、
   工具结果、更早的历史都不在里面，所以伪造或改写的引文过不了 `probe.TurnHasEvidence`。
-- `pluginapi.WriteGate` —— `WithRoleWrite(role, session, func() error)` 把整个读改写
-  塞进宿主的锁里；单独问「现在安全吗」然后去写是不行的，查完到写之间会有 run 插进来。
-  拒绝时返回 `ErrWriteSessionEnded` / `ErrWriteRoleBusy`，中文文案由插件自己决定。
+- `pluginapi.WriteGate` —— `WithRoleWrite(role, session, func(WriteScope) error)` 把整个
+  读改写塞进宿主的锁里；单独问「现在安全吗」然后去写是不行的，查完到写之间会有 run 插进来。
+  拒绝时返回 `ErrWriteSessionEnded` / `ErrWriteRoleBusy` / `ErrWriteContextUnavailable`，
+  中文文案由插件自己决定。
+  `WriteScope.Cuts` 是「这个角色每个会话现在有多少条消息」，在**同一把锁里**量的。
+  `knowledge_manage` 忘掉或改正一条记录后要把这个边界一起推进，否则下一轮上下文会把刚删掉
+  的内容重新带回来；如果边界在锁外量，量完到写之间别的会话可能又长了两条，那道屏障就矮了。
 - `probe.ToolContext(ctx, session, role, call, operation)` —— 把「哪次调用、哪个会话、
   哪个角色、哪个幂等键」收敛成**唯一一份定义**，执行器也改用它。
 

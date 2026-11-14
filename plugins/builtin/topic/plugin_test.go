@@ -43,12 +43,12 @@ type fakeGate struct {
 	calls int
 }
 
-func (g *fakeGate) WithRoleWrite(_, _ string, write func() error) error {
+func (g *fakeGate) WithRoleWrite(_, _ string, write func(pluginapi.WriteScope) error) error {
 	g.calls++
 	if g.err != nil {
 		return g.err
 	}
-	return write()
+	return write(pluginapi.WriteScope{})
 }
 
 const optIn = "你可以自己去看看我感兴趣的东西，我不介意。"

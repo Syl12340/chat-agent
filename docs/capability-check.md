@@ -135,7 +135,6 @@ if status != "completed" { next.Paused = true }
 
 以下有代码、有工具，但没有任何一次真实调用记录：
 
-- `knowledge_manage`（资料整理）
 - `episode_propose`（事件候选）
 - `skill_load`（技能加载）
 - `shared_activity_open` / `shared_activity_update`（共同活动）
@@ -145,6 +144,10 @@ if status != "completed" { next.Paused = true }
 - 陪伴侧的连续聊天分段、话题预算
 
 跑过之前不要把上面这些当成可用能力写进文档或演示。
+
+`knowledge_manage` 只算跑通一半：0.6.7 上在真会话里让它 `search` 事实，工具真的被调到并
+返回了已批准记录（读路径成立）。**写路径（update / forget / merge）仍然只有测试覆盖**，
+和 `care_preferences` 一样缺一次真实的用户原话。
 
 ## server_action 的审批链：已走完，从拒绝到执行
 
