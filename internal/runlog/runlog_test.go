@@ -90,3 +90,52 @@ func TestRecorderPersistsPreparedRequestAndLifecycle(t *testing.T) {
 		t.Fatal("snapshot hash, image reference, or omitted output-limit semantics were not preserved")
 	}
 }
+
+// A gate refusal is the normal outcome for a critical tool while no assessor is
+// reachable. It writes a tool.decision event with no operation id, and the
+// validator once refused that shape — so the next turn could not open the log at
+// all. The failure surfaced as "运行记录暂时不可用" on every later message in the
+// session, which looked like a corrupt session instead of a widened refusal.
+func TestDecisionRefusalLeavesTheRunlogReadable(t *testing.T) {
+	root := t.TempDir()
+	scope := Scope{SessionID: "session-one", RoleID: "companion", RequestID: "request-one"}
+	recorder, err := Open(root, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = recorder.AttemptStarted(context.Background(), probe.AttemptRecord{SessionID: scope.SessionID, RoleID: scope.RoleID, RequestID: scope.RequestID, Inputs: []probe.Message{{Role: "user", Content: "重启一下"}}, MaxTurns: 4, MaxTools: 4}); err != nil {
+		t.Fatal(err)
+	}
+	if err = recorder.ModelRequested(context.Background(), 0, probe.ModelRequest{Model: "fixture", System: "system", Messages: []probe.Message{{Role: "user", Content: "重启一下"}}, TokenParameter: "max_tokens"}); err != nil {
+		t.Fatal(err)
+	}
+	call := probe.ToolCall{ID: "provider-call", Type: "function", Function: probe.FunctionCall{Name: "server_action", Arguments: `{"action":"prune-releases"}`}}
+	if err = recorder.ModelFinished(context.Background(), 0, probe.Message{Role: "assistant", ToolCalls: []probe.ToolCall{call}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	record := &probe.DecisionRecord{Required: probe.DecisionRequired, Risk: probe.RiskCritical, Outcome: "needs_approval", Reason: "no assessor", Approval: &probe.ApprovalRequest{Tool: "server_action", Digest: strings.Repeat("c", 64)}}
+	if err = recorder.DecisionEvaluated(context.Background(), 0, call, record); err != nil {
+		t.Fatal(err)
+	}
+	if err = recorder.AttemptFinished(context.Background(), probe.AttemptFinish{Status: "completed", StopReason: "final_response"}); err != nil {
+		t.Fatal(err)
+	}
+	if err = recorder.Close(); err != nil {
+		t.Fatal(err)
+	}
+	events, err := ReadEvents(root, scope.SessionID)
+	if err != nil {
+		t.Fatalf("a recorded refusal made the log unreadable: %v", err)
+	}
+	if len(events) != 5 || events[3].Type != "tool.decision" || events[3].OperationID != "" {
+		t.Fatalf("events = %#v", events)
+	}
+	// The real symptom was here: the next turn in the same session could not start.
+	next, err := Open(root, Scope{SessionID: scope.SessionID, RoleID: scope.RoleID, RequestID: "request-two"})
+	if err != nil {
+		t.Fatalf("the next turn could not open the runlog: %v", err)
+	}
+	if err = next.Close(); err != nil {
+		t.Fatal(err)
+	}
+}

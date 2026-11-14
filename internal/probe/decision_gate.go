@@ -82,7 +82,10 @@ func (e *ToolExecutor) requireHumanApproval(execution ToolExecution, record *Dec
 	roleID, sessionID := execution.Step.RoleID, execution.Step.SessionID
 	if ticket, ok := e.approvals.Consume(sessionID, roleID, execution.Name, digest); ok {
 		record.Outcome = "user_override"
-		record.Approval = &ApprovalRequest{Tool: execution.Name, Digest: digest}
+		// Approval is the request to approve, not a record of having approved.
+		// Leaving it set makes the client offer the button again for a call that
+		// already ran, and that second click can only 409.
+		record.Approval = nil
 		record.ApprovalID = ticket.ID
 		return record, nil
 	}
@@ -110,7 +113,8 @@ func (e *ToolExecutor) degradedRecord(execution ToolExecution, record *DecisionR
 	roleID, sessionID := execution.Step.RoleID, execution.Step.SessionID
 	if ticket, ok := e.approvals.Consume(sessionID, roleID, execution.Name, digest); ok {
 		record.Outcome = "user_override"
-		record.Approval = &ApprovalRequest{Tool: execution.Name, Digest: digest}
+		// See requireHumanApproval: the approved call must not look pending.
+		record.Approval = nil
 		record.ApprovalID = ticket.ID
 		return record, nil
 	}

@@ -152,6 +152,11 @@ func TestHostTicketCoversOneExactCall(t *testing.T) {
 	if ran.Decision == nil || ran.Decision.Outcome != "user_override" || ran.Decision.ApprovalID == "" {
 		t.Fatalf("record should mark the host override with its ticket: %+v", ran.Decision)
 	}
+	// The call already ran. A leftover Approval would render an approve button for
+	// it again, and spending a consumed ticket can only fail.
+	if ran.Decision.Approval != nil {
+		t.Fatalf("an approved call must not ask for approval again: %+v", ran.Decision.Approval)
+	}
 	// Authorization is single-use: a retry must ask again.
 	again := executeApproved(t, tool, &stubGate{err: errors.New("决策服务不可用")}, store, `{"target":"a"}`)
 	if again.Code != "DECISION_NEEDS_APPROVAL" {

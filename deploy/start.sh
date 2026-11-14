@@ -23,4 +23,12 @@ case "${CHAT_ENABLE_WEB:-0}" in
     *) echo 'CHAT_ENABLE_WEB must be 0 or 1.' >&2; exit 1 ;;
 esac
 
+# The turn budget covers every model call in one turn, not just one request: a
+# turn that runs a tool and then asks the model to read the result spends it
+# twice, and a 32 KiB tool result spends a lot more of it. 30s is the built-in
+# default and is too tight for that on a live model with thinking enabled.
+if [ -n "${CHAT_TURN_TIMEOUT:-}" ]; then
+    set -- "$@" -timeout "$CHAT_TURN_TIMEOUT"
+fi
+
 exec /opt/chat-agent/current/chat-agent -listen 127.0.0.1:9991 "$@"

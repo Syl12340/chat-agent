@@ -498,7 +498,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // version is the service version reported by /api/status.
-const version = "0.6.3"
+const version = "0.6.5"
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model
@@ -754,6 +754,10 @@ func (s *Server) message(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.mu.Unlock()
 		cancel()
+		// The client only ever sees a fixed sentence here. Without this line an
+		// operator cannot tell an unreadable runlog from a full disk, and the
+		// session looks mysteriously dead on every later message.
+		log.Printf("runlog open failed for session %s: %v", id, err)
 		fail(w, 503, "运行记录暂时不可用；没有调用模型")
 		return
 	}

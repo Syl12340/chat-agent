@@ -31,7 +31,7 @@
 | --- | --- |
 | 图像生成 | 桥可运行，ComfyUI 未启动；状态如实报「ComfyUI 没有运行」 |
 | 中文搜索的极端查询 | 正常查询可用；搜索质量告警（`relevance.warning`）尚未在真实请求中触发过一次 |
-| 服务器维护动作 `server_action` | helper 已配置（`server_releases` 能返回版本），审批票能开到，但**批准后的实际执行从未观察到**，见下节 |
+| 服务器维护动作 `server_action` | 已实测：拒绝 → 界面批准 → 原样重试 → 真的执行 `prune-releases`，见下节 |
 | ECNU eduwork | 服务器解析不到相关域名，未接入 |
 
 ## 主动消息
@@ -146,23 +146,70 @@ if status != "completed" { next.Paused = true }
 
 跑过之前不要把上面这些当成可用能力写进文档或演示。
 
-## server_action 的审批链：开到票，没走到执行
+## server_action 的审批链：已走完，从拒绝到执行
 
-`server_action` 声明了 `Decision:"required"`、`Risk:"critical"`、`ApprovalRequired:true`，
-所以调用路径一定是「先拿到一张审批票，再由人批准，然后重试」。
+0.6.5 上完整跑通了。会话 `d225d65e90875bb4d42a9827446f48db`，动作 `prune-releases`：
 
-已经确认的：
+1. 第一次调用 → `DECISION_NEEDS_APPROVAL`，摘要
+   `acd3255df6cd268427422127b2e7f4be916f5afbca3c5ad38848aecc1e9d2546`
+   （摘要只取决于参数 `{"action":"prune-releases"}`，所以每轮都一样）。
+2. 模型没有替用户假设同意，而是讲了风险、要求界面确认。
+3. `POST /api/approvals` → 票据 `apr_f40cba27fa9aec0a54b6bbf601a6fb68`。
+4. 原样重试 → **真的执行了**，返回
 
-- 未批准时返回 `status: approval_required` 和一个 `digest`（`acd3255d…`）
-- `POST /api/approvals` 返回 200 和票据 `apr_d81eb56c…`，绑定到会话和摘要
-- `/api/sessions/*/turns/resume` 对**不存在的会话**返回 404——这是对的，不是接口坏了
+       102 个版本，保留 10 个（含当前 20261114-approval-record-01），
+       可清理 92 个，约 946.4 MiB。这是预演，加 --apply 才会真的删除
 
-没确认的：批准之后那一次重试真的把动作执行了。上一轮做这个验证时，重试撞上服务重启
-导致的 `paused`，等去恢复时会话已经被删了（`/var/lib/chat-agent/sessions/runtime` 里
-没有那个目录，`/api/sessions` 只剩 3 个真实会话）。
+票据一次性：再重试一次会重新要票，符合设计。
 
-**教训**：拿一个测试会话做审批走查时，别让"重启"和"会话还在"互相干扰。重启一定会让
-未完成的会话进入 `paused`，而清理会话时我连测试会话一起删掉了，证据链断在半路。
+### 这条路上踩到的两个 bug
+
+**一、一次审批拒绝能把整个会话锁死（0.6.4 修）。**
+
+写入侧记录 `tool.decision` 事件，reference 的 kind 写的是 `"decision"`；校验侧
+`validEvent` 的白名单里既没有这个 kind，也没有 `tool.decision` 这个事件类型。于是日志
+从写入那一刻起就是「不可读」的：下一次 `runlog.Open` 遍历事件时必然报
+`invalid event at sequence 4`，之后这个会话**每一条消息**都返回
+
+    503 运行记录暂时不可用；没有调用模型
+
+看起来像会话坏了，其实是自己写的东西自己读不回来。触发条件就是任意一次门禁拒绝，
+也就是 `server_action` 的必经之路。修法是让校验侧接受这个形状，并加了一条回归测试
+（把 `validEvent` 的修改撤回后，测试会以 `invalid event at sequence 4` 失败）。
+
+顺带补了日志：这条 503 之前**一行日志都没有**，operator 分不清是日志坏了还是磁盘满了。
+
+**二、已批准的调用还会再要一次批准（0.6.5 修）。**
+
+票据被消费后，记录里仍然带着 `Approval` 字段，客户端据此又渲染一个确认按钮；再点只会
+拿到 409（拒绝记录已经被消费掉了）。现在批准后只留 `ApprovalID` 作为审计线索。
+`TestHostTicketCoversOneExactCall` 断言了这一点。
+
+### 第三个坑：30 秒的回合预算不够
+
+`-timeout` 是**整个回合**的预算，不是一次模型调用的。审批流一轮要调两次模型，第二次
+还要读进 32 KiB 的工具输出——30 秒必然超时，报「模型响应超时」。
+
+0.6.5 起 `start.sh` 支持 `CHAT_TURN_TIMEOUT`（传给 `-timeout`），线上设成 `120s`。
+`/api/status` 的 `timeout_seconds` 可以看到当前值。
+
+**仍然待办**：`server_action` 的输出会原样把 92 个版本的 JSON 全塞进上下文。摘要那行
+已经够人看了，完整列表对模型判断没有增量，却吃掉大半预算。下一轮该给它加输出上限。
+
+### 主机工具的开关方式（当前是关的）
+
+主机工具（`server_*`、`workspace_*`）按会话授权，靠
+`CHAT_HOST_TOOL_SESSIONS=<会话 id,...>`，**加一个会话要改 env 再重启**。
+这次验证完已经清空，等于关掉：`/api/plugins` 只剩 9 个插件 17 个工具。
+
+授权一个会话的步骤：
+
+1. 在界面上新建一个会话，从 `/api/sessions` 拿到它的 id
+2. 把 id 写进 `/etc/chat-agent/chat-agent.env` 的 `CHAT_HOST_TOOL_SESSIONS`
+3. `systemctl restart chat-agent`
+
+改 env + 重启才能授权一次，这个摩擦本身就是产品缺陷：用户说「帮我看看服务器」的时候，
+没有任何办法让当前会话长出这些工具。下一轮要做成运行时授权。
 
 ## 插件契约：为什么有些工具搬不动（0.6.3 已解决两个）
 

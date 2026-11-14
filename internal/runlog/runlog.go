@@ -272,7 +272,7 @@ func validEvent(event Event, sequence uint64, sessionID, roleID string) bool {
 		group, limit := "payloads", int64(MaxPayloadBytes)
 		if ref.Kind == "model_request" {
 			group, limit = "snapshots", int64(MaxSnapshotBytes)
-		} else if ref.Kind != "attempt_start" && ref.Kind != "model_result" && ref.Kind != "tool_request" && ref.Kind != "tool_result" {
+		} else if ref.Kind != "attempt_start" && ref.Kind != "model_result" && ref.Kind != "tool_request" && ref.Kind != "tool_result" && ref.Kind != "decision" {
 			return false
 		}
 		want := filepath.ToSlash(filepath.Join(group, ref.ID+".json"))
@@ -292,6 +292,12 @@ func validEvent(event Event, sequence uint64, sessionID, roleID string) bool {
 		return event.AttemptID != "" && event.StepID != "" && event.CallID != "" && event.ProviderCallID != "" && event.OperationID != "" && kind == "tool_request"
 	case "tool.finished":
 		return event.AttemptID != "" && event.StepID != "" && event.CallID != "" && event.ProviderCallID != "" && event.OperationID != "" && kind == "tool_result" && len(event.Data) > 0
+	// A gate refusal never reaches dispatch, so this is the one tool-scoped event
+	// that must not carry an operation: no idempotent operation was ever started.
+	// Omitting it from this switch made the whole log unreadable on the next open,
+	// which bricked the session rather than just the call.
+	case "tool.decision":
+		return event.AttemptID != "" && event.StepID != "" && event.CallID != "" && event.ProviderCallID != "" && event.OperationID == "" && kind == "decision"
 	case "attempt.finished":
 		return event.AttemptID != "" && event.StepID == "" && event.CallID == "" && event.OperationID == "" && event.Reference == nil && len(event.Data) > 0
 	default:
