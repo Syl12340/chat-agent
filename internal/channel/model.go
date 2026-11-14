@@ -25,9 +25,21 @@ type Sender struct {
 }
 
 type Message struct {
-	ID      string `json:"id"`
-	Text    string `json:"text"`
-	ReplyTo string `json:"reply_to,omitempty"`
+	ID          string       `json:"id"`
+	Text        string       `json:"text"`
+	ReplyTo     string       `json:"reply_to,omitempty"`
+	Attachments []Attachment `json:"attachments,omitempty"`
+}
+
+// Attachment is provider metadata only. Adapters must download and validate
+// bytes through the host's public-network boundary before a model can see them.
+type Attachment struct {
+	URL         string `json:"url"`
+	Filename    string `json:"filename,omitempty"`
+	ContentType string `json:"content_type,omitempty"`
+	Size        int64  `json:"size,omitempty"`
+	Width       int    `json:"width,omitempty"`
+	Height      int    `json:"height,omitempty"`
 }
 
 // Envelope contains only normalized fields needed by the runtime boundary.
@@ -71,6 +83,11 @@ type InboxRecord struct {
 	EventID       string    `json:"event_id"`
 	RequestID     string    `json:"request_id"`
 	SessionID     string    `json:"session_id,omitempty"`
+	Platform      string    `json:"platform,omitempty"`
+	AccountID     string    `json:"account_id,omitempty"`
+	Conversation  string    `json:"conversation_kind,omitempty"`
+	TargetID      string    `json:"target_id,omitempty"`
+	ExternalID    string    `json:"external_message_id,omitempty"`
 	PayloadSHA256 string    `json:"payload_sha256"`
 	State         string    `json:"state"`
 	ReceivedAt    time.Time `json:"received_at"`
@@ -83,7 +100,12 @@ type OutboxRecord struct {
 	DeliveryID    string    `json:"delivery_id"`
 	SessionID     string    `json:"session_id"`
 	RequestID     string    `json:"request_id"`
+	Platform      string    `json:"platform,omitempty"`
+	AccountID     string    `json:"account_id,omitempty"`
+	Conversation  string    `json:"conversation_kind,omitempty"`
 	TargetID      string    `json:"target_id"`
+	ReplyTo       string    `json:"reply_to,omitempty"`
+	Proactive     bool      `json:"proactive,omitempty"`
 	ContentSHA256 string    `json:"content_sha256"`
 	Text          string    `json:"text,omitempty"`
 	State         string    `json:"state"`
@@ -120,9 +142,32 @@ func RequestID(accountID, messageID string) (string, error) {
 	return hex.EncodeToString(digest[:]), nil
 }
 
+// StableRequestID produces one durable turn identity per provider event. The
+// optional discriminator carries a provider sequence/index when message IDs can
+// be delivered more than once with distinct contents.
+func StableRequestID(platform, adapter, accountID, messageID, discriminator string) (string, error) {
+	platform = strings.TrimSpace(platform)
+	adapter = strings.TrimSpace(adapter)
+	accountID = strings.TrimSpace(accountID)
+	messageID = strings.TrimSpace(messageID)
+	if platform == "" || adapter == "" || accountID == "" || messageID == "" || len(discriminator) > 512 {
+		return "", ErrInvalidEnvelope
+	}
+	digest := sha256.Sum256([]byte(strings.Join([]string{"channel", platform, adapter, accountID, messageID, discriminator}, "\x00")))
+	return hex.EncodeToString(digest[:]), nil
+}
+
 func (e Envelope) Validate() error {
 	if e.Version != ContractVersion || e.EventID == "" || e.Platform == "" || e.Adapter == "" || e.AccountID == "" || e.Conversation.Kind == "" || e.Conversation.ID == "" || e.Sender.ID == "" || e.Message.ID == "" || strings.TrimSpace(e.Message.Text) == "" || len(e.Message.Text) > 64<<10 || len(e.PayloadSHA256) != 64 || e.ReceivedAt.IsZero() {
 		return ErrInvalidEnvelope
+	}
+	if len(e.Message.Attachments) > 8 {
+		return ErrInvalidEnvelope
+	}
+	for _, item := range e.Message.Attachments {
+		if !strings.HasPrefix(item.URL, "https://") || len(item.URL) > 4096 || item.Size < 0 || item.Size > 32<<20 || item.Width < 0 || item.Height < 0 {
+			return ErrInvalidEnvelope
+		}
 	}
 	return nil
 }

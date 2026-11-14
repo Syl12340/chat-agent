@@ -42,7 +42,7 @@ func TestSharedTopicCareBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.state.Version != 5 || s.TopicStillAllowed("companion", "budget-topic", now, loc) != nil {
+	if s.state.Version != 6 || s.TopicStillAllowed("companion", "budget-topic", now, loc) != nil {
 		t.Fatal("topic budget receipt did not survive restart")
 	}
 	if err = s.ReserveTopicAttempt("companion", "budget-topic", now, loc); !errors.Is(err, ErrCareBlocked) {

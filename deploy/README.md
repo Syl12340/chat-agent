@@ -1,6 +1,8 @@
 # 单机部署（SSH 隧道）
 
-当前发布（2026-11-09，版本线重置后）：服务端 **0.4.0** 为 `20261109-unified-01`；Android 为 **0.4.0-debug / versionCode 7**（`android-20261109-19`）。设备 challenge 自动连接、统一助手、服务器模型配置、受限工作区 shell、文件回传和仿生分段已上线；一致性备份为 `pre-unified-20261109-01.tar.gz`。见[发布记录](../docs/release-0.4.md)。
+当前发布（2026-11-15）为服务端 **0.7.0**（`20261115-im-unified-01`）与 Android **0.7.0-debug / versionCode 38**（`android-20261115-01`）。合批包含主动陪伴/双端 Agent/课件纵切和 QQ 官方/OneBot 的统一身份、会话联动与群聊隔离；两个 QQ 入口生产均保持关闭。两端 SHA-256、备份、零模型验收及回退命令见[0.7 发布记录](../docs/release-0.7.md)。
+
+历史发布（2026-11-09，版本线重置后）：服务端 **0.4.0** 为 `20261109-unified-01`；Android 为 **0.4.0-debug / versionCode 7**（`android-20261109-19`）。设备 challenge 自动连接、统一助手、服务器模型配置、受限工作区 shell、文件回传和仿生分段已上线；一致性备份为 `pre-unified-20261109-01.tar.gz`。见[发布记录](../docs/release-0.4.md)。
 
 历史发布（2026-11-08）：服务端 **0.25.0** 为 `20261108-channel-02`；Android 为 **0.21.2-debug / versionCode 20**（`android-20261106-02`）。OneBot v11 owner 私聊 P0–P2 已部署但默认关闭；一致性备份 `pre-channel-20261108-01.tar.gz`、版本/鉴权/历史/关闭态 webhook 和监听均通过零模型检查。见[发布记录](../docs/release-0.25.md)。
 

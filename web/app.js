@@ -10,15 +10,18 @@ import { createNativeCare } from '/native-care.js';
 import { createVoiceUI } from '/voice.js';
 import { createDeviceAuth } from '/device-auth.js';
 import { createModelConfigs } from '/model-configs.js';
+import { createChannelSettings } from '/channels.js';
 import { createHostTools } from '/host-tools.js';
 import { createChatInput } from '/chat-input.js';
 import { createShellBridge } from '/shell-bridge.js';
 import { attachGeneratedImage, watchImageJob } from '/generated-image.js';
-import { describeTool, searchResults, workspaceFileResult } from '/tool-view.js';
+import { coursewareResult, describeTool, searchResults, workspaceFileResult } from '/tool-view.js';
 import { createUIRenderer } from '/ui/render.js';
 import { applyPresentationEffect, renderPresentation } from '/ui/presentation.js';
 import { createDesktopWorkspace } from '/desktop-workspace.js';
 import { createMarkdownRenderer } from '/markdown.js';
+import { createLocalAgentUI } from '/local-agent-ui.js';
+import { createCoursewareUI } from '/courseware.js';
 import { adoptTransportInfo, createTransportState, observeTransport, transportFailed, transportHeaders, transportNetworkChanged } from '/transport.js';
 const $ = id => document.getElementById(id);
 const ui = Object.fromEntries(['sidebar','drawer-scrim','menu','new-chat','sessions','session-count','logout','chat-title','connection-label','demo-badge','conversation','welcome','messages','prompt','composer','send','stop','notice','model-label','login-overlay','login-form','access-token','login-button','login-error','settings','settings-dialog','close-settings','connection-info','reset-chat','delete-session','offline-banner','install'].map(id => [id, $(id)]));
@@ -28,6 +31,23 @@ const storage = {
   set(key, value) { try { sessionStorage.setItem(key, value); } catch {} },
   remove(key) { try { sessionStorage.removeItem(key); } catch {} }
 };
+function createAdvancedAgentSettings() {
+  const section=document.createElement('section');section.className='agent-management';section.setAttribute('aria-labelledby','agent-management-title');
+  const title=document.createElement('h3');title.id='agent-management-title';title.textContent='Agent 高级管理';
+  const description=document.createElement('p');description.textContent='待办、活动、事件和交流偏好直接在聊天里说即可，无需维护模式或面板。这里只保留必须由你审核、授权或上传的项目。';
+  const details=document.createElement('details'),summary=document.createElement('summary'),actions=document.createElement('div');summary.textContent='审核、授权与资料';actions.className='agent-management-actions';details.append(summary,actions);
+  const definitions=[
+    ['memory-open','记忆审核','查看候选、纠正或删除长期记忆'],
+    ['role-proposals-open','角色变更审核','决定是否应用助手提出的长期风格变化'],
+    ['care-open','主动陪伴','开启、暂停或调整主动消息与手机通知'],
+    ['courseware-open','学习资料','上传课件并发起分析、讲解或测试'],
+    ['local-agent-open','本机 Agent','查看配对执行端与取消运行中的任务']
+  ];
+  const items=[];
+  for(const [targetID,label,note] of definitions){const target=$(targetID);if(!target)continue;const button=document.createElement('button');button.type='button';button.className='agent-management-entry';const strong=document.createElement('strong'),small=document.createElement('small');strong.textContent=label;small.textContent=note;button.append(strong,small);button.addEventListener('click',()=>{ui['settings-dialog'].close();target.click();});actions.append(button);items.push([button,target]);}
+  section.append(title,description,details);$('model-configs')?.before(section);
+  return {refresh(){for(const [button,target] of items)button.disabled=target.disabled;}};
+}
 const nativeShell = /ChatAgentAndroid\//.test(navigator.userAgent);
 const persistent = {
   get() { try { return localStorage.getItem('chat-token') || ''; } catch { return ''; } },
@@ -67,7 +87,9 @@ const reasoningViews = new Map();
 Object.assign(state, { roles: [], roleID: 'companion', memories: [], memoryFilter: 'pending', memoryEditing: null, roleDocument: null, summary: null, compacting: false });
 const deviceAuth = createDeviceAuth({state,onToken:token=>connect(token,'device'),onError:handleError,adminRequest:json});
 const modelConfigs = createModelConfigs({state,json,onChanged:()=>chatInput.refreshOptions(),onError:handleError});
+const channelUI = createChannelSettings({json,getSessions:()=>state.sessions,getCurrent:()=>state.current,onLinked:refreshSessions,onError:handleError});
 const hostTools = createHostTools({state,json,onError:handleError});
+const advancedAgentSettings = createAdvancedAgentSettings();
 const taskUI = createTaskUI({ state, request, json, roleName, drawer, onError: handleError });
 const companionUI = createCompanionUI({ state, json, drawer, onError: handleError });
 const roleProposalsUI = createRoleProposalsUI({state,json,drawer,onError:handleError});
@@ -78,6 +100,8 @@ const voiceUI = createVoiceUI({ state, request, notice, restoreDraft, onError: h
 const lifeUI = createLifeUI({ state, json, drawer, onError: handleError, onOpenSession: id => selectSession(id), onCareReady: (role,items)=>nativeCare.deliver(role,items) });
 const turnUI = createTurnsUI({ state, json, storage, onError: handleError, onHistory: applyTurnHistory, onState: updateUI, onSettled: refreshAfterTurn, createSession: createRemoteSession, onDraftRestore: restoreTurnDraft, onAccepted: payload=>chatInput?.accepted(payload) });
 const activitiesUI = createActivitiesUI({ state, json, drawer, onError: handleError, onContinue: openActivityChat, onChanged: () => turnUI.refresh() });
+const localAgentUI = createLocalAgentUI({state,json,drawer,onError:handleError});
+const coursewareUI = createCoursewareUI({state,json,drawer,onDraft:restoreDraft,onError:handleError,roleName});
 chatInput = createChatInput({state,request,json,createSession:createRemoteSession,notice,onChange:updateUI,onImageLoad:()=>scrollBottom()});
 interactiveUI = createUIRenderer({onSubmit:submitUIAnswer,onExpand:(node,meta)=>workspace.expand(node,meta),onPlace:node=>workspace.placement(node),canSubmit:uiSubmitPermission});
 // A manual connection owns authentication immediately, even while native restore awaits.
@@ -156,6 +180,8 @@ function updateUI() {
   lifeUI.lock();
   topicsUI.lock();
   activitiesUI.lock();
+  localAgentUI.update();
+  coursewareUI.update();
   voiceUI.lock();
   chatInput?.lock();
   interactiveUI?.reconcileResponses(answerTurns(turnUI.pendingSnapshot().turns),turnUI.pendingSnapshot().pending);
@@ -361,7 +387,7 @@ function renderSessions() {
     const empty = document.createElement('p'); empty.className = 'list-empty'; empty.textContent = '还没有会话，聊点什么吧。'; ui.sessions.append(empty);
   }
   const filter=($('session-filter')?.value || '').trim().toLocaleLowerCase();
-  const visible=state.sessions.filter(item=>!filter || `${item.title || ''} ${roleName(item.role_id || 'companion')}`.toLocaleLowerCase().includes(filter));
+  const visible=state.sessions.filter(item=>!filter || `${item.title || ''} ${roleName(item.role_id || 'companion')} ${item.channel?.platform || ''}`.toLocaleLowerCase().includes(filter));
   if (filter && !visible.length) { const empty=document.createElement('p'); empty.className='list-empty'; empty.textContent='没有匹配的会话标题'; ui.sessions.append(empty); }
   let bucket = '';
   for (const item of visible) {
@@ -382,7 +408,9 @@ function renderSessions() {
     const path = document.createElementNS(icon.namespaceURI, 'path'); path.setAttribute('d', 'M4 4h16v12H9l-5 4V4z'); icon.append(path);
     const label = document.createElement('span'); label.className = 'session-text'; label.textContent = item.title;
     const date = document.createElement('span'); date.className = 'session-date'; date.textContent = item.active ? '生成中' : sessionDate(item.updated_at);
-    button.append(icon, label, date);
+    button.append(icon, label);
+    if(item.channel){const badge=document.createElement('span');badge.className='session-channel';badge.textContent=item.channel.platform==='qq-official'?'QQ':item.channel.platform==='onebot'?'QQ兼容':'IM';badge.title=`${badge.textContent} · ${item.channel.conversation_kind==='group'?'群聊':'私聊'}`;button.append(badge);}
+    button.append(date);
     button.addEventListener('click', () => selectSession(item.id).catch(handleError));
     const remove = document.createElement('button');
     remove.className = 'session-delete'; remove.type = 'button';
@@ -550,7 +578,7 @@ function toolLog(message, data, pending = false) {
   }).catch(handleError);
   placeProjection(currentProjection);
   log.results?.remove();
-  log.results = searchResults(data) || workspaceDownload(data);
+  log.results = searchResults(data) || coursewareResult(data) || workspaceDownload(data);
   log.output.hidden = view.empty || Boolean(log.results);
   if (log.results) log.output.after(log.results);
   // A call that only lacked an assessment can be authorized by the person who is
@@ -998,7 +1026,9 @@ ui.settings.addEventListener('click', () => {
   }
   ui['settings-dialog'].showModal(); deviceAuth.refreshManagement();
   modelConfigs.refresh();
+  if(state.config?.device_admin) channelUI.refresh().catch(handleError);
   hostTools.refresh();
+  advancedAgentSettings.refresh();
 });
 ui['close-settings'].addEventListener('click', () => ui['settings-dialog'].close());
 window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); installPrompt = event; ui.install.hidden = false; });

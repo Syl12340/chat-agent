@@ -2,6 +2,7 @@ package localagent
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -19,6 +20,62 @@ const artifactLimit = 32 << 20
 type Guard struct {
 	path string
 	root *os.Root
+}
+
+// Write replaces one bounded UTF-8 file after verifying the exact previous
+// content. It deliberately does not create directories or follow symlinks.
+func (g *Guard) Write(path, content, expectedSHA256, operationID string) error {
+	if !validRelative(path) || path == "." || len(content) > textLimit || !utf8.ValidString(content) || strings.IndexByte(content, 0) >= 0 {
+		return errors.New("write requires a relative path and bounded UTF-8 text")
+	}
+	if expectedSHA256 != "missing" {
+		if len(expectedSHA256) != 64 {
+			return errors.New("expected_sha256 must be the current hash or missing")
+		}
+		if _, err := hex.DecodeString(expectedSHA256); err != nil || expectedSHA256 != strings.ToLower(expectedSHA256) {
+			return errors.New("expected_sha256 must be lowercase hexadecimal")
+		}
+	}
+	current, err := g.Read(path)
+	if expectedSHA256 == "missing" {
+		if err == nil {
+			return errors.New("workspace file already exists")
+		}
+	} else {
+		if err != nil {
+			return errors.New("workspace file changed or is unavailable")
+		}
+		digest := sha256.Sum256([]byte(current))
+		if fmt.Sprintf("%x", digest[:]) != expectedSHA256 {
+			return errors.New("workspace file changed since it was read")
+		}
+	}
+	temp := ".ca-write-" + strings.TrimPrefix(operationID, "op_")
+	if !validRelative(temp) {
+		return errors.New("invalid operation identity")
+	}
+	f, err := g.root.OpenFile(temp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		return errors.New("could not prepare workspace write")
+	}
+	removeTemp := true
+	defer func() {
+		if removeTemp {
+			_ = g.root.Remove(temp)
+		}
+	}()
+	if _, err = io.WriteString(f, content); err == nil {
+		err = f.Sync()
+	}
+	err = errors.Join(err, f.Close())
+	if err != nil {
+		return errors.New("could not persist workspace write")
+	}
+	if err = replaceRoot(g.root, g.path, temp, path); err != nil {
+		return errors.New("could not replace workspace file")
+	}
+	removeTemp = false
+	return nil
 }
 
 func OpenGuard(path string) (*Guard, error) {
@@ -155,4 +212,11 @@ func (g *Guard) Artifact(path string) (Artifact, error) {
 		mediaType = "application/octet-stream"
 	}
 	return Artifact{Path: path, Name: filepath.Base(path), MediaType: mediaType, Bytes: info.Size(), SHA256: fmt.Sprintf("%x", hash.Sum(nil))}, nil
+}
+
+func (g *Guard) OpenArtifact(path string) (*os.File, error) {
+	if _, err := g.Artifact(path); err != nil {
+		return nil, err
+	}
+	return g.root.Open(path)
 }

@@ -119,7 +119,7 @@ func TestLocalAgentRefusesForeignDevice(t *testing.T) {
 func TestLocalAgentExpiredTaskFailsCaller(t *testing.T) {
 	server := localAgentServer()
 	item := server.localQueue.enqueue(localagent.Task{Protocol: localagent.Protocol, OperationID: "op_stale", Kind: "read"}, "dev-box", -time.Second)
-	if task := server.localQueue.claim("dev-box"); task != nil {
+	if task := server.localQueue.claim("dev-box", nil); task != nil {
 		t.Fatalf("an expired task was handed out: %+v", task)
 	}
 	select {

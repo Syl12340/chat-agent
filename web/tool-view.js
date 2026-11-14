@@ -28,6 +28,12 @@ const labels = {
 	workspace_search: '搜索工作区',
 	workspace_share: '发送文件',
 	workspace_shell: '沙箱命令',
+	local_workspace: '读取本机',
+	local_workspace_write: '写入本机',
+	local_action: '本机动作',
+	local_file_share: '发送本机文件',
+	courseware_list: '查看课件',
+	courseware_read: '读取课件',
 	image_generate: '生成图片',
 	image_health: '图像能力检查',
 	image_status: '图片任务状态',
@@ -120,10 +126,28 @@ export function searchResults(data) {
 	return list;
 }
 
+export function coursewareResult(data) {
+	if (!['courseware_list','courseware_read'].includes(data.name) || !data.output) return null;
+	try {
+		const value=JSON.parse(data.output), node=document.createElement('div');node.className='tool-courseware';
+		if(data.name==='courseware_list'){
+			const docs=Array.isArray(value.documents)?value.documents:[];if(!docs.length)return null;
+			const list=document.createElement('ul');for(const doc of docs.slice(0,12)){const item=document.createElement('li');item.textContent=`${doc.name} · ${Math.max(1,Math.ceil(Number(doc.text_bytes||0)/1024))} KB 文本`;list.append(item);}node.append(list);return node;
+		}
+		if(typeof value.document!=='string'||typeof value.excerpt!=='string')return null;
+		const source=document.createElement('strong');source.textContent=value.document;const excerpt=document.createElement('pre');excerpt.textContent=value.excerpt;node.append(source,excerpt);return node;
+	}catch{return null;}
+}
+
 export function workspaceFileResult(data) {
-	if (data.name !== 'workspace_share' || !data.output) return null;
+	if (!['workspace_share','local_file_share'].includes(data.name) || !data.output) return null;
 	try {
 		const value = JSON.parse(data.output);
+		if (data.name === 'local_file_share') {
+			const file = value?.artifacts?.[0];
+			if (!file || typeof file.name !== 'string' || !file.name || typeof file.download_url !== 'string' || !file.download_url.startsWith('/api/local-agent/artifacts/') || !Number.isSafeInteger(file.bytes) || file.bytes < 0 || file.bytes > 32 * 1024 * 1024 || typeof file.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(file.sha256)) return null;
+			return file;
+		}
 		if (value?.kind !== 'workspace_file' || typeof value.name !== 'string' || !value.name ||
 			typeof value.download_url !== 'string' || !value.download_url.startsWith('/api/sessions/') ||
 			!Number.isSafeInteger(value.bytes) || value.bytes < 0 || value.bytes > 32 * 1024 * 1024 ||

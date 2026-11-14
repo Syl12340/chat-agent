@@ -12,18 +12,22 @@ const Protocol = "ca.local-agent.v1"
 // Kinds lists the task kinds the executor accepts. It is exported so the error a
 // caller gets for an unknown kind can name the alternatives instead of only
 // saying that something was unsupported.
-var Kinds = []string{"list", "read", "search", "exec"}
+var Kinds = []string{"list", "read", "search", "share", "write", "exec"}
 
 type Task struct {
 	Protocol    string `json:"protocol"`
 	OperationID string `json:"operation_id"`
 	// Kind is one of Kinds. "exec" runs the named entry of the operator's fixed
 	// action allow-list; it is not a command line and takes no arguments.
-	Kind      string   `json:"kind"`
-	Path      string   `json:"path,omitempty"`
-	Query     string   `json:"query,omitempty"`
-	Action    string   `json:"action,omitempty"`
-	Artifacts []string `json:"artifacts,omitempty"`
+	Kind    string `json:"kind"`
+	Path    string `json:"path,omitempty"`
+	Query   string `json:"query,omitempty"`
+	Action  string `json:"action,omitempty"`
+	Content string `json:"content,omitempty"`
+	// ExpectedSHA256 is either the current lowercase SHA-256 or "missing".
+	// Requiring it makes every write an explicit compare-and-swap operation.
+	ExpectedSHA256 string   `json:"expected_sha256,omitempty"`
+	Artifacts      []string `json:"artifacts,omitempty"`
 }
 
 type Artifact struct {

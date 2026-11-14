@@ -1,6 +1,6 @@
 # chat-agent
 
-当前发布为 **0.4.0**（`20261109-unified-01`）；Android 更新包为 **0.4.0-debug（versionCode 7）**（`android-20261109-19`），沿用重置后的新包名 `dev.chatagent.ai.debug`。本版统一为单一助手入口，增加设备指纹 challenge 自动连接、服务器模型/API Key 管理、受限工作区 shell 与内容绑定文件下载，并吸收 DSH、Aurabot 的可复用契约和对话节奏设计。[发布记录](docs/release-0.4.md)。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
+当前源码基线为 **0.7.0**；Android 默认构建为 **0.7.0-debug（versionCode 38）**，包名保持 `dev.chatagent.ai.debug`。M0–M4 的首个完整纵切已经进入主线；本版继续加入主动陪伴反馈、双端 Agent 工作台和课件分析/讲解/测试纵切。真实线上调用证据与仍有条件的能力统一记在[能力实测清单](docs/capability-check.md)；旧发布文档只保留为历史证据。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
 
 0.24.0 以 format index + manifest 选择唯一 runtime 代，聊天/队列规范状态与 attempt/model/tool 运行事实处于同一代。旧 transcript v1/v2、turns v1/v2/v3 只由停机维护命令显式迁移；最新轮/整会话删除先登记再重写或清理，旧代和模型快照不会被读取器自动复活。生产配置仍使用 `ecnu-max`，本地搜索、设备白名单和加密 9992 入口保持不变。
 
@@ -10,7 +10,7 @@
 
 0.21 已合并交付原拟 0.20.1 参数记忆和 0.21 渲染/UI：按模型记住思考档位，Markdown 表格/嵌套列表、LaTeX/MathML、JSON 树、数据表/柱状图/流程图，以及同实例工作台和工具状态排版。普通网页与 Android 共享渲染，Android 新包通过原生存储解决随机代理端口导致的偏好丢失。[实施与边界](docs/rendering-and-ui-plan.md)。
 
-Channel P0–P2 已完成独立验签入口、Inbox/Outbox、稳定 session mapping、共享入队和防重复投递；它复用现有 Harness，不建立第二套 Agent Loop。0.26 已完成主动陪伴同会话接续；下一项产品主线是持久 Generative UI v2，SnowLuma/OneBot 隔离验收仍待两套独立凭据。见[Channel 架构](docs/channel-integration-architecture.md)、[当前规划](docs/feature-plan.md)及[项目现状与架构路线](docs/architecture-roadmap-2026-11.md)。
+Channel P0–P2 已完成独立验签入口、Inbox/Outbox、稳定 session mapping、共享入队和防重复投递；它复用现有 Harness，不建立第二套 Agent Loop。稳定消息身份与持久 surface 已进入主线，下一阶段优先做陪伴/运行可靠性、双端 Agent 工作台和服务器小精灵 O2；SnowLuma/OneBot 及更多第三方 IM 继续低优先级。见[Channel 架构](docs/channel-integration-architecture.md)、[当前规划](docs/feature-plan.md)及[推进目标](docs/product-direction.md)。
 
 **0.7.0 已交付**：睡前闲聊、一天复盘、共同兴趣和小目标陪伴。共同活动支持手动保存进展、跨会话继续、暂停与结束，只影响明确关联的会话。[使用说明](docs/activities-0.7.md)。原有[连续聊天、事件与关怀](docs/companion-0.6.md)、[陪伴偏好](docs/companion.md)继续保留。
 
@@ -23,10 +23,10 @@ Channel P0–P2 已完成独立验签入口、Inbox/Outbox、稳定 session mapp
 需要 Go 1.26。Windows / PowerShell 7：
 
 ```powershell
-go build -buildvcs=false -o bin/chat-agent-0.4.0.exe ./cmd/server
+go build -buildvcs=false -o bin/chat-agent-0.7.0.exe ./cmd/server
 $env:CHAT_ACCESS_TOKEN = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 $env:CHAT_ACCESS_TOKEN  # 在自己的终端查看，随后输入网页登录框
-.\bin\chat-agent-0.4.0.exe -demo
+.\bin\chat-agent-0.7.0.exe -demo
 ```
 
 在浏览器打开 [本机页面](http://127.0.0.1:8080)，首次通过管理员维护入口批准设备指纹，之后由设备签名自动连接。点击“看看此刻的时间”即可体验完整工具循环。
@@ -51,7 +51,7 @@ Linux 构建：`go build -buildvcs=false -o bin/chat-agent ./cmd/server`。运�
 $env:CHAT_BASE_URL='https://your-api.example/v1'
 $env:CHAT_MODEL='your-model-id'
 # 在自己的终端安全设置 CHAT_API_KEY
-.\bin\chat-agent-0.4.0.exe
+.\bin\chat-agent-0.7.0.exe
 ```
 
 [.env.example](.env.example) 只是模板，程序不会自动加载 `.env`。

@@ -45,6 +45,27 @@ type Store struct {
 	closed bool
 }
 
+type DeliveryIntent struct {
+	Platform         string
+	AccountID        string
+	ConversationKind string
+	SessionID        string
+	RequestID        string
+	TargetID         string
+	ReplyTo          string
+	Text             string
+	Proactive        bool
+}
+
+func deliveryIdentity(intent DeliveryIntent, platform, kind string) string {
+	// Preserve the deployed OneBot P0-P2 identity exactly. Reconciliation after
+	// an upgrade must find the old settled record rather than sending it again.
+	if platform == "onebot-v11" && intent.AccountID == "" && kind == "private" && intent.ReplyTo == "" && !intent.Proactive {
+		return "onebot-delivery:" + intent.SessionID + ":" + intent.RequestID + ":" + intent.TargetID
+	}
+	return strings.Join([]string{"channel-delivery-v2", platform, intent.AccountID, kind, intent.SessionID, intent.RequestID, intent.TargetID, intent.ReplyTo}, "\x00")
+}
+
 func OpenStore(dir string) (_ *Store, err error) {
 	if err = os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
@@ -198,7 +219,7 @@ func (s *Store) Accept(envelope Envelope, requestID string) (InboxRecord, bool, 
 	}
 	now := time.Now().UTC()
 	copyEnvelope := envelope
-	record := InboxRecord{Version: storeVersion, EventID: envelope.EventID, RequestID: requestID, PayloadSHA256: envelope.PayloadSHA256, State: "accepted", ReceivedAt: envelope.ReceivedAt, UpdatedAt: now, Envelope: &copyEnvelope}
+	record := InboxRecord{Version: storeVersion, EventID: envelope.EventID, RequestID: requestID, Platform: envelope.Platform, AccountID: envelope.AccountID, Conversation: envelope.Conversation.Kind, TargetID: envelope.Conversation.ID, ExternalID: envelope.Message.ID, PayloadSHA256: envelope.PayloadSHA256, State: "accepted", ReceivedAt: envelope.ReceivedAt, UpdatedAt: now, Envelope: &copyEnvelope}
 	s.state.Inbox[record.EventID] = record
 	if err := s.saveLocked(); err != nil {
 		delete(s.state.Inbox, record.EventID)
@@ -364,13 +385,96 @@ func (s *Store) MappingForSession(sessionID string) (Mapping, bool) {
 	return Mapping{}, false
 }
 
+func (s *Store) Mapping(key ConversationKey) (Mapping, bool) {
+	id, err := MappingID(key)
+	if err != nil {
+		return Mapping{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	mapping, ok := s.state.Mappings[id]
+	return mapping, ok && !s.closed && mapping.State == "active"
+}
+
+func (s *Store) Mappings() []Mapping {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return nil
+	}
+	items := make([]Mapping, 0, len(s.state.Mappings))
+	for _, mapping := range s.state.Mappings {
+		if mapping.State == "active" {
+			items = append(items, mapping)
+		}
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].UpdatedAt.After(items[j].UpdatedAt) })
+	return items
+}
+
+// RelinkMapping moves future provider messages to an existing CA session. It
+// does not copy or delete either transcript, so handoff is explicit and safe.
+func (s *Store) RelinkMapping(key ConversationKey, sessionID string) error {
+	id, err := MappingID(key)
+	if err != nil || !storage.ValidID(sessionID) {
+		return ErrInvalidEnvelope
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return ErrClosed
+	}
+	mapping, ok := s.state.Mappings[id]
+	if !ok || mapping.State != "active" {
+		return ErrNotFound
+	}
+	previous := mapping
+	mapping.SessionID = sessionID
+	mapping.UpdatedAt = time.Now().UTC()
+	s.state.Mappings[id] = mapping
+	if err := s.saveLocked(); err != nil {
+		s.state.Mappings[id] = previous
+		return err
+	}
+	return nil
+}
+
+// InboxForRequest proves that a completed turn originated from this channel.
+// App-originated turns in a channel-bound session therefore never leak out.
+func (s *Store) InboxForRequest(sessionID, requestID string) (InboxRecord, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return InboxRecord{}, false
+	}
+	for _, record := range s.state.Inbox {
+		if record.SessionID == sessionID && record.RequestID == requestID {
+			return record, true
+		}
+	}
+	return InboxRecord{}, false
+}
+
 func (s *Store) CreateOutbox(sessionID, requestID, targetID, text string) (OutboxRecord, bool, error) {
+	return s.CreateDelivery(DeliveryIntent{Platform: "onebot-v11", ConversationKind: "private", SessionID: sessionID, RequestID: requestID, TargetID: targetID, Text: text})
+}
+
+func (s *Store) CreateDelivery(intent DeliveryIntent) (OutboxRecord, bool, error) {
+	platform := strings.TrimSpace(intent.Platform)
+	if platform == "" {
+		platform = "onebot-v11"
+	}
+	kind := strings.TrimSpace(intent.ConversationKind)
+	if kind == "" {
+		kind = "private"
+	}
+	sessionID, requestID, targetID, text := intent.SessionID, intent.RequestID, intent.TargetID, intent.Text
 	if !storage.ValidID(sessionID) || !storage.ValidID(requestID) || strings.TrimSpace(targetID) == "" || strings.TrimSpace(text) == "" || len(text) > 64<<10 {
 		return OutboxRecord{}, false, ErrInvalidEnvelope
 	}
 	digest := sha256.Sum256([]byte(text))
 	contentDigest := hex.EncodeToString(digest[:])
-	deliveryDigest := sha256.Sum256([]byte("onebot-delivery:" + sessionID + ":" + requestID + ":" + targetID))
+	deliveryDigest := sha256.Sum256([]byte(deliveryIdentity(intent, platform, kind)))
 	deliveryID := hex.EncodeToString(deliveryDigest[:])
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -387,7 +491,7 @@ func (s *Store) CreateOutbox(sessionID, requestID, targetID, text string) (Outbo
 		return OutboxRecord{}, false, ErrLimit
 	}
 	now := time.Now().UTC()
-	record := OutboxRecord{Version: storeVersion, DeliveryID: deliveryID, SessionID: sessionID, RequestID: requestID, TargetID: targetID, ContentSHA256: contentDigest, Text: text, State: "pending", CreatedAt: now, UpdatedAt: now}
+	record := OutboxRecord{Version: storeVersion, DeliveryID: deliveryID, SessionID: sessionID, RequestID: requestID, Platform: platform, AccountID: intent.AccountID, Conversation: kind, TargetID: targetID, ReplyTo: intent.ReplyTo, Proactive: intent.Proactive, ContentSHA256: contentDigest, Text: text, State: "pending", CreatedAt: now, UpdatedAt: now}
 	s.state.Outbox[deliveryID] = record
 	if err := s.saveLocked(); err != nil {
 		delete(s.state.Outbox, deliveryID)
@@ -400,12 +504,25 @@ func (s *Store) CreateOutbox(sessionID, requestID, targetID, text string) (Outbo
 // matching channel inbox records completed. The dispatcher cannot observe the
 // pending outbox before the inbox settlement is durable.
 func (s *Store) SettleCompletion(sessionID, requestID, targetID, text string, requestIDs []string) (OutboxRecord, bool, error) {
+	return s.SettleDelivery(DeliveryIntent{Platform: "onebot-v11", ConversationKind: "private", SessionID: sessionID, RequestID: requestID, TargetID: targetID, Text: text}, requestIDs)
+}
+
+func (s *Store) SettleDelivery(intent DeliveryIntent, requestIDs []string) (OutboxRecord, bool, error) {
+	platform := strings.TrimSpace(intent.Platform)
+	if platform == "" {
+		platform = "onebot-v11"
+	}
+	kind := strings.TrimSpace(intent.ConversationKind)
+	if kind == "" {
+		kind = "private"
+	}
+	sessionID, requestID, targetID, text := intent.SessionID, intent.RequestID, intent.TargetID, intent.Text
 	if !storage.ValidID(sessionID) || !storage.ValidID(requestID) || strings.TrimSpace(targetID) == "" || strings.TrimSpace(text) == "" || len(text) > 64<<10 {
 		return OutboxRecord{}, false, ErrInvalidEnvelope
 	}
 	digest := sha256.Sum256([]byte(text))
 	contentDigest := hex.EncodeToString(digest[:])
-	deliveryDigest := sha256.Sum256([]byte("onebot-delivery:" + sessionID + ":" + requestID + ":" + targetID))
+	deliveryDigest := sha256.Sum256([]byte(deliveryIdentity(intent, platform, kind)))
 	deliveryID := hex.EncodeToString(deliveryDigest[:])
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -422,7 +539,7 @@ func (s *Store) SettleCompletion(sessionID, requestID, targetID, text string, re
 			return OutboxRecord{}, false, ErrLimit
 		}
 		now := time.Now().UTC()
-		record = OutboxRecord{Version: storeVersion, DeliveryID: deliveryID, SessionID: sessionID, RequestID: requestID, TargetID: targetID, ContentSHA256: contentDigest, Text: text, State: "pending", CreatedAt: now, UpdatedAt: now}
+		record = OutboxRecord{Version: storeVersion, DeliveryID: deliveryID, SessionID: sessionID, RequestID: requestID, Platform: platform, AccountID: intent.AccountID, Conversation: kind, TargetID: targetID, ReplyTo: intent.ReplyTo, Proactive: intent.Proactive, ContentSHA256: contentDigest, Text: text, State: "pending", CreatedAt: now, UpdatedAt: now}
 		s.state.Outbox[deliveryID] = record
 	}
 	previousInbox := make(map[string]InboxRecord)

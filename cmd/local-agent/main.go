@@ -75,7 +75,44 @@ func run() error {
 			time.Sleep(time.Second)
 			continue
 		}
-		receipt := executor.Execute(ctx, *task)
+		executionContext, cancel := context.WithCancel(ctx)
+		done := make(chan struct{})
+		go func() {
+			ticker := time.NewTicker(time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-done:
+					return
+				case <-ticker.C:
+					check, stop := context.WithTimeout(ctx, 5*time.Second)
+					requested, err := carrier.CancelRequested(check, task.OperationID)
+					stop()
+					if err == nil && requested {
+						cancel()
+						return
+					}
+				}
+			}
+		}()
+		receipt := executor.Execute(executionContext, *task)
+		close(done)
+		cancel()
+		if receipt.Status == "completed" {
+			for _, artifact := range receipt.Artifacts {
+				file, openErr := guard.OpenArtifact(artifact.Path)
+				if openErr == nil {
+					openErr = carrier.UploadArtifact(ctx, receipt.OperationID, artifact, file)
+					_ = file.Close()
+				}
+				if openErr != nil {
+					receipt.Status = "failed"
+					receipt.Error = "artifact upload failed: " + openErr.Error()
+					receipt.Artifacts = nil
+					break
+				}
+			}
+		}
 		for carrier.Complete(ctx, receipt) != nil {
 			time.Sleep(3 * time.Second)
 		}

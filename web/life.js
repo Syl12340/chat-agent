@@ -144,6 +144,10 @@ export function createLifeUI({ state, json, onError, drawer, onOpenSession, onCa
       },false);
       if (item.status === 'due') action(actions,'生成问候',() => generateManual(item));
       if (item.status === 'ready') action(actions,'已看过',() => mutate('care',target => json(endpoint(`/api/care/${encodeURIComponent(item.id)}`,target),{method:'PATCH',body:JSON.stringify({revision:item.revision,status:'seen'})})));
+      if (['ready','seen'].includes(item.status) && item.content) {
+        action(actions,item.feedback === 'helpful' ? '✓ 这条刚好' : '这条刚好',() => mutate('care',target => json(endpoint(`/api/care/${encodeURIComponent(item.id)}`,target),{method:'PATCH',body:JSON.stringify({revision:item.revision,feedback:'helpful'})})));
+        action(actions,item.feedback === 'less' ? '✓ 少一点这种' : '少一点这种',() => mutate('care',target => json(endpoint(`/api/care/${encodeURIComponent(item.id)}`,target),{method:'PATCH',body:JSON.stringify({revision:item.revision,feedback:'less'})})));
+      }
       if (['due','ready'].includes(item.status)) action(actions,'取消',() => mutate('care',target => json(endpoint(`/api/care/${encodeURIComponent(item.id)}`,target),{method:'PATCH',body:JSON.stringify({revision:item.revision,status:'canceled'})})));
       if (item.status === 'failed' || item.status === 'interrupted') article.append(element('p','life-meta','这次不会自动重试或再次调用模型。'));
       if (actions.childElementCount) article.append(actions);

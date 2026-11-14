@@ -50,7 +50,7 @@ func isLoopbackHost(host string) bool {
 }
 
 func (c *Carrier) Claim(ctx context.Context) (*Task, error) {
-	request := map[string]any{"protocol": Protocol, "device_id": c.Device, "capabilities": []string{"list", "read", "search", "exec", "artifact-metadata"}}
+	request := map[string]any{"protocol": Protocol, "device_id": c.Device, "capabilities": []string{"list", "read", "search", "write", "exec", "artifact-metadata"}}
 	var task Task
 	status, err := c.call(ctx, http.MethodPost, "/api/local-agent/v1/tasks/claim", request, &task)
 	if status == http.StatusNoContent {
@@ -65,6 +65,36 @@ func (c *Carrier) Claim(ctx context.Context) (*Task, error) {
 func (c *Carrier) Complete(ctx context.Context, receipt Receipt) error {
 	_, err := c.call(ctx, http.MethodPost, "/api/local-agent/v1/tasks/"+url.PathEscape(receipt.OperationID)+"/complete", map[string]any{"device_id": c.Device, "receipt": receipt}, nil)
 	return err
+}
+
+func (c *Carrier) CancelRequested(ctx context.Context, operationID string) (bool, error) {
+	var state struct {
+		CancelRequested bool `json:"cancel_requested"`
+	}
+	_, err := c.call(ctx, http.MethodGet, "/api/local-agent/v1/tasks/"+url.PathEscape(operationID)+"/cancel", nil, &state)
+	return state.CancelRequested, err
+}
+
+func (c *Carrier) UploadArtifact(ctx context.Context, operationID string, artifact Artifact, source io.Reader) error {
+	path := "/api/local-agent/v1/tasks/" + url.PathEscape(operationID) + "/artifacts/" + url.PathEscape(artifact.SHA256)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+path, io.LimitReader(source, artifactLimit+1))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	req.Header.Set("X-Chat-Agent-ID", c.Device)
+	req.Header.Set("Content-Type", artifact.MediaType)
+	req.ContentLength = artifact.Bytes
+	response, err := c.Client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		message, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+		return fmt.Errorf("artifact upload returned %s: %s", response.Status, strings.TrimSpace(string(message)))
+	}
+	return nil
 }
 
 func (c *Carrier) call(ctx context.Context, method, path string, input, output any) (int, error) {

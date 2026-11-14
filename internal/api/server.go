@@ -20,7 +20,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	channelstore "chat-agent/internal/channel"
 	"chat-agent/internal/companion"
+	"chat-agent/internal/courseware"
 	"chat-agent/internal/decision"
 	"chat-agent/internal/deviceauth"
 	"chat-agent/internal/imagegen"
@@ -40,6 +42,7 @@ import (
 	activityplugin "chat-agent/plugins/builtin/activity"
 	careplugin "chat-agent/plugins/builtin/care"
 	"chat-agent/plugins/builtin/clock"
+	coursewareplugin "chat-agent/plugins/builtin/courseware"
 	episodeplugin "chat-agent/plugins/builtin/episode"
 	"chat-agent/plugins/builtin/image"
 	knowledgeplugin "chat-agent/plugins/builtin/knowledge"
@@ -73,6 +76,7 @@ type Config struct {
 	ThinkingMaxOutput      int
 	TurnCompletionObserver TurnCompletionObserver
 	OneBot                 OneBotConfig
+	QQOfficial             QQOfficialConfig
 	HostTools              HostToolsConfig
 	// LocalAgent registers the Windows execution endpoints this host will accept.
 	LocalAgent LocalAgentConfig
@@ -99,6 +103,7 @@ type Server struct {
 	companion  *companion.Store
 	life       *companion.LifeStore
 	activities *companion.ActivityStore
+	courseware *courseware.Store
 	devices    *deviceauth.Store
 	// hostGrants narrows or widens host tooling per conversation at runtime.
 	hostGrants      *hostGrants
@@ -144,6 +149,8 @@ type Server struct {
 	mediaMu        sync.Mutex
 	activeImageJob imageWork // protected by mediaMu
 	onebot         *oneBotIntegration
+	qqofficial     *qqOfficialIntegration
+	identities     *channelstore.IdentityStore
 	turnObserver   TurnCompletionObserver
 	// transportGeneration identifies this live server process. It is not an
 	// authorization secret or a storage generation: clients use it only to
@@ -316,7 +323,13 @@ func New(c Config) (*Server, error) {
 		webClient.Close()
 		return nil, errors.Join(err, images.Close(), push.close(), topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
 	}
-	s := &Server{decision: decision.New(c.Decision), imagegen: imageGen, localQueue: newLocalQueue(), approvals: probe.NewApprovalStore(), devices: deviceStore, activities: activityStore, life: lifeStore, turns: turnStore, runtime: runtimeStore, workCtx: workCtx, workCancel: workCancel, careSlots: make(chan struct{}, 1), hostGrants: hostGrants, config: c, tokenHash: sha256.Sum256([]byte(c.AccessToken)), sessions: map[string]*probe.Session{}, runs: map[string]*runState{}, roles: roleManager, memory: mem, companion: companionStore, tasks: taskStore, web: webClient, location: location, transportGeneration: hex.EncodeToString(transportBytes[:]), transportStartedAt: time.Now().UTC()}
+	coursewareStore, err := courseware.Open(filepath.Join(path, "courseware"))
+	if err != nil {
+		workCancel()
+		webClient.Close()
+		return nil, errors.Join(err, images.Close(), push.close(), topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
+	}
+	s := &Server{decision: decision.New(c.Decision), imagegen: imageGen, localQueue: newLocalQueue(filepath.Join(path, "local-agent", "operations.json")), approvals: probe.NewApprovalStore(), devices: deviceStore, activities: activityStore, courseware: coursewareStore, life: lifeStore, turns: turnStore, runtime: runtimeStore, workCtx: workCtx, workCancel: workCancel, careSlots: make(chan struct{}, 1), hostGrants: hostGrants, config: c, tokenHash: sha256.Sum256([]byte(c.AccessToken)), sessions: map[string]*probe.Session{}, runs: map[string]*runState{}, roles: roleManager, memory: mem, companion: companionStore, tasks: taskStore, web: webClient, location: location, transportGeneration: hex.EncodeToString(transportBytes[:]), transportStartedAt: time.Now().UTC()}
 	s.modelConfigs = modelConfigs
 	// Built-in plugins: each one is a Go value registered statically. A plugin
 	// whose dependencies are missing lands in Catalog.Unavailable instead of
@@ -361,17 +374,23 @@ func New(c Config) (*Server, error) {
 	loader.Add(memoryplugin.New(mem))
 	loader.Add(image.New(imageGen))
 	loader.Add(clock.Plugin{})
+	loader.Add(coursewareplugin.New(coursewareStore))
 	for _, p := range hostPlugins {
 		loader.Add(p)
 	}
 	pluginCatalog, err := loader.Load()
 	if err != nil {
-		return nil, err
+		workCancel()
+		webClient.Close()
+		return nil, errors.Join(err, coursewareStore.Close(), images.Close(), push.close(), topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
 	}
 	if err := pluginCatalog.StartAll(workCtx, func(manifest pluginapi.Manifest) pluginapi.Host {
 		return newPluginHost(manifest, c.DataDir, c.Plugins)
 	}); err != nil {
-		return nil, err
+		workCancel()
+		pluginCatalog.StopAll(context.Background())
+		webClient.Close()
+		return nil, errors.Join(err, coursewareStore.Close(), images.Close(), push.close(), topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
 	}
 	s.plugins = pluginCatalog
 	s.pluginPolicy = c.Plugins
@@ -382,14 +401,51 @@ func New(c Config) (*Server, error) {
 	s.push = push
 	s.images = images
 	s.pushSlots = make(chan struct{}, 4)
+	identities, err := channelstore.OpenIdentityStore(filepath.Join(path, "channels"))
+	if err != nil {
+		workCancel()
+		pluginCatalog.StopAll(context.Background())
+		webClient.Close()
+		return nil, errors.Join(err, coursewareStore.Close(), images.Close(), push.close(), topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
+	}
+	s.identities = identities
 	onebot, err := newOneBotIntegration(s, c.OneBot, filepath.Join(path, "channels", "onebot"))
 	if err != nil {
 		workCancel()
+		pluginCatalog.StopAll(context.Background())
 		webClient.Close()
-		return nil, errors.Join(err, images.Close(), push.close(), topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
+		return nil, errors.Join(err, identities.Close(), coursewareStore.Close(), images.Close(), push.close(), topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
 	}
 	s.onebot = onebot
-	s.turnObserver = combineCompletionObservers(c.TurnCompletionObserver, onebot)
+	if onebot != nil {
+		if _, err := identities.Bind(ownerPrincipalID, "onebot-v11", c.OneBot.AccountID, c.OneBot.OwnerID); err != nil {
+			workCancel()
+			pluginCatalog.StopAll(context.Background())
+			webClient.Close()
+			return nil, errors.Join(err, onebot.Close(context.Background()), identities.Close(), coursewareStore.Close(), images.Close(), push.close(), topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
+		}
+	}
+	qqofficial, err := newQQOfficialIntegration(s, c.QQOfficial, filepath.Join(path, "channels", "qq-official"))
+	if err != nil {
+		workCancel()
+		pluginCatalog.StopAll(context.Background())
+		webClient.Close()
+		return nil, errors.Join(err, func() error {
+			if onebot != nil {
+				return onebot.Close(context.Background())
+			}
+			return nil
+		}(), identities.Close(), coursewareStore.Close(), images.Close(), push.close(), topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
+	}
+	s.qqofficial = qqofficial
+	var channelObservers []TurnCompletionObserver
+	if onebot != nil {
+		channelObservers = append(channelObservers, onebot)
+	}
+	if qqofficial != nil {
+		channelObservers = append(channelObservers, qqofficial)
+	}
+	s.turnObserver = combineCompletionObservers(c.TurnCompletionObserver, channelObservers...)
 	s.startScheduler()
 	s.startTopicScheduler()
 	s.startPushScheduler()
@@ -407,6 +463,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/transport", s.transportStatus)
 	mux.HandleFunc("POST /api/approvals", s.approveCall)
 	mux.HandleFunc("GET /api/plugins", s.listPlugins)
+	mux.HandleFunc("GET /api/channels", s.listChannelIdentities)
+	mux.HandleFunc("POST /api/channels/link-codes", s.issueChannelLink)
 	mux.HandleFunc("GET /api/host-tools", s.hostToolState)
 	mux.HandleFunc("POST /api/host-tools/sessions", s.updateHostGrants)
 	mux.HandleFunc("GET /api/chat/options", s.chatOptions)
@@ -435,6 +493,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/sessions", s.list)
 	mux.HandleFunc("POST /api/sessions", s.create)
 	mux.HandleFunc("DELETE /api/sessions/{id}", s.deleteSession)
+	mux.HandleFunc("POST /api/sessions/{id}/channel-link", s.linkChannelSession)
 	mux.HandleFunc("GET /api/sessions/{id}/surfaces", s.listSurfaces)
 	mux.HandleFunc("POST /api/sessions/{id}/surfaces", s.createSurface)
 	mux.HandleFunc("GET /api/sessions/{id}/surfaces/{surface}", s.getSurface)
@@ -449,6 +508,11 @@ func (s *Server) Handler() http.Handler {
 	// admin check.
 	mux.HandleFunc("POST /api/local-agent/v1/tasks/claim", s.localAgentClaim)
 	mux.HandleFunc("POST /api/local-agent/v1/tasks/{operation}/complete", s.localAgentComplete)
+	mux.HandleFunc("GET /api/local-agent/v1/tasks/{operation}/cancel", s.localAgentCancelState)
+	mux.HandleFunc("POST /api/local-agent/v1/tasks/{operation}/artifacts/{sha}", s.uploadLocalArtifact)
+	mux.HandleFunc("GET /api/local-agent/status", s.localAgentStatus)
+	mux.HandleFunc("POST /api/local-agent/operations/{operation}/cancel", s.cancelLocalOperation)
+	mux.HandleFunc("GET /api/local-agent/artifacts/{operation}/{sha}", s.downloadLocalArtifact)
 	mux.HandleFunc("GET /api/sessions/{id}/turns", s.listTurns)
 	mux.HandleFunc("POST /api/sessions/{id}/turns", s.enqueueTurn)
 	mux.HandleFunc("POST /api/sessions/{id}/turns/resume", s.resumeTurns)
@@ -468,6 +532,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/care/check", s.checkCare)
 	mux.HandleFunc("POST /api/care/{id}/generate", s.generateCare)
 	mux.HandleFunc("PATCH /api/care/{id}", s.updateCare)
+	mux.HandleFunc("GET /api/courseware", s.listCourseware)
+	mux.HandleFunc("POST /api/courseware", s.uploadCourseware)
+	mux.HandleFunc("DELETE /api/courseware/{document}", s.deleteCourseware)
 	mux.HandleFunc("GET /api/activities", s.listActivities)
 	mux.HandleFunc("POST /api/activities", s.createActivity)
 	mux.HandleFunc("PATCH /api/activities/{id}", s.updateActivity)
@@ -528,7 +595,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // version is the service version reported by /api/status.
-const version = "0.6.10"
+const version = "0.7.0"
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model
@@ -536,7 +603,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		model = "chat-agent Demo"
 	}
 	identity := currentAuth(r)
-	writeJSON(w, 200, map[string]any{"name": "chat-agent", "version": version, "auth_method": identity.Method, "device_id": identity.Device.ID, "device_admin": identity.Method == "owner" || identity.Device.Admin, "speech_enabled": s.speechEnabled(), "speech_max_chars": 1200, "model": model, "demo": s.config.Agent.Demo, "max_output": s.config.Agent.MaxOutputTokens, "thinking_max_output": s.config.ThinkingMaxOutput, "timeout_seconds": s.config.Agent.Timeout.Seconds(), "time_zone": s.location.String(), "web_fetch": s.web.FetchEnabled(), "web_search": s.web.SearchEnabled(), "image_generation": s.imageAvailable(), "image_reason": s.imageUnavailableReason(), "reminder_delivery": "inbox", "scheduler_ok": s.schedulerOK.Load(), "onebot_enabled": s.onebot != nil, "transport": s.transportInfo(r)})
+	writeJSON(w, 200, map[string]any{"name": "chat-agent", "version": version, "auth_method": identity.Method, "device_id": identity.Device.ID, "device_admin": identity.Method == "owner" || identity.Device.Admin, "speech_enabled": s.speechEnabled(), "speech_max_chars": 1200, "model": model, "demo": s.config.Agent.Demo, "max_output": s.config.Agent.MaxOutputTokens, "thinking_max_output": s.config.ThinkingMaxOutput, "timeout_seconds": s.config.Agent.Timeout.Seconds(), "time_zone": s.location.String(), "web_fetch": s.web.FetchEnabled(), "web_search": s.web.SearchEnabled(), "image_generation": s.imageAvailable(), "image_reason": s.imageUnavailableReason(), "reminder_delivery": "inbox", "scheduler_ok": s.schedulerOK.Load(), "onebot_enabled": s.onebot != nil, "qq_official_enabled": s.qqofficial != nil, "transport": s.transportInfo(r)})
 }
 
 func validID(id string) bool {
@@ -589,12 +656,13 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request) (*probe.Session, bo
 }
 
 type sessionInfo struct {
-	ID          string    `json:"id"`
-	Title       string    `json:"title"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	Active      bool      `json:"active"`
-	Unavailable bool      `json:"unavailable,omitempty"`
-	RoleID      string    `json:"role_id"`
+	ID          string              `json:"id"`
+	Title       string              `json:"title"`
+	UpdatedAt   time.Time           `json:"updated_at"`
+	Active      bool                `json:"active"`
+	Unavailable bool                `json:"unavailable,omitempty"`
+	RoleID      string              `json:"role_id"`
+	Channel     *channelSessionInfo `json:"channel,omitempty"`
 }
 
 func title(messages []probe.Message) string {
@@ -624,6 +692,9 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 	items := []sessionInfo{}
 	for _, entry := range entries {
 		item := sessionInfo{ID: entry.ID, Title: "无法读取的会话", UpdatedAt: entry.UpdatedAt, RoleID: entry.RoleID}
+		if channel, ok := s.sessionChannel(entry.ID); ok {
+			item.Channel = &channel
+		}
 		sess, err := s.session(entry.ID)
 		if err != nil {
 			item.Unavailable = true
@@ -724,7 +795,11 @@ func (s *Server) history(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, "互动上下文暂时不可用")
 		return
 	}
-	writeJSON(w, 200, map[string]any{"id": r.PathValue("id"), "messages": visibleMessages(sess.Messages()), "active": active, "role_id": sess.RoleID(), "summary": sess.Summary(), "turns": items, "queue_paused": paused, "activity": activity, "ui_context_floor": floor, "protocol_version": remoteProtocolVersion, "generation": s.transportGeneration, "resync": s.transportResync(r)})
+	var channelValue *channelSessionInfo
+	if info, ok := s.sessionChannel(r.PathValue("id")); ok {
+		channelValue = &info
+	}
+	writeJSON(w, 200, map[string]any{"id": r.PathValue("id"), "messages": visibleMessages(sess.Messages()), "active": active, "role_id": sess.RoleID(), "summary": sess.Summary(), "turns": items, "queue_paused": paused, "activity": activity, "channel": channelValue, "ui_context_floor": floor, "protocol_version": remoteProtocolVersion, "generation": s.transportGeneration, "resync": s.transportResync(r)})
 }
 
 func (s *Server) message(w http.ResponseWriter, r *http.Request) {
@@ -966,16 +1041,22 @@ func (s *Server) Close(ctx context.Context) error {
 	if s.onebot != nil {
 		err = errors.Join(err, s.onebot.Close(ctx))
 	}
+	if s.qqofficial != nil {
+		err = errors.Join(err, s.qqofficial.Close(ctx))
+	}
 	for _, sess := range sessions {
 		err = errors.Join(err, sess.Close())
 	}
 	err = errors.Join(err, s.memory.Close())
 	err = errors.Join(err, s.tasks.Close())
-	err = errors.Join(err, s.companion.Close(), s.life.Close(), s.turns.Close(), s.runtime.Close(), s.activities.Close())
+	err = errors.Join(err, s.companion.Close(), s.life.Close(), s.turns.Close(), s.runtime.Close(), s.activities.Close(), s.courseware.Close())
 	err = errors.Join(err, s.devices.Close())
 	err = errors.Join(err, s.topics.Close())
 	err = errors.Join(err, s.push.close())
 	err = errors.Join(err, s.images.Close())
+	if s.identities != nil {
+		err = errors.Join(err, s.identities.Close())
+	}
 	s.web.Close()
 	return err
 }

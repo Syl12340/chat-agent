@@ -189,5 +189,10 @@ func (s *Server) runProactive(parent context.Context, role, preferred, kind, tri
 	if err != nil {
 		return target.id, message, persisted, fmt.Errorf("proactive followup: %w", err)
 	}
+	if persisted {
+		if err := s.queueProactiveChannel(target.id, requestID, message.Content); err != nil {
+			return target.id, message, persisted, fmt.Errorf("proactive delivery: %w", err)
+		}
+	}
 	return target.id, message, persisted, nil
 }

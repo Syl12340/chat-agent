@@ -87,6 +87,9 @@ type CareItem struct {
 	Probability     *int       `json:"probability,omitempty"`
 	SessionID       string     `json:"session_id,omitempty"`
 	MessageIndex    *int       `json:"message_index,omitempty"`
+	// Feedback is explicit, role-scoped evidence about this check-in. It is not
+	// promoted to long-term memory or treated as a psychological profile.
+	Feedback string `json:"feedback,omitempty"`
 }
 type lifeSnapshot struct {
 	Version       int                       `json:"version"`
@@ -107,7 +110,7 @@ type LifeStore struct {
 }
 
 func newLifeSnapshot() lifeSnapshot {
-	return lifeSnapshot{Version: 5, Episodes: []Episode{}, Settings: map[string]CareSettings{}, Care: []CareItem{}, Cuts: map[string]map[string]int{}, Scheduled: map[string]string{}, Attempts: map[string]int{}}
+	return lifeSnapshot{Version: 6, Episodes: []Episode{}, Settings: map[string]CareSettings{}, Care: []CareItem{}, Cuts: map[string]map[string]int{}, Scheduled: map[string]string{}, Attempts: map[string]int{}}
 }
 func OpenLife(dir string) (_ *LifeStore, openErr error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
@@ -203,8 +206,8 @@ func (s *LifeStore) save(next lifeSnapshot) error {
 		return errors.New("life store closed")
 	}
 	// v4 binds delivered proactive messages to a durable conversation index;
-	// v5 adds the terminal silent outcome for a paid no-output decision.
-	next.Version = 5
+	// v5 adds the terminal silent outcome; v6 records explicit check-in feedback.
+	next.Version = 6
 	b, err := json.Marshal(next)
 	if err != nil {
 		return err
@@ -246,7 +249,7 @@ func validCareSettings(p CareSettings) bool {
 	return storage.ValidID(p.RoleID) && p.Revision >= 0 && p.DailyLimit >= 1 && p.DailyLimit <= 5 && start && end && (p.DailyTime == "" || daily) && p.MinIntervalMinutes >= 15 && p.MinIntervalMinutes <= 1440 && (p.SnoozeUntil == nil || !p.SnoozeUntil.IsZero()) && (p.AutoProbability == nil || (*p.AutoProbability >= 0 && *p.AutoProbability <= 100))
 }
 func validLife(state lifeSnapshot) bool {
-	if (state.Version < 1 || state.Version > 5) || len(state.Episodes) > 2000 || len(state.Care) > 2000 || len(state.Settings) > 128 || state.Settings == nil || state.Cuts == nil || state.Scheduled == nil || state.Attempts == nil || len(state.TopicAttempts) > 4096 {
+	if (state.Version < 1 || state.Version > 6) || len(state.Episodes) > 2000 || len(state.Care) > 2000 || len(state.Settings) > 128 || state.Settings == nil || state.Cuts == nil || state.Scheduled == nil || state.Attempts == nil || len(state.TopicAttempts) > 4096 {
 		return false
 	}
 	ids := map[string]bool{}
@@ -267,6 +270,9 @@ func validLife(state lifeSnapshot) bool {
 			return false
 		}
 		if (c.Probability != nil && (*c.Probability < 0 || *c.Probability > 100)) || (c.Status == "skipped" && (c.DecisionAt == nil || c.AttemptedAt != nil || c.Probability == nil)) {
+			return false
+		}
+		if c.Feedback != "" && c.Feedback != "helpful" && c.Feedback != "less" {
 			return false
 		}
 		if (c.SessionID == "") != (c.MessageIndex == nil) || c.SessionID != "" && (!storage.ValidID(c.SessionID) || *c.MessageIndex < 0 || c.Status != "delivering" && c.Status != "ready" && c.Status != "seen") {
@@ -1087,6 +1093,42 @@ func (s *LifeStore) UpdateCare(role, id string, revision int, status string) (Ca
 			return c, nil
 		}
 		c.Status = status
+		c.Revision++
+		next.Care[i] = c
+		if err := s.save(next); err != nil {
+			return CareItem{}, err
+		}
+		return c, nil
+	}
+	return CareItem{}, ErrLifeNotFound
+}
+
+// SetCareFeedback records an explicit reaction to a delivered check-in. The
+// revision guard prevents an old browser tab from overwriting newer feedback.
+func (s *LifeStore) SetCareFeedback(role, id string, revision int, feedback string) (CareItem, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ready(role); err != nil {
+		return CareItem{}, err
+	}
+	if feedback != "helpful" && feedback != "less" {
+		return CareItem{}, ErrInvalid
+	}
+	next := cloneLife(s.state)
+	for i, c := range next.Care {
+		if c.RoleID != role || c.ID != id {
+			continue
+		}
+		if c.Revision != revision {
+			return CareItem{}, ErrConflict
+		}
+		if (c.Status != "ready" && c.Status != "seen") || c.Content == "" {
+			return CareItem{}, ErrInvalid
+		}
+		if c.Feedback == feedback {
+			return c, nil
+		}
+		c.Feedback = feedback
 		c.Revision++
 		next.Care[i] = c
 		if err := s.save(next); err != nil {

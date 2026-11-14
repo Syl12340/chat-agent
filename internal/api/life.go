@@ -301,12 +301,21 @@ func (s *Server) updateCare(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Revision int    `json:"revision"`
 		Status   string `json:"status"`
+		Feedback string `json:"feedback"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	if !decodeInput(w, r, &input) {
 		return
 	}
-	item, err := s.life.UpdateCare(role, r.PathValue("id"), input.Revision, input.Status)
+	var item companion.CareItem
+	var err error
+	if input.Feedback != "" && input.Status == "" {
+		item, err = s.life.SetCareFeedback(role, r.PathValue("id"), input.Revision, input.Feedback)
+	} else if input.Status != "" && input.Feedback == "" {
+		item, err = s.life.UpdateCare(role, r.PathValue("id"), input.Revision, input.Status)
+	} else {
+		err = companion.ErrInvalid
+	}
 	if err != nil {
 		lifeFailure(w, err)
 		return
@@ -392,7 +401,7 @@ func (s *Server) runCare(r *http.Request, role, id string, automatic bool) (comp
 			if len(content) > 512 {
 				content = content[:512]
 			}
-			recent = append(recent, map[string]string{"content": string(content), "status": item.Status})
+			recent = append(recent, map[string]string{"content": string(content), "status": item.Status, "feedback": item.Feedback})
 			if len(recent) == 3 {
 				break
 			}
@@ -457,6 +466,9 @@ private notes, presume an outcome, reopen an old difficulty, or turn a daily
 greeting into a wellbeing questionnaire, motivational speech or unsolicited
 advice. Avoid repeating recent check-ins in topic, opening, reassurance or
 question. A short statement may stand alone and no reply is required. If there
+is explicit recent feedback, treat "helpful" as a weak cue and "less" as a
+strong instruction to avoid a similar topic, opening, question or tone. Do not
+infer any broader personality trait or silently change the user's settings. If there
 is no natural, truthful reason to speak now, return exactly [沉默]. Otherwise
 return only the check-in text, without JSON, headings or a chat-ui block.`
 

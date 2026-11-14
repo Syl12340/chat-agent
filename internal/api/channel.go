@@ -43,10 +43,12 @@ func (observers multiCompletionObserver) TurnCompleted(ctx context.Context, item
 	return nil
 }
 
-func combineCompletionObservers(configured TurnCompletionObserver, integration *oneBotIntegration) TurnCompletionObserver {
+func combineCompletionObservers(configured TurnCompletionObserver, integrations ...TurnCompletionObserver) TurnCompletionObserver {
 	observers := multiCompletionObserver{}
-	if integration != nil {
-		observers = append(observers, integration)
+	for _, integration := range integrations {
+		if integration != nil {
+			observers = append(observers, integration)
+		}
 	}
 	if configured != nil {
 		observers = append(observers, configured)
@@ -131,6 +133,18 @@ func (o *oneBotIntegration) TurnCompleted(_ context.Context, item TurnCompletion
 	mapping, ok := o.store.MappingForSession(item.SessionID)
 	if !ok {
 		return nil
+	}
+	originated := false
+	for _, requestID := range item.RequestIDs {
+		if _, ok := o.store.InboxForRequest(item.SessionID, requestID); ok {
+			originated = true
+			break
+		}
+	}
+	if !originated {
+		if _, ok := o.store.InboxForRequest(item.SessionID, item.RequestID); !ok {
+			return nil
+		}
 	}
 	text := channelstore.RenderText(item.Text)
 	if text == "" {

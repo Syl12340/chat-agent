@@ -1,5 +1,17 @@
 # Third-party design and prompt attribution
 
+## coder/websocket 1.8.15
+
+Source: https://github.com/coder/websocket/tree/v1.8.15
+
+Copyright (c) 2025 Coder. Licensed under the ISC License; the complete notice
+is retained in [licenses/coder-websocket-ISC.txt](licenses/coder-websocket-ISC.txt).
+
+The Go package is used only by the optional QQ Open Platform gateway adapter in
+`internal/channel/qqofficial`. It provides the WebSocket framing and JSON
+transport; chat-agent continues to own identity binding, session routing,
+authorization, durable delivery settlement and Agent execution.
+
 ## DeepSeek Harness
 
 Source: https://github.com/deepseek-ai/deepseek-harness

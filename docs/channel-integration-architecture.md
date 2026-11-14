@@ -2,7 +2,27 @@
 
 更新：2026-11-08
 
-状态：P0–P2 已随服务端 0.25 部署，默认关闭；生产尚未配置 OneBot 凭据
+状态：OneBot P0–P2 已随服务端 0.25 部署；2026-11-15 合批扩展为 QQ 官方/OneBot 双轨、一次性身份绑定、会话联动和群聊隔离。所有 IM 入口默认关闭，生产凭据另行配置。
+
+## 0. 2026-11-15 合批实现边界
+
+- `internal/channel.Adapter` 只负责接收和投递，不接触模型、记忆或工具；QQ 官方 Gateway 与 OneBot 共用 CA 的 `SubmitTurn`、turn queue、Harness 和结算。
+- 私聊账号先在已登录网页生成十分钟、单次使用的绑定码，再在 QQ 发送 `绑定 <code>`。服务器只保存绑定码摘要和已验证的平台身份；已绑定账号以后无感进入同一个 owner Principal。
+- 应用内和已绑定私聊共享现有审核后长期记忆。应用发起的回复只留在应用；QQ 发起的回复只回原 QQ 端，避免仅因 session 关联就向外泄露消息。
+- 群聊默认关闭；开启后默认只收 `@` 事件。群会话不加载私人记忆、活动、任务、主机工具或写工具，按群 ID 独立持久化。全量群消息需要额外显式开关。
+- QQ 图片附件经过 HTTPS 出站边界和媒体仓库校验后，最多三张交给支持视觉的聊天模型；不支持的附件退化为可见文本。主动陪伴只有在调度器选中的会话已经绑定私聊渠道时才投递，且一次生成只建立一个持久 delivery。
+- 设置页不增加新的侧栏入口；只提供绑定码、已绑定身份和“把渠道接到当前会话”的管理区。Telegram、飞书、企微本批不实现，只保留 Adapter 扩展点。
+
+QQ 官方环境变量：
+
+```dotenv
+QQ_OFFICIAL_ENABLED=false
+QQ_OFFICIAL_APP_ID=
+QQ_OFFICIAL_SECRET=
+QQ_OFFICIAL_ROLE_ID=companion
+QQ_OFFICIAL_ALLOW_GROUPS=false
+QQ_OFFICIAL_ALLOW_GROUP_ALL=false
+```
 
 基线：chat-agent 0.24.0，commit `7083aaa`
 

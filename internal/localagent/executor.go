@@ -53,6 +53,15 @@ func (e *Executor) Execute(parent context.Context, task Task) Receipt {
 		receipt.Output, err = e.Guard.Read(task.Path)
 	case "search":
 		receipt.Entries, err = e.Guard.Search(task.Query)
+	case "share":
+		if len(task.Artifacts) == 0 {
+			err = errors.New("share requires at least one artifact")
+		}
+	case "write":
+		err = e.Guard.Write(task.Path, task.Content, task.ExpectedSHA256, task.OperationID)
+		if err == nil {
+			receipt.Output = "workspace file replaced"
+		}
 	case "exec":
 		receipt.Output, err = e.runAction(ctx, task.Action, task.OperationID)
 	default:

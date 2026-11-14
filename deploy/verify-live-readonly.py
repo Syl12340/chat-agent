@@ -108,6 +108,7 @@ print(json.dumps({
     "web_search": status["web_search"],
     "web_fetch": status["web_fetch"],
     "onebot_enabled": status.get("onebot_enabled", False),
+    "qq_official_enabled": status.get("qq_official_enabled", False),
     "android_version_code": release["version_code"],
     **summary,
 }, ensure_ascii=False, sort_keys=True))

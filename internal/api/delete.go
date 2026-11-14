@@ -19,6 +19,10 @@ func (s *Server) deleteSession(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "会话编号无效")
 		return
 	}
+	if _, linked := s.sessionChannel(id); linked {
+		fail(w, 409, "这个会话仍关联 IM 渠道；请先把渠道关联到另一个会话")
+		return
+	}
 	if s.activeImageJob.session == id {
 		fail(w, 409, "会话的图像作业正在结算")
 		return
