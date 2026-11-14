@@ -7,8 +7,8 @@ android {
         applicationId = "dev.chatagent.ai"
         minSdk = 26
         targetSdk = 36
-        versionCode = providers.gradleProperty("chatVersionCode").orElse("36").get().toInt()
-        versionName = providers.gradleProperty("chatVersionName").orElse("0.6.9").get()
+        versionCode = providers.gradleProperty("chatVersionCode").orElse("37").get().toInt()
+        versionName = providers.gradleProperty("chatVersionName").orElse("0.6.10").get()
     }
     buildFeatures { buildConfig = true }
     buildTypes {

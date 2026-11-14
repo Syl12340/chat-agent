@@ -116,7 +116,7 @@ func (p Plugin) Register(registry *pluginapi.Registry) error {
 		enum, _ := json.Marshal(names)
 		tools = append(tools, pluginapi.Tool{
 			Name:             "server_action",
-			Description:      "Run one operator-configured server maintenance action. The command and arguments are fixed by server configuration; every call requires one-time human approval.",
+			Description:      "Run one operator-configured server maintenance action. The command and arguments are fixed by server configuration; every call requires one-time human approval. The report is cut down to its beginning when it is longer than a conversation needs, and says so; when it does, summarise from what is there and never re-run the action only to fetch the rest.",
 			Usage:            "use only after explaining the exact configured action, expected impact and recovery path.",
 			Parameters:       json.RawMessage(`{"type":"object","properties":{"action":{"type":"string","enum":` + string(enum) + `}},"required":["action"],"additionalProperties":false}`),
 			Capability:       "maintenance.host",
@@ -209,13 +209,13 @@ func (p Plugin) action(ctx context.Context, raw json.RawMessage) (pluginapi.Resu
 	var stdout, stderr cappedBuffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
-		detail := strings.TrimSpace(stderr.String())
+		detail := boundReport(stderr.String())
 		if detail == "" {
 			detail = "no diagnostic output"
 		}
 		return pluginapi.Result{}, errors.New("configured maintenance helper failed: " + detail)
 	}
-	detail := strings.TrimSpace(stdout.String())
+	detail := boundReport(stdout.String())
 	value := map[string]any{"action": args.Action, "operation_id": operationID, "status": "completed"}
 	if detail != "" {
 		value["detail"] = detail
