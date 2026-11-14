@@ -376,13 +376,12 @@ func (s *Server) agentForTurn(sess *probe.Session, inputs []string, sessionID st
 		return nil
 	})
 	c.Tools = append([]probe.Tool(nil), c.Tools...)
+	// What the host still contributes here: the communication preferences and the
+	// role-change proposals, plus whatever needs cross-request job state — image
+	// generation, the local executors and the decision scorer. Every other
+	// business tool now lives in a plugin.
 	c.Tools = append(c.Tools, preferenceTools...)
 	c.Tools = append(c.Tools, s.roleProposalTools(role, inputs, sessionID)...)
-	c.Tools = append(c.Tools, s.activityChatTools(role.ID, inputs, sessionID)...)
-	c.Tools = append(c.Tools, s.activityOpenTool(role.ID, inputs, sessionID)...)
-	// memory_search, memory_write, skill_load, care_preferences, topic_preferences,
-	// episode_propose and knowledge_manage moved into plugins; the host no longer
-	// contributes them here.
 
 	c.DisableBuiltinClock = true
 	c.Tools = append(c.Tools, s.pluginTools(s.toolCapabilities(), sessionID, role.ID)...)

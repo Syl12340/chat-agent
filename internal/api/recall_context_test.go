@@ -72,8 +72,19 @@ func TestRecallContextLifecycle(t *testing.T) {
 			t.Fatalf("missing saved reference: %s", want)
 		}
 	}
-	tools := app.activityOpenTool("companion", []string{"只看看天文摄影的记录，不恢复活动。"}, "new-conversation")
-	result, err := tools[0].Execute(context.Background(), json.RawMessage(`{"action":"list","query":"天文摄影"}`))
+	// The read path now goes through the plugin catalog, not a host closure: this
+	// also asserts the tool is actually offered to that conversation.
+	var open probe.Tool
+	for _, tool := range app.pluginTools(app.toolCapabilities(), "new-conversation", "companion") {
+		if tool.Name == "shared_activity_open" {
+			open = tool
+		}
+	}
+	if open.Name == "" {
+		t.Fatal("shared_activity_open is not offered to the conversation")
+	}
+	openCtx := probe.WithToolInputs(probe.ToolContext(context.Background(), "new-conversation", "companion", "call-1", ""), []probe.Message{{Role: "user", Content: "只看看天文摄影的记录，不恢复活动。"}})
+	result, err := open.Execute(openCtx, json.RawMessage(`{"action":"list","query":"天文摄影"}`))
 	if err != nil || !strings.Contains(result.Output, a.Progress) || !strings.Contains(result.Output, `"status":"paused"`) {
 		t.Fatal("read-only tool did not retrieve saved activity progress")
 	}

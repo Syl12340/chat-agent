@@ -173,7 +173,7 @@ manifest 按客户端**实际能力**生成：没配搜索端点就没有 `web_s
 `internal/api` 里原来的 `webTools()` 和 `internal/api/tasks.go` 里的
 150 行硬编码已删除。Core 不再知道这两个工具存在。
 
-### 当前清单（0.6.7：13 个插件 / 29 个工具）
+### 当前清单（0.6.8：14 个插件 / 31 个工具）
 
 | 插件 | 工具 |
 | --- | --- |
@@ -186,13 +186,19 @@ manifest 按客户端**实际能力**生成：没配搜索端点就没有 `web_s
 | `builtin.topic` | `topic_preferences` |
 | `builtin.episode` | `episode_propose` |
 | `builtin.knowledge` | `knowledge_manage` |
+| `builtin.activity` | `shared_activity_open` `shared_activity_update` |
 | `builtin.image` | `image_health` |
 | `builtin.clock` | `get_current_time` |
 | `builtin.server` | `server_status` `server_service` `server_logs` `server_releases` `server_action` |
 | `builtin.workspace` | `workspace_list` `workspace_read` `workspace_search` `workspace_share` `workspace_shell` |
 
-宿主里只剩 `shared_activity_open`、`shared_activity_update`，外加图像三件套和
-`local_workspace`——后两者依赖跨请求的作业状态，不是「搬不搬」的问题。
+宿主 `internal/api` 里只剩两类：
+
+- **每次都要跑一次的**：`preferenceTools`（交流偏好）、`roleProposalTools`（角色变化建议）
+- **需要跨请求作业状态的**：图像三件套、`local_workspace`、`decide`
+
+前一类迟早能搬（`ToolInputs` 已经够用），后一类不是「搬不搬」的问题——它们的作业在请求
+结束后还要继续。
 
 ### 宿主机工具的可见性是按会话算的，不是按部署算的
 
@@ -238,6 +244,18 @@ memory / tasks / skill 三个插件因此一直是零测试。现在
 
 **教训**：一个工具搬不动，先看它读了哪些宿主状态，而不是先给它加参数。`care_preferences`
 需要的从来不是更多字段，是一个能安全提交写入的位置。
+
+### 幂等键：随机数换成了「这一轮」
+
+`shared_activity_open` 的宿主版本每次组装工具时抽一个 nonce，用它和参数一起算幂等键：
+同一轮的重复调用落到同一个 key（存储层去重），下一轮换个 nonce 就是新活动。
+
+搬进插件后没有「每次组装」这个时机了，改成用**本轮用户原文 + 会话**当那个身份：
+一轮之内不变，用户说了新话就变。语义基本等价，差别是一个极端情况——用户隔一轮又说了
+一模一样的话，会被当成同一轮的去重。这比反过来（同一轮创建两个活动）要好。
+
+去重之后第二次调用如实返回 `created:false` 和同一个活动。宿主版本靠内存 memo 把第一次
+的 `created:true` 原样再吐一遍，那是在说谎；现在模型看到的是真的。
 
 ## 9. 踩过的坑
 

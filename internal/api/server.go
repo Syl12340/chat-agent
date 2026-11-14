@@ -37,6 +37,7 @@ import (
 	"chat-agent/internal/topics"
 	"chat-agent/internal/turns"
 	"chat-agent/internal/webtools"
+	activityplugin "chat-agent/plugins/builtin/activity"
 	careplugin "chat-agent/plugins/builtin/care"
 	"chat-agent/plugins/builtin/clock"
 	episodeplugin "chat-agent/plugins/builtin/episode"
@@ -341,6 +342,9 @@ func New(c Config) (*Server, error) {
 	// role. Knowledge also publishes the barrier that hides what it just removed.
 	loader.Add(knowledgeplugin.New(mem, lifeStore, s))
 	loader.Add(episodeplugin.New(lifeStore))
+	// Shared activities were the last business tools in the host; binding one has
+	// to advance the same context barrier the panels write.
+	loader.Add(activityplugin.New(activityStore, s))
 	// Discovery writes the same revisioned settings from a conversation, so it
 	// needs the same evidence and write gate; it also refuses to switch on when
 	// the deployment cannot search or read the public web at all.
@@ -517,7 +521,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // version is the service version reported by /api/status.
-const version = "0.6.7"
+const version = "0.6.8"
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model

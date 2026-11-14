@@ -146,7 +146,12 @@ func TestActivityChatControl(t *testing.T) {
 				}
 			}
 		}
-		if last.Role == "tool" && strings.Contains(last.Content, `"created":true`) {
+		// Trigger on the state, not on "created":true. The second identical create in
+		// this batch is deduped by the store's idempotency key and honestly reports
+		// created:false with the same activity; both answers carry what the next step
+		// needs. The fixture is here to prove no duplicate was made, not to pin which
+		// of the two calls "won".
+		if last.Role == "tool" && strings.Contains(last.Content, `"activity_state"`) {
 			var result struct {
 				State struct {
 					Revision int `json:"revision"`
