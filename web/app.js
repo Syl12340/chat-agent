@@ -10,6 +10,7 @@ import { createNativeCare } from '/native-care.js';
 import { createVoiceUI } from '/voice.js';
 import { createDeviceAuth } from '/device-auth.js';
 import { createModelConfigs } from '/model-configs.js';
+import { createHostTools } from '/host-tools.js';
 import { createChatInput } from '/chat-input.js';
 import { createShellBridge } from '/shell-bridge.js';
 import { attachGeneratedImage, watchImageJob } from '/generated-image.js';
@@ -66,6 +67,7 @@ const reasoningViews = new Map();
 Object.assign(state, { roles: [], roleID: 'companion', memories: [], memoryFilter: 'pending', memoryEditing: null, roleDocument: null, summary: null, compacting: false });
 const deviceAuth = createDeviceAuth({state,onToken:token=>connect(token,'device'),onError:handleError,adminRequest:json});
 const modelConfigs = createModelConfigs({state,json,onChanged:()=>chatInput.refreshOptions(),onError:handleError});
+const hostTools = createHostTools({state,json,onError:handleError});
 const taskUI = createTaskUI({ state, request, json, roleName, drawer, onError: handleError });
 const companionUI = createCompanionUI({ state, json, drawer, onError: handleError });
 const roleProposalsUI = createRoleProposalsUI({state,json,drawer,onError:handleError});
@@ -996,6 +998,7 @@ ui.settings.addEventListener('click', () => {
   }
   ui['settings-dialog'].showModal(); deviceAuth.refreshManagement();
   modelConfigs.refresh();
+  hostTools.refresh();
 });
 ui['close-settings'].addEventListener('click', () => ui['settings-dialog'].close());
 window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); installPrompt = event; ui.install.hidden = false; });

@@ -196,20 +196,34 @@ if status != "completed" { next.Paused = true }
 **仍然待办**：`server_action` 的输出会原样把 92 个版本的 JSON 全塞进上下文。摘要那行
 已经够人看了，完整列表对模型判断没有增量，却吃掉大半预算。下一轮该给它加输出上限。
 
-### 主机工具的开关方式（当前是关的）
+### 主机工具的开关方式（0.6.6 起可以在运行时开关）
 
-主机工具（`server_*`、`workspace_*`）按会话授权，靠
-`CHAT_HOST_TOOL_SESSIONS=<会话 id,...>`，**加一个会话要改 env 再重启**。
-这次验证完已经清空，等于关掉：`/api/plugins` 只剩 9 个插件 17 个工具。
+主机工具（`server_*`、`workspace_*`）按会话授权，两条路并集：
 
-授权一个会话的步骤：
+- `CHAT_HOST_TOOL_SESSIONS=<会话 id,...>`：部署级默认，改它要重启
+- `POST /api/host-tools/sessions {"session":"…","allow":true}`：运行时授权，落在
+  `<数据目录>/host-tools.json`，最多 8 个会话，立即生效、立即能撤销
 
-1. 在界面上新建一个会话，从 `/api/sessions` 拿到它的 id
-2. 把 id 写进 `/etc/chat-agent/chat-agent.env` 的 `CHAT_HOST_TOOL_SESSIONS`
-3. `systemctl restart chat-agent`
+页面上在「设置 → 服务器运维」里，一个开关管当前会话，只有 owner/管理员看得到。
+**它不是模型工具**：助手既不能给自己开权限，也不能扩大会话名单；开关本身也不等于执行
+许可，`server_action` 仍然要逐次审批。
 
-改 env + 重启才能授权一次，这个摩擦本身就是产品缺陷：用户说「帮我看看服务器」的时候，
-没有任何办法让当前会话长出这些工具。下一轮要做成运行时授权。
+实测（0.6.6，会话 `d225d65e…`，全程没有重启）：
+
+- 授权前：`/api/host-tools` 报 `configured: true`、10 个工具、`sessions: []`
+- `POST allow:true` → 同一个会话发一句「用 server_status 看一下服务器」，模型真的调到
+  了 `server_status`，拿到磁盘和监听端口
+- `POST allow:false` → 再问一次，执行器直接回 `UNKNOWN_TOOL`
+
+**为什么 `configured` 与会话名单解耦**：以前 `hostPlugins()` 在会话名单为空时直接不建
+插件，导致「先授权、后使用」永远不可能——插件根本不存在。现在只要部署配置了
+`CHAT_SERVICE_UNITS` 或 `CHAT_WORKSPACE_ROOT` 就建插件，谁能看见由 `hostPluginAllowed`
+按会话决定。
+
+**界面上踩的坑**：第一版开关点了没反应。原因是点击后 `render()` 先用**旧**的服务端状态
+把复选框写了回去，紧接着 `JSON.stringify({allow: allow.checked})` 读到的已经是回填后的
+`false`，于是每次都在请求「取消授权」。修法是把用户意图单独存在 `pendingAllow` 里，
+发请求用它、渲染也用它。这个 bug 用 API 探针完全看不出来，只有真的点一下才会暴露。
 
 ## 插件契约：为什么有些工具搬不动（0.6.3 已解决两个）
 

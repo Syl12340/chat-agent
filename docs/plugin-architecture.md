@@ -192,6 +192,19 @@ manifest 按客户端**实际能力**生成：没配搜索端点就没有 `web_s
 还留在 `internal/api` 的：`episode_propose`、`knowledge_manage`、`shared_activity_open`、
 `shared_activity_update`，以及图像三件套和 `local_workspace`。
 
+### 宿主机工具的可见性是按会话算的，不是按部署算的
+
+`builtin.server` 和 `builtin.workspace` 是唯一两个「看得到这台机器」的插件。它们由
+`hostPlugins()` 构建，但**构建与否只看部署有没有配置可看的东西**
+（`CHAT_SERVICE_UNITS` / `CHAT_WORKSPACE_ROOT`），跟谁被授权无关。谁能看见由
+`hostPluginAllowed(id, session)` 在每次组装工具集时决定：
+
+- `CHAT_HOST_TOOL_SESSIONS`：部署级默认，改要重启
+- `host-tools.json`：运行时授权，`POST /api/host-tools/sessions`，owner 专用
+
+两者取并集。早先版本在会话名单为空时直接不建插件，于是「先授权、后使用」永远不可能——
+运行时授权需要插件先存在。这是个顺序错误，不是权限错误。
+
 ### 工具上下文：曾经搬不动的原因
 
 搬到 `plugins/builtin/*` 的前提是「只依赖注入的窄接口 + 工具上下文」。两个缺口卡了

@@ -95,6 +95,8 @@ type Server struct {
 	life            *companion.LifeStore
 	activities      *companion.ActivityStore
 	devices         *deviceauth.Store
+	// hostGrants narrows or widens host tooling per conversation at runtime.
+	hostGrants *hostGrants
 	turns           *turns.Store
 	runtime         *runlog.Registry
 	workCtx         context.Context
@@ -301,7 +303,15 @@ func New(c Config) (*Server, error) {
 		return nil, errors.Join(err, images.Close(), push.close(), topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
 	}
 	imageGen := imageGenerator(c)
-	s := &Server{decision: decision.New(c.Decision), imagegen: imageGen, localQueue: newLocalQueue(), approvals: probe.NewApprovalStore(), devices: deviceStore, activities: activityStore, life: lifeStore, turns: turnStore, runtime: runtimeStore, workCtx: workCtx, workCancel: workCancel, careSlots: make(chan struct{}, 1), config: c, tokenHash: sha256.Sum256([]byte(c.AccessToken)), sessions: map[string]*probe.Session{}, runs: map[string]*runState{}, roles: roleManager, memory: mem, companion: companionStore, tasks: taskStore, web: webClient, location: location, transportGeneration: hex.EncodeToString(transportBytes[:]), transportStartedAt: time.Now().UTC()}
+	// Runtime host-tool grants live beside the other stores: a granted
+	// conversation survives a restart, and revoking one is a file deletion away.
+	hostGrants, err := openHostGrants(filepath.Join(path, "host-tools.json"))
+	if err != nil {
+		workCancel()
+		webClient.Close()
+		return nil, errors.Join(err, images.Close(), push.close(), topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
+	}
+	s := &Server{decision: decision.New(c.Decision), imagegen: imageGen, localQueue: newLocalQueue(), approvals: probe.NewApprovalStore(), devices: deviceStore, activities: activityStore, life: lifeStore, turns: turnStore, runtime: runtimeStore, workCtx: workCtx, workCancel: workCancel, careSlots: make(chan struct{}, 1), hostGrants: hostGrants, config: c, tokenHash: sha256.Sum256([]byte(c.AccessToken)), sessions: map[string]*probe.Session{}, runs: map[string]*runState{}, roles: roleManager, memory: mem, companion: companionStore, tasks: taskStore, web: webClient, location: location, transportGeneration: hex.EncodeToString(transportBytes[:]), transportStartedAt: time.Now().UTC()}
 	s.modelConfigs = modelConfigs
 	// Built-in plugins: each one is a Go value registered statically. A plugin
 	// whose dependencies are missing lands in Catalog.Unavailable instead of
@@ -379,6 +389,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/transport", s.transportStatus)
 	mux.HandleFunc("POST /api/approvals", s.approveCall)
 	mux.HandleFunc("GET /api/plugins", s.listPlugins)
+	mux.HandleFunc("GET /api/host-tools", s.hostToolState)
+	mux.HandleFunc("POST /api/host-tools/sessions", s.updateHostGrants)
 	mux.HandleFunc("GET /api/chat/options", s.chatOptions)
 	mux.HandleFunc("GET /api/models", s.listModelConfigs)
 	mux.HandleFunc("POST /api/models", s.createModelConfig)
@@ -498,7 +510,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // version is the service version reported by /api/status.
-const version = "0.6.5"
+const version = "0.6.6"
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model

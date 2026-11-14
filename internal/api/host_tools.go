@@ -28,7 +28,11 @@ func (c Config) hostPlugins() ([]pluginapi.Plugin, error) {
 			return nil, errors.New("invalid host-tool session id")
 		}
 	}
-	if len(c.HostTools.Sessions) == 0 {
+	// Build when the deployment configures something to look at, not when a
+	// conversation is already allowed to see it: a runtime grant needs the
+	// plugins to exist before anybody is granted them. Who may see them is
+	// decided per session in hostPluginAllowed.
+	if c.HostTools.WorkspaceRoot == "" && len(c.HostTools.ServiceUnits) == 0 {
 		return nil, nil
 	}
 	plugins := []pluginapi.Plugin{}
@@ -58,8 +62,20 @@ func (c Config) hostPlugins() ([]pluginapi.Plugin, error) {
 func (s *Server) hostPluginAllowed(id, session string) bool {
 	switch id {
 	case workspace.ID, serverdiag.ID:
-		return slices.Contains(s.config.HostTools.Sessions, session)
+		return s.hostToolsAllowed(session)
 	default:
 		return true
 	}
+}
+
+// hostToolsAllowed unions the deployment default with the operator's runtime
+// grants. Both are per conversation; neither can widen the other's meaning.
+func (s *Server) hostToolsAllowed(session string) bool {
+	if session == "" {
+		return false
+	}
+	if slices.Contains(s.config.HostTools.Sessions, session) {
+		return true
+	}
+	return s.hostGrants.Allows(session)
 }
