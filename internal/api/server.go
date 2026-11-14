@@ -45,6 +45,8 @@ import (
 	knowledgeplugin "chat-agent/plugins/builtin/knowledge"
 	"chat-agent/plugins/builtin/literature"
 	memoryplugin "chat-agent/plugins/builtin/memory"
+	preferencesplugin "chat-agent/plugins/builtin/preferences"
+	roleprofileplugin "chat-agent/plugins/builtin/roleprofile"
 	"chat-agent/plugins/builtin/search"
 	skillplugin "chat-agent/plugins/builtin/skill"
 	tasksplugin "chat-agent/plugins/builtin/tasks"
@@ -345,6 +347,11 @@ func New(c Config) (*Server, error) {
 	// Shared activities were the last business tools in the host; binding one has
 	// to advance the same context barrier the panels write.
 	loader.Add(activityplugin.New(activityStore, s))
+	// Preferences and role proposals were the last two host tools that only
+	// needed the turn's user text; the stores enforce their own revisions, so
+	// neither needs a write gate.
+	loader.Add(preferencesplugin.New(companionStore))
+	loader.Add(roleprofileplugin.New(roleManager))
 	// Discovery writes the same revisioned settings from a conversation, so it
 	// needs the same evidence and write gate; it also refuses to switch on when
 	// the deployment cannot search or read the public web at all.
@@ -521,7 +528,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // version is the service version reported by /api/status.
-const version = "0.6.8"
+const version = "0.6.9"
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model

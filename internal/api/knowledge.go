@@ -295,7 +295,7 @@ func (s *Server) agentForTurn(sess *probe.Session, inputs []string, sessionID st
 	// tool surface, then per-turn runtime context.
 	prompt := probe.NewPrompt()
 	prompt.Add("persona", 10, role.Prompt())
-	policy, _, preferenceTools, err := s.companionContext(role.ID, inputs, "auto")
+	policy, _, err := s.companionContext(role.ID, "auto")
 	if err != nil {
 		return nil, err
 	}
@@ -376,12 +376,9 @@ func (s *Server) agentForTurn(sess *probe.Session, inputs []string, sessionID st
 		return nil
 	})
 	c.Tools = append([]probe.Tool(nil), c.Tools...)
-	// What the host still contributes here: the communication preferences and the
-	// role-change proposals, plus whatever needs cross-request job state — image
-	// generation, the local executors and the decision scorer. Every other
-	// business tool now lives in a plugin.
-	c.Tools = append(c.Tools, preferenceTools...)
-	c.Tools = append(c.Tools, s.roleProposalTools(role, inputs, sessionID)...)
+	// Every business tool now lives in a plugin. What the host still contributes
+	// here is only what needs state across requests: image generation, the local
+	// executors and the decision scorer.
 
 	c.DisableBuiltinClock = true
 	c.Tools = append(c.Tools, s.pluginTools(s.toolCapabilities(), sessionID, role.ID)...)

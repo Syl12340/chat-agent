@@ -173,7 +173,7 @@ manifest 按客户端**实际能力**生成：没配搜索端点就没有 `web_s
 `internal/api` 里原来的 `webTools()` 和 `internal/api/tasks.go` 里的
 150 行硬编码已删除。Core 不再知道这两个工具存在。
 
-### 当前清单（0.6.8：14 个插件 / 31 个工具）
+### 当前清单（0.6.9：16 个插件 / 33 个工具）
 
 | 插件 | 工具 |
 | --- | --- |
@@ -184,6 +184,8 @@ manifest 按客户端**实际能力**生成：没配搜索端点就没有 `web_s
 | `builtin.tasks` | `todo_add` `todo_list` `todo_complete` `reminder_add` `reminder_list` `reminder_cancel` |
 | `builtin.care` | `care_preferences` |
 | `builtin.topic` | `topic_preferences` |
+| `builtin.preferences` | `companion_preferences_update` |
+| `builtin.roleprofile` | `role_change_propose` |
 | `builtin.episode` | `episode_propose` |
 | `builtin.knowledge` | `knowledge_manage` |
 | `builtin.activity` | `shared_activity_open` `shared_activity_update` |
@@ -192,13 +194,24 @@ manifest 按客户端**实际能力**生成：没配搜索端点就没有 `web_s
 | `builtin.server` | `server_status` `server_service` `server_logs` `server_releases` `server_action` |
 | `builtin.workspace` | `workspace_list` `workspace_read` `workspace_search` `workspace_share` `workspace_shell` |
 
-宿主 `internal/api` 里只剩两类：
+宿主 `internal/api` 里**已经不剩任何业务工具**，只剩三样确实需要跨请求状态的：
 
-- **每次都要跑一次的**：`preferenceTools`（交流偏好）、`roleProposalTools`（角色变化建议）
-- **需要跨请求作业状态的**：图像三件套、`local_workspace`、`decide`
+- 图像三件套（作业在请求结束后还要跑）
+- `local_workspace`（本机执行端要认领任务）
+- `decide`（结构化打分）
 
-前一类迟早能搬（`ToolInputs` 已经够用），后一类不是「搬不搬」的问题——它们的作业在请求
-结束后还要继续。
+`knowledge.go` 里现在只剩 `pluginTools` 和这三样。以后新增业务能力，默认写法是加一个
+插件，不是在宿主里多写一个闭包。
+
+### 搬迁清单
+
+| 版本 | 搬走 | 以前为什么搬不动 |
+| --- | --- | --- |
+| 0.6.2 | `memory_search` `memory_write` `skill_load` | 缺 `ToolRole`，插件不知道自己属于哪个角色 |
+| 0.6.6 | `care_preferences` `topic_preferences` | 缺 `ToolInputs`（依据）和 `WriteGate`（写入互斥） |
+| 0.6.7 | `knowledge_manage` `episode_propose` | 缺 `WriteScope.Cuts`（遗忘后要推上下文边界） |
+| 0.6.8 | `shared_activity_open` `shared_activity_update` | 同上，另外绑定活动要原子 |
+| 0.6.9 | `companion_preferences_update` `role_change_propose` | 只差 `ToolInputs`；一直没排上 |
 
 ### 宿主机工具的可见性是按会话算的，不是按部署算的
 
