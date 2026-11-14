@@ -82,7 +82,7 @@ func (s *Server) roleProposalTools(role roles.Role, inputs []string, sessionID s
 			if err := toolInput(data, &args); err != nil {
 				return probe.ToolResult{}, err
 			}
-			if !turnHasEvidence(inputs, args.Evidence) {
+			if !probe.TurnHasEvidence(inputs, args.Evidence) {
 				return probe.ToolResult{}, errors.New("角色修改提案缺少当前用户消息中的依据")
 			}
 			if err := ctx.Err(); err != nil {

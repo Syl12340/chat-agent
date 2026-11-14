@@ -105,12 +105,7 @@ func (e *ToolExecutor) Execute(ctx context.Context, set *ToolSet, call ToolCall,
 		}
 	}
 	dispatched = true
-	execCtx := context.WithValue(ctx, toolCallKey{}, call.ID)
-	execCtx = context.WithValue(execCtx, toolSessionKey{}, set.step.SessionID)
-	execCtx = context.WithValue(execCtx, toolRoleKey{}, set.step.RoleID)
-	if operationID != "" {
-		execCtx = context.WithValue(execCtx, toolOperationKey{}, operationID)
-	}
+	execCtx := ToolContext(ctx, set.step.SessionID, set.step.RoleID, call.ID, operationID)
 	cancel := func() {}
 	if tool.definition.Timeout > 0 {
 		execCtx, cancel = context.WithTimeout(execCtx, tool.definition.Timeout)

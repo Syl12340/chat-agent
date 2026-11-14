@@ -31,7 +31,7 @@
 | --- | --- |
 | 图像生成 | 桥可运行，ComfyUI 未启动；状态如实报「ComfyUI 没有运行」 |
 | 中文搜索的极端查询 | 正常查询可用；搜索质量告警（`relevance.warning`）尚未在真实请求中触发过一次 |
-| 服务器维护动作 `server_action` | 未配置。需要一个 basename 以 `chat-agent-` 开头、接受 `--operation-id` 的 helper |
+| 服务器维护动作 `server_action` | helper 已配置（`server_releases` 能返回版本），审批票能开到，但**批准后的实际执行从未观察到**，见下节 |
 | ECNU eduwork | 服务器解析不到相关域名，未接入 |
 
 ## 主动消息
@@ -125,10 +125,13 @@ if status != "completed" { next.Paused = true }
 注意 `auto_generate:false` 时 `auto_probability:100` 不起作用——它只影响可选的每日自动
 问候，不是关怀总开关。这一点模型解释对了。
 
-写入路径（update / snooze / resume）尚未实测：它们要求当前轮用户消息里的原话作为依据，
-我没有拿用户的真实消息去试。
+写入路径（update / snooze / resume）要求当前轮用户消息里的原话作为依据，
+没有拿用户的真实消息在线上试过。但它不是"没跑过"：`internal/api/care_tools_test.go`
+用假模型驱动真实插件、真实写入闸门和真实存储，跑通 snooze → resume → 保留既有计划
+这一整条，并断言没有依据、依据被改写、依据来自助手消息时写入都会失败。
+`plugins/builtin/care/plugin_test.go` 另外覆盖了修订号过期、以及两种拒绝路径。
 
-## 尚未实测## 尚未实测## 尚未实测
+## 尚未实测
 
 以下有代码、有工具，但没有任何一次真实调用记录：
 
@@ -136,10 +139,57 @@ if status != "completed" { next.Paused = true }
 - `episode_propose`（事件候选）
 - `skill_load`（技能加载）
 - `shared_activity_open` / `shared_activity_update`（共同活动）
-- `care_preferences`（关怀设置）
 - `image_generate` / `image_status` / `image_cancel`（图像生成全链路）
 - `decide`（结构化决策打分）
 - 主动消息（proactive）——需要等一个触发窗口
 - 陪伴侧的连续聊天分段、话题预算
 
 跑过之前不要把上面这些当成可用能力写进文档或演示。
+
+## server_action 的审批链：开到票，没走到执行
+
+`server_action` 声明了 `Decision:"required"`、`Risk:"critical"`、`ApprovalRequired:true`，
+所以调用路径一定是「先拿到一张审批票，再由人批准，然后重试」。
+
+已经确认的：
+
+- 未批准时返回 `status: approval_required` 和一个 `digest`（`acd3255d…`）
+- `POST /api/approvals` 返回 200 和票据 `apr_d81eb56c…`，绑定到会话和摘要
+- `/api/sessions/*/turns/resume` 对**不存在的会话**返回 404——这是对的，不是接口坏了
+
+没确认的：批准之后那一次重试真的把动作执行了。上一轮做这个验证时，重试撞上服务重启
+导致的 `paused`，等去恢复时会话已经被删了（`/var/lib/chat-agent/sessions/runtime` 里
+没有那个目录，`/api/sessions` 只剩 3 个真实会话）。
+
+**教训**：拿一个测试会话做审批走查时，别让"重启"和"会话还在"互相干扰。重启一定会让
+未完成的会话进入 `paused`，而清理会话时我连测试会话一起删掉了，证据链断在半路。
+
+## 插件契约：为什么有些工具搬不动（0.6.3 已解决两个）
+
+宿主工具搬到 `plugins/builtin/*` 的前提是它只能依赖「注入的窄接口 + 工具上下文」。
+卡了很久的两个缺口：
+
+1. **当前轮用户原话**：`care_preferences`、`topic_preferences`、`episode_propose`、
+   `knowledge_manage` 都要校验「用户确实这么说了」。插件的 `StepContext` 里没有
+   `inputs`，只能看着 `evidence` 字段干瞪眼。
+2. **跨会话同角色运行状态**：两个同角色会话同时读改写同一份带修订号的设置，后写的
+   会静默覆盖前一个。
+
+0.6.3 补的东西：
+
+- `probe.ToolInputs(ctx)` / `probe.WithToolInputs` —— 只有本轮用户消息，助手输出、
+  工具结果、更早的历史都不在里面。`probe.TurnHasEvidence` 跟它配套。
+- `pluginapi.WriteGate` —— `WithRoleWrite(role, session, func() error)` 把整个
+  读改写塞进宿主的锁里；查完再写中间不能有别的 run 插进来。拒绝时返回
+  `ErrWriteSessionEnded` / `ErrWriteRoleBusy`，插件自己翻译成中文。
+- `probe.ToolContext(...)` 把“哪次调用、哪个会话、哪个角色、哪个幂等键”收敛成唯一
+  一份定义（执行器也用它），插件因此第一次可以写单元测试——之前 memory / tasks /
+  skill 三个插件是零测试，因为 context key 全是包内私有。
+
+同时把 `care_preferences`、`topic_preferences` 搬成了插件。现状：
+
+    11 个插件 / 27 个工具
+
+还留在宿主里的 4 个：`episode_propose`、`knowledge_manage`、`shared_activity_open`、
+`shared_activity_update`。前两个现在只差搬（依赖都齐了），后两个还要跨会话的 run 状态。
+另外 `image_generate` / `image_status` / `image_cancel` 和 `local_workspace` 单独计。

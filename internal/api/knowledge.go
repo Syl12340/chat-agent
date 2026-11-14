@@ -382,10 +382,8 @@ func (s *Server) agentForTurn(sess *probe.Session, inputs []string, sessionID st
 	c.Tools = append(c.Tools, s.activityOpenTool(role.ID, inputs, sessionID)...)
 	c.Tools = append(c.Tools, s.episodeTools(role.ID, inputs, sessionID)...)
 	c.Tools = append(c.Tools, s.knowledgeTools(role.ID, inputs, sessionID)...)
-	c.Tools = append(c.Tools, s.careTools(role.ID, inputs, sessionID)...)
-	c.Tools = append(c.Tools, s.topicPreferenceTools(role.ID, inputs)...)
-	// memory_search, memory_write and skill_load moved into plugins; the host no
-	// longer contributes them here.
+	// memory_search, memory_write, skill_load, care_preferences and
+	// topic_preferences moved into plugins; the host no longer contributes them.
 
 	c.DisableBuiltinClock = true
 	c.Tools = append(c.Tools, s.pluginTools(s.toolCapabilities(), sessionID, role.ID)...)

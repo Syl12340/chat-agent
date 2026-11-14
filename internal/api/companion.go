@@ -66,7 +66,7 @@ func (s *Server) companionContext(role string, inputs []string, mode string) (st
 		if err := toolInput(data, &args); err != nil {
 			return probe.ToolResult{}, err
 		}
-		if !turnHasEvidence(inputs, args.Evidence) {
+		if !probe.TurnHasEvidence(inputs, args.Evidence) {
 			return probe.ToolResult{}, errors.New("偏好修改缺少当前用户消息中的依据")
 		}
 		current, err := s.companion.Get(role)

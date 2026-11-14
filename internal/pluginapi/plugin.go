@@ -39,6 +39,32 @@ type Host interface {
 	Allowed(permission string) bool
 }
 
+// WriteGate is the host's serialization point for role-scoped settings writes.
+//
+// A tool that reads a revision, patches it and writes it back must do the whole
+// read-modify-write inside WithRoleWrite. The host holds its run lock across the
+// callback, so a check that passed cannot be invalidated before the write lands:
+// without that, two conversations of one role could both read revision 3 and the
+// later write would silently erase the earlier one.
+//
+// It deliberately exposes no run, session or store internals. A plugin learns
+// that its write was refused and why, never what the other conversation says.
+type WriteGate interface {
+	// WithRoleWrite runs write only while sessionID's turn is still live and no
+	// other conversation of role is generating a turn. Otherwise it returns
+	// ErrWriteSessionEnded or ErrWriteRoleBusy without calling write.
+	WithRoleWrite(role, sessionID string, write func() error) error
+}
+
+var (
+	// ErrWriteSessionEnded means the turn that asked for the write is no longer
+	// live. The write was refused; nothing was rolled back.
+	ErrWriteSessionEnded = errors.New("write refused: the asking turn is no longer live")
+	// ErrWriteRoleBusy means another conversation of the same role is generating
+	// a turn, so an interleaved read-modify-write could lose an update.
+	ErrWriteRoleBusy = errors.New("write refused: another conversation of this role is running")
+)
+
 // Tool is one callable capability offered to the model.
 type Tool struct {
 	Name        string

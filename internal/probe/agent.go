@@ -56,6 +56,48 @@ func DefaultConfig() Config {
 type toolCallKey struct{}
 type toolSessionKey struct{}
 type toolRoleKey struct{}
+type toolInputsKey struct{}
+
+// ToolContext attaches the trusted per-call values a tool may read: which
+// conversation, which role, which call and which idempotent operation. The
+// executor calls it once, immediately before dispatch.
+//
+// It is exported as the single definition of that context so a plugin test can
+// build exactly what the harness builds, instead of standing up a model to reach
+// the same state. Nothing else should call it.
+func ToolContext(ctx context.Context, sessionID, roleID, callID, operationID string) context.Context {
+	ctx = context.WithValue(ctx, toolCallKey{}, callID)
+	ctx = context.WithValue(ctx, toolSessionKey{}, sessionID)
+	ctx = context.WithValue(ctx, toolRoleKey{}, roleID)
+	if operationID != "" {
+		ctx = context.WithValue(ctx, toolOperationKey{}, operationID)
+	}
+	return ctx
+}
+
+// ToolInputs returns the user messages that started this run, in order.
+//
+// It is the only trusted source for a write tool's provenance check. Assistant
+// output, tool results and earlier history are all excluded, so a fabricated
+// quote cannot be laundered through a previous reply and then cited as consent.
+// The returned slice is read-only; a caller must not modify it.
+func ToolInputs(ctx context.Context) []string {
+	inputs, _ := ctx.Value(toolInputsKey{}).([]string)
+	return inputs
+}
+
+// WithToolInputs adds this turn's user text. The run wraps its context once
+// before the first model call, so every tool call in the turn sees the same
+// inputs and a retry cannot widen them.
+func WithToolInputs(ctx context.Context, inputs []Message) context.Context {
+	texts := make([]string, 0, len(inputs))
+	for _, input := range inputs {
+		if input.Role == "user" && input.Content != "" {
+			texts = append(texts, input.Content)
+		}
+	}
+	return context.WithValue(ctx, toolInputsKey{}, texts)
+}
 
 // ToolCallID lets a tool scope an idempotency key to the current invocation.
 func ToolCallID(ctx context.Context) string { id, _ := ctx.Value(toolCallKey{}).(string); return id }
@@ -336,7 +378,7 @@ func RunMessages(ctx context.Context, a *Agent, timeout time.Duration, inputs []
 			} else {
 				calls++
 				var recordErr error
-				result, recordErr = a.executor.Execute(ctx, assembly.Tools, call, a.config.Recorder, turn)
+				result, recordErr = a.executor.Execute(WithToolInputs(ctx, inputs), assembly.Tools, call, a.config.Recorder, turn)
 				if recordErr != nil {
 					results = append(results, result)
 					send(Event{Type: EventToolResult, ToolCall: &call, Result: &result})

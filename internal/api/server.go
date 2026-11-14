@@ -37,6 +37,7 @@ import (
 	"chat-agent/internal/topics"
 	"chat-agent/internal/turns"
 	"chat-agent/internal/webtools"
+	careplugin "chat-agent/plugins/builtin/care"
 	"chat-agent/plugins/builtin/clock"
 	"chat-agent/plugins/builtin/image"
 	"chat-agent/plugins/builtin/literature"
@@ -44,6 +45,7 @@ import (
 	"chat-agent/plugins/builtin/search"
 	skillplugin "chat-agent/plugins/builtin/skill"
 	tasksplugin "chat-agent/plugins/builtin/tasks"
+	topicplugin "chat-agent/plugins/builtin/topic"
 	"chat-agent/web"
 )
 
@@ -318,6 +320,14 @@ func New(c Config) (*Server, error) {
 	// role from the tool context rather than from a captured variable.
 	// Listing tasks is store access only; creating one carries an idempotency key
 	// and a receipt, so the add side stays in the host for now.
+	// Care needs the current turn's user text to check an evidence quote, and a
+	// gate that keeps two conversations of one role from interleaving a
+	// read-modify-write on the same revisioned settings.
+	loader.Add(careplugin.New(lifeStore, s))
+	// Discovery writes the same revisioned settings from a conversation, so it
+	// needs the same evidence and write gate; it also refuses to switch on when
+	// the deployment cannot search or read the public web at all.
+	loader.Add(topicplugin.New(topicStore, webClient, s))
 	loader.Add(tasksplugin.New(taskStore))
 	loader.Add(skillplugin.New(roleManager))
 	loader.Add(memoryplugin.New(mem))
@@ -488,7 +498,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // version is the service version reported by /api/status.
-const version = "0.6.2"
+const version = "0.6.3"
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model

@@ -36,7 +36,7 @@ func (s *Server) activityChatTools(role string, inputs []string, sessionID strin
 		if err := toolInput(data, &args); err != nil {
 			return probe.ToolResult{}, err
 		}
-		if !turnHasEvidence(inputs, args.Evidence) || args.Revision < 1 || (args.Progress == nil && args.Status == nil) {
+		if !probe.TurnHasEvidence(inputs, args.Evidence) || args.Revision < 1 || (args.Progress == nil && args.Status == nil) {
 			return probe.ToolResult{}, errors.New("需要当前用户消息的依据、有效版本和待修改字段")
 		}
 		canonical, _ := json.Marshal(args)

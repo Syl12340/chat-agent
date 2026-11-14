@@ -69,7 +69,7 @@ func (s *Server) activityOpenTool(role string, inputs []string, sessionID string
 		if args.Query != "" {
 			return probe.ToolResult{}, errors.New("query 仅用于读取活动，不用于修改")
 		}
-		if !turnHasEvidence(inputs, args.Evidence) {
+		if !probe.TurnHasEvidence(inputs, args.Evidence) {
 			return probe.ToolResult{}, errors.New("开始或接续活动需要当前用户消息中的依据")
 		}
 		if args.Action == "create" {

@@ -533,7 +533,7 @@ func (s *Server) episodeTools(role string, inputs []string, sessionID string) []
 		if err := toolInput(data, &args); err != nil {
 			return probe.ToolResult{}, err
 		}
-		if !turnHasEvidence(inputs, args.Evidence) {
+		if !probe.TurnHasEvidence(inputs, args.Evidence) {
 			return probe.ToolResult{}, errors.New("事件候选缺少当前用户消息中的依据")
 		}
 		item, err := s.life.AddEpisode(role, companion.EpisodeDraft{Title: args.Title, Content: args.Content, Status: "pending", EventAt: args.EventAt, FollowupAt: args.FollowupAt, AllowFollowup: args.AllowFollowup, SourceSessionID: sessionID, SourceText: args.Evidence})

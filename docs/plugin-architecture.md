@@ -173,6 +173,53 @@ manifest 按客户端**实际能力**生成：没配搜索端点就没有 `web_s
 `internal/api` 里原来的 `webTools()` 和 `internal/api/tasks.go` 里的
 150 行硬编码已删除。Core 不再知道这两个工具存在。
 
+### 当前清单（0.6.3：11 个插件 / 27 个工具）
+
+| 插件 | 工具 |
+| --- | --- |
+| `builtin.search` | `web_search` `web_fetch` |
+| `builtin.literature` | `literature_search` `literature_read` |
+| `builtin.memory` | `memory_search` `memory_write` |
+| `builtin.skill` | `skill_load` |
+| `builtin.tasks` | `todo_add` `todo_list` `todo_complete` `reminder_add` `reminder_list` `reminder_cancel` |
+| `builtin.care` | `care_preferences` |
+| `builtin.topic` | `topic_preferences` |
+| `builtin.image` | `image_health` |
+| `builtin.clock` | `get_current_time` |
+| `builtin.server` | `server_status` `server_service` `server_logs` `server_releases` `server_action` |
+| `builtin.workspace` | `workspace_list` `workspace_read` `workspace_search` `workspace_share` `workspace_shell` |
+
+还留在 `internal/api` 的：`episode_propose`、`knowledge_manage`、`shared_activity_open`、
+`shared_activity_update`，以及图像三件套和 `local_workspace`。
+
+### 工具上下文：曾经搬不动的原因
+
+搬到 `plugins/builtin/*` 的前提是「只依赖注入的窄接口 + 工具上下文」。两个缺口卡了
+好几轮：
+
+1. **当前轮用户原话**。带 `evidence` 字段的工具（关怀、兴趣、事件候选、资料整理）
+   都要证明「用户确实这么说了」。`StepContext` 只有角色、会话、轮次和预算，没有
+   `inputs`，插件只能看着 `evidence` 干瞪眼。
+2. **跨会话同角色运行状态**。同角色的两条对话同时读改写同一份带修订号的设置，后写的
+   会静默覆盖前一个。
+
+0.6.3 补的三样东西，都在 `internal/probe` 和 `internal/pluginapi`：
+
+- `probe.WithToolInputs` / `probe.ToolInputs(ctx)` —— 只有本轮用户消息。助手输出、
+  工具结果、更早的历史都不在里面，所以伪造或改写的引文过不了 `probe.TurnHasEvidence`。
+- `pluginapi.WriteGate` —— `WithRoleWrite(role, session, func() error)` 把整个读改写
+  塞进宿主的锁里；单独问「现在安全吗」然后去写是不行的，查完到写之间会有 run 插进来。
+  拒绝时返回 `ErrWriteSessionEnded` / `ErrWriteRoleBusy`，中文文案由插件自己决定。
+- `probe.ToolContext(ctx, session, role, call, operation)` —— 把「哪次调用、哪个会话、
+  哪个角色、哪个幂等键」收敛成**唯一一份定义**，执行器也改用它。
+
+第三样是副作用很大的顺手活：context key 是包内私有的，插件在此之前**没法写单元测试**，
+memory / tasks / skill 三个插件因此一直是零测试。现在
+`plugins/builtin/care/plugin_test.go` 能直接搭出执行器同款上下文。
+
+**教训**：一个工具搬不动，先看它读了哪些宿主状态，而不是先给它加参数。`care_preferences`
+需要的从来不是更多字段，是一个能安全提交写入的位置。
+
 ## 9. 踩过的坑
 
 **typed nil 装进接口不等于 nil**。`search.New()` 在未配置时返回零值，

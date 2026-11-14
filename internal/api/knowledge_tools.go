@@ -77,7 +77,7 @@ func (s *Server) knowledgeTools(role string, inputs []string, sessionID string) 
 		if args.Operation != "update" && args.Operation != "forget" && args.Operation != "merge" {
 			return probe.ToolResult{}, errors.New("知识操作无效")
 		}
-		if !turnHasEvidence(inputs, args.Evidence) {
+		if !probe.TurnHasEvidence(inputs, args.Evidence) {
 			return probe.ToolResult{}, errors.New("修改知识需要当前用户消息中的依据")
 		}
 		keyArgs := args
