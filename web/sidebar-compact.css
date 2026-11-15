@@ -40,6 +40,27 @@
 
 /* Sidebar density */
 .sidebar-note { display: none; }
+
+/* DSH separates the rail from the conversation with its own fill plus a half-pixel
+   hairline, not with grey layers: sidebar-fill is rgb(249,250,251) in light and
+   rgb(27,27,28) in dark, while the content stays on bg-base. The 0.5px border is
+   DSH's AppFrame value; at 1px it reads as a drawn line rather than a seam. */
+.sidebar {
+  width: 280px;
+  background: var(--dsw-specific-sidebar-fill);
+  border-right: 0.5px solid var(--dsw-alias-border-l3);
+}
+
+/* This sheet loads after the breakpoint rules, and a media query carries no extra
+   specificity, so the branches have to be restated here or the rail would ignore
+   them. 264px is DSH's SIDEBAR_MIN. */
+@media (max-width: 1100px) {
+  .sidebar { width: 264px; }
+}
+
+@media (max-width: 760px) {
+  .sidebar { width: min(300px, 86vw); border-right: 0; }
+}
 .sidebar .brand-sub { display: none; }
 .sidebar .brand { min-height: 34px; margin: 0 6px 12px; gap: 8px; }
 .sidebar .brand img { width: 26px; height: 26px; border-radius: 8px; }

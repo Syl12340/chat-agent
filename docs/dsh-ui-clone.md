@@ -83,6 +83,42 @@ hover 完全一致。`--surface-container` 同理改指 `card-fill`（亮 `#fafa
 `page.route`），确认亮/暗两套都能用再发布。线上复查：`dsw-tokens.css` 与 `tokens.css`
 均 200，`--dsw-alias-bg-base` 在亮色解析为 `rgb(255,255,255)`、暗色 `rgb(21,21,23)`。
 
+## 第二步：栏框（已完成，0.7.9）
+
+DSH 的列宽不是拍脑袋的，写在 `dsh-client-ui-layout/src/client/columns.ts` 里，是一份契约：
+
+| 常量 | 值 | 含义 |
+| --- | --- | --- |
+| `SIDEBAR_DEFAULT` | 280 | 未拖动前的宽度 |
+| `SIDEBAR_MIN` / `MAX` | 264 / 420 | 拖动夹取范围 |
+| `SIDEBAR_COLLAPSED` | 56 | 收起后的图标栏 |
+| `CENTER_MIN` | 400 | 右栏打开时保护的中心宽度 |
+| `SIDEBAR_AUTO_COLLAPSE` | 1024 | 自动收成图标栏 |
+| `SIDEBAR_DRAWER_BREAKPOINT` | 768 | 改为覆盖式抽屉 |
+
+侧栏原本已经是 280px，正好等于 DSH 默认值。真正的差别在**分隔方式**：
+
+```css
+/* DSH AppFrame.module.css */
+.sidebarCol {
+  background: var(--dsw-specific-sidebar-fill);   /* 亮 rgb(249,250,251) / 暗 rgb(27,27,28) */
+  border-right: 0.5px solid var(--dsw-alias-border-l3);
+}
+```
+
+我们原来是 `background: var(--surface-low)`（上一步之后等于纯白）+ `1px` 实线。改成
+`sidebar-fill` + **0.5px** 之后，侧栏与内容之间才有了 DSH 那种"面与面的接缝"，而不是
+一条画上去的线。
+
+### 一个必须注意的层叠陷阱
+
+`sidebar-compact.css` 晚于所有断点规则加载，而 **media query 不增加特异性**。所以
+`@media(max-width:760px){.sidebar{width:min(300px,86vw)}}` 会被后面那条无条件的
+`.sidebar{width:280px}` 盖掉——移动端会变成固定 280px。
+
+解法是把分支在同一个文件里重述一遍（264px 是 DSH 的 `SIDEBAR_MIN`）。这类问题只有把
+加载顺序和断点放在一起看才能发现。
+
 ## 复刻计划（剩余步骤）
 
 技术栈不同（DSH 是 React + CSS Modules，chat-agent 是原生 JS + 全局 CSS），所以**不是逐行
