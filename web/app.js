@@ -1077,8 +1077,8 @@ ui['reset-chat'].addEventListener('click', async () => {
 ui.settings.addEventListener('click', () => {
   if (!state.config) return;
   ui['connection-info'].replaceChildren();
-  for (const [label, value] of [['服务', location.host], ['连接', `${state.transport.carrier === 'securewire' ? '加密直连' : 'HTTP/SSH'} · 协议 v${state.transport.protocol || '?'}`], ['模型', state.config.model], ['模式', state.config.demo ? '本地演示，无真实模型' : '自定义模型 API'], ['时区', state.config.time_zone], ['提醒', '服务端收件箱，无关闭应用推送'], ['网页抓取', state.config.web_fetch ? '限定域名，已开启' : '未开启'], ['网页搜索', state.config.web_search ? '自定义端点，已开启' : '未开启'], ['响应期限', `${state.config.timeout_seconds} 秒`]]) {
-    const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = label; dd.textContent = value; ui['connection-info'].append(dt, dd);
+  for (const [label, value, state_, hint] of [['服务', location.host], ['连接', `${state.transport.carrier === 'securewire' ? '加密直连' : 'HTTP/SSH'} · 协议 v${state.transport.protocol || '?'}`], ['模型', state.config.model], ['模式', state.config.demo ? '本地演示，无真实模型' : '自定义模型 API'], ['时区', state.config.time_zone], ['提醒', '服务端收件箱，无关闭应用推送'], ['网页抓取', state.config.web_fetch ? '限定域名，已开启' : '未开启'], ['网页搜索', state.config.web_search ? '自定义端点，已开启' : '未开启'], ['图像生成', state.config.image_generation ? '已就绪' : (state.config.image_reason || '不可用'), state.config.image_generation ? 'on' : 'off'], ['响应期限', `${state.config.timeout_seconds} 秒`]]) {
+    const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = label; dd.textContent = value; if (state_) dd.dataset.state = state_; if (hint) dd.title = hint; ui['connection-info'].append(dt, dd);
   }
   ui['settings-dialog'].showModal(); deviceAuth.refreshManagement();
   modelConfigs.refresh();

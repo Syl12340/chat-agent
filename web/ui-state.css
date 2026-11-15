@@ -1,0 +1,20 @@
+/* Making state visible where a person can act on it.
+
+   The server has computed image_generation / image_reason every 20 seconds for a
+   long time; nothing showed it, so "生成不了图" had no explanation on screen.
+   Likewise the three topbar icons carried identical weight, including the one
+   that deletes a conversation. */
+
+#delete-session:hover:not(:disabled),
+#delete-session:focus-visible {
+  color: var(--error, #d95757);
+}
+
+#reset-chat:hover:not(:disabled) {
+  color: var(--on-surface);
+}
+
+/* A capability row reads as a status, not as a setting: the value carries the
+   weight, the label stays quiet. */
+#connection-info dd[data-state="off"] { color: var(--error, #d95757); }
+#connection-info dd[data-state="on"] { color: var(--on-surface); }
