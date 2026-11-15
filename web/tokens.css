@@ -23,9 +23,12 @@
   --error: #d92d20; --error-container: #fdeceb; --on-error-container: #4a1212;
   --warning-container: #fef5e7; --on-warning-container: #27241f;
 
-  /* Surfaces, from the page up to the most raised control. */
-  --surface: #fff; --surface-low: #f8f8f8; --surface-container: #f3f3f3; --surface-high: #ebebeb; --surface-highest: #e4e4e4;
-  --on-surface: #222; --on-surface-variant: #737373; --outline: #81858c; --outline-variant: #e5e5e5;
+  /* Surfaces, from the page up to the most raised control.
+     DSH keeps every light layer at pure white and separates them with hairline
+     borders instead of grey fills; --surface-highest uses its card tint so the
+     most raised control still reads as raised. */
+  --surface: var(--dsw-alias-bg-base); --surface-low: var(--dsw-alias-bg-layer-1); --surface-container: var(--dsw-alias-card-fill); --surface-high: var(--dsw-alias-interactive-bg-hover); --surface-highest: var(--dsw-alias-interactive-bg-active);
+  --on-surface: var(--dsw-alias-label-primary); --on-surface-variant: var(--dsw-alias-label-secondary); --outline: var(--dsw-alias-border-l4); --outline-variant: var(--dsw-alias-border-l2);
   --sidebar: var(--surface-low);
   --scrim: #0f111566;
   --shadow: 0 0 0 .5px #0000000a, 0 4px 16px #0000000f;
@@ -78,8 +81,8 @@
     --error: #ff8a80; --error-container: #3a1715; --on-error-container: #ffd9d6;
     --warning-container: #27241f; --on-warning-container: #fef5e7;
 
-    --surface: #0f1115; --surface-low: #151517; --surface-container: #232324; --surface-high: #2c2c2e; --surface-highest: #353638;
-    --on-surface: #f5f6f7; --on-surface-variant: #adb2b8; --outline: #61666b; --outline-variant: #2c2c2e;
+    --surface: var(--dsw-alias-bg-base); --surface-low: var(--dsw-alias-bg-layer-1); --surface-container: var(--dsw-alias-card-fill); --surface-high: var(--dsw-alias-interactive-bg-hover); --surface-highest: var(--dsw-alias-interactive-bg-active);
+    --on-surface: var(--dsw-alias-label-primary); --on-surface-variant: var(--dsw-alias-label-secondary); --outline: var(--dsw-alias-border-l4); --outline-variant: var(--dsw-alias-border-l2);
     --sidebar: #151517;
     --scrim: #000000cc;
     --shadow: 0 0 0 .5px #ffffff12, 0 8px 32px #000000b3;

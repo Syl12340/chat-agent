@@ -51,7 +51,39 @@ python .cache/asar-extract.py D:\dsh\resources\app.asar 'theme/src' .cache\dsh-u
 
 样式表除令牌外还有：`base.css`、`corner-shape.css`、`focus.css`、`scrollbar.css`、`shiki.css`。
 
-## 复刻计划（下一步）
+## 第一步：令牌层（已完成，0.7.8）
+
+`web/dsw-tokens.css` 由 `.cache/gen-dsw-tokens.py` 从 `design-platform.css` 生成，**228 个
+`--dsw-*` 声明原样复制**，只改选择器形状（DSH 用 `body` / `body[data-ds-dark-theme]`，
+我们用 `:root` + `prefers-color-scheme`）。不要手改这个文件，改生成脚本。
+
+然后 `web/tokens.css` 把现有变量名指向它们，约 2000 行已有 CSS 一行没动就继承了 DSH 的配色。
+
+### 三个发现
+
+**1. 调色板本来就是同一套。** 对比之后发现 chat-agent 的 `#0f1115`、`#61666b`、`#4176e6`、
+`#151517` 精确等于 DSH 的 `neutral-bluish-1000`、`neutral-bluish-700`、`deepseek-500`、
+`neutral-bluish-950`。所以「复刻」的差距不在颜色值，而在**层级策略**：DSH 亮色下
+`bg-layer-1/2/3` 全是纯白，靠 `border-l1..l4` 的 rgba 细线分层；我们原来用 `#f8f8f8` /
+`#f3f3f3` / `#ebebeb` 的灰阶。
+
+**2. 亮色全白不会糊。** 这是事前最担心的（侧栏与内容只靠一条线区分）。实测通过：
+浏览器验证过 `surface = surfaceLow = rgb(255,255,255)`，界面依然分得清。
+
+**3. `--surface-high` 不能映射到 `bg-layer-3`。** 第一次按字面对映，结果亮色下
+`surface-high` 变成纯白——而它在 37 处 CSS 里被用作 hover 与选中底色，等于让所有交互反馈
+失效。改用 DSH 的 `interactive-bg-hover` / `interactive-bg-active`（半透明
+`rgba(38,49,72,.06)` / `rgba(255,255,255,.08)`）：既能自适应任意底色，又和 DSH 的
+hover 完全一致。`--surface-container` 同理改指 `card-fill`（亮 `#fafafa`、暗 `#2c2c2e`），
+否则用户消息气泡和卡片会失去可见背景。
+
+### 验证方式
+
+部署前用 Playwright **拦截 CSS 响应**预览（CSP 禁止 `addStyleTag` 内联样式，所以走
+`page.route`），确认亮/暗两套都能用再发布。线上复查：`dsw-tokens.css` 与 `tokens.css`
+均 200，`--dsw-alias-bg-base` 在亮色解析为 `rgb(255,255,255)`、暗色 `rgb(21,21,23)`。
+
+## 复刻计划（剩余步骤）
 
 技术栈不同（DSH 是 React + CSS Modules，chat-agent 是原生 JS + 全局 CSS），所以**不是逐行
 照抄组件**，而是：
