@@ -20,6 +20,7 @@
   <link rel="stylesheet" href="/tool-card.css">
   <link rel="stylesheet" href="/surface.css">
   <link rel="stylesheet" href="/dsh-look.css">
+<link rel="stylesheet" href="/sidebar-compact.css">
   <script src="/theme.js"></script>
   <script src="/app.js" type="module"></script>
 </head>
@@ -41,7 +42,6 @@
           <button id="shell-server" type="button" class="shell-action">服务器</button>
         </div>
       </div>
-      <div class="sidebar-note"><span class="note-dot"></span><div>一点想法，随时放进口袋。<small>对话保存在你的服务器上</small></div></div>
       <div class="sidebar-footer"><span class="protected"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10h12v10H6zM8 10V7a4 4 0 0 1 8 0v3"/></svg>访问已保护</span><button id="logout" class="text-button">退出</button></div>
     </aside>
 
@@ -88,7 +88,7 @@
           <input id="image-files" type="file" accept="image/jpeg,image/png" multiple hidden>
           <label class="sr-only" for="prompt">给 chat-agent 发消息</label>
           <textarea id="prompt" name="message" rows="1" placeholder="发送消息，或添加图片…" maxlength="64000" disabled></textarea>
-          <div class="composer-bottom"><button id="image-add" class="image-add" type="button" aria-label="添加图片" title="添加 JPEG 或 PNG 图片" disabled>＋</button><label class="thinking-control"><span class="sr-only">思考强度</span><select id="thinking-picker" class="thinking-picker" aria-label="选择思考强度" title="更高强度可能增加等待时间与用量" disabled><option value="off">关闭思考</option></select></label><span class="composer-spacer"></span><span class="composer-label"><span class="status-dot"></span><span id="model-label">chat-agent</span></span><button id="voice-input" class="voice-input" type="button" title="系统识别可能联网；文字确认后才发送" hidden>语音输入</button><button id="send" class="send-button" type="submit" aria-label="发送消息" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button><button id="stop" class="stop-button" type="button" aria-label="停止生成" hidden><span></span>停止生成</button></div>
+          <div class="composer-bottom"><button id="image-add" class="image-add" type="button" aria-label="添加图片" title="添加 JPEG 或 PNG 图片" disabled>＋</button><label class="thinking-control"><span class="sr-only">思考强度</span><select id="thinking-picker" class="thinking-picker" aria-label="选择思考强度" title="更高强度可能增加等待时间与用量" disabled><option value="off">关闭思考</option></select></label><span class="composer-spacer"></span><span class="composer-label"><span class="status-dot"></span><span id="model-label">chat-agent</span></span><button id="voice-input" class="voice-input" type="button" title="系统识别可能联网；文字确认后才发送" hidden>语音输入</button><button id="send" class="send-button" type="submit" aria-label="发送消息" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button><button id="stop" class="stop-button" type="button" aria-label="停止生成" title="停止生成" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2.5"/></svg></button></div>
           <p id="image-hint" class="image-hint" role="status" hidden></p>
         </form>
         <p class="composer-hint"><span>Enter 发送 · Shift + Enter 换行</span><span>AI 的回答可能存在偏差，请核实重要信息</span></p>

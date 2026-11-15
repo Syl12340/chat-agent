@@ -1,0 +1,55 @@
+/* Rail density, kept in its own file so the layered tables stay untouched.
+   The sidebar had nine stacked blocks; this trims the marketing copy, the brand
+   subtitle and the oversized paddings that made it read as a landing page
+   rather than a file list. */
+
+/* The composer's stop button shares the send button's slot. Two equally loud
+   buttons side by side was the conflict: sending still queues while a turn runs,
+   but it steps back so stop is the obvious action. */
+.stop-button {
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 8px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--on-surface);
+  color: var(--surface);
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stop-button:hover:not(:disabled) { opacity: .8; }
+.stop-button:disabled { opacity: .5; }
+.stop-button svg { width: 18px; height: 18px; fill: currentColor; }
+
+.send-button.is-queued {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  background: var(--surface-high);
+  color: var(--on-surface-variant);
+}
+
+.send-button.is-queued:hover:not(:disabled) {
+  background: var(--surface-high);
+  opacity: 1;
+}
+
+/* Sidebar density */
+.sidebar-note { display: none; }
+.sidebar .brand-sub { display: none; }
+.sidebar .brand { min-height: 34px; margin: 0 6px 12px; gap: 8px; }
+.sidebar .brand img { width: 26px; height: 26px; border-radius: 8px; }
+.sidebar .new-chat { min-height: 40px; margin: 0 0 8px; border-radius: 12px; font-size: 14px; padding: 8px 12px; }
+.sidebar .session-filter { min-height: 32px; border: 0; border-radius: 9px; background: var(--surface-low); font-size: 12px; margin: 0 0 4px; padding: 6px 10px; }
+.sidebar .session-filter:focus { outline: 1px solid var(--outline); background: var(--surface-container); }
+.sidebar .list-heading { padding: 12px 8px 6px; font-size: 11px; }
+.sidebar .session-row { min-height: 32px; border-radius: 9px; margin-bottom: 1px; }
+.sidebar .sidebar-footer { padding: 8px 6px; margin-top: auto; }
+
+@media (max-width: 760px) {
+  .stop-button { width: 34px; height: 34px; min-height: 34px; padding: 7px; }
+}

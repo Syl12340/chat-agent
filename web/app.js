@@ -163,6 +163,10 @@ function updateUI() {
   ui.send.disabled = locked || state.compacting || state.submitting || state.submitUnknown || state.imageBusy || !chatInput?.ready() || (!ui.prompt.value.trim() && !state.draftImageCount);
   ui.send.setAttribute('aria-label', state.submitting ? '正在提交消息' : busy ? '发送到消息队列' : '发送消息');
   ui.stop.hidden = !(busy || state.queuedCount);
+  // While a turn runs, send is still useful (it queues) but is no longer the
+  // primary action: stop takes that slot, and send steps back instead of sitting
+  // next to it looking equally important.
+  ui.send.classList.toggle('is-queued', busy || Boolean(state.queuedCount));
   ui.stop.disabled = state.stopping || !state.current;
   const navigationLocked = locked || busy || state.submitting || state.submitUnknown || state.imageBusy;
   ui['new-chat'].disabled = navigationLocked;
@@ -532,8 +536,11 @@ function renderUserContent(body,text) {
 const liveMessages = new Set();
 setInterval(() => {
   // The turn is rebuilt on every poll, so the start time lives on the session
-  // rather than on any one card; otherwise elapsed time restarts at zero.
-  if (!document.querySelector('.message.pending')) { state.turnStartedAt = 0; liveMessages.clear(); return; }
+  // rather than on any one card; otherwise elapsed time restarts at zero. Being
+  // momentarily without a pending node is not the same as being idle: keep the
+  // clock through streaming and queued states too.
+  const busy = Boolean(document.querySelector('.message.pending')) || state.streaming || state.queuedCount;
+  if (!busy) { state.turnStartedAt = 0; liveMessages.clear(); return; }
   if (!state.turnStartedAt) state.turnStartedAt = Date.now();
   for (const message of liveMessages) {
     if (!message.node.isConnected || !message.node.classList.contains('pending')) { liveMessages.delete(message); continue; }
