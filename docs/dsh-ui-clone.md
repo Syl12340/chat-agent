@@ -143,6 +143,42 @@ DSH 把 padding 放在滚动容器上、在内部限制列宽，所以 748px 是
 我们把 padding 和 max-width 放在同一个盒子上，直接写 `max-width: 748px` 会让正文只有
 700px（748 − 2×24）。写成 **796px** 才对——第一次就踩了，截图一量就发现了。
 
+## 第四步：输入条（已完成，0.7.11）
+
+composer 原来是个「圆角文本框」：20px 圆角、页面白底、聚焦时 2px 蓝色光晕。
+DSH 的 `InputBar.module.css` 里 `.card` 是另一套语言：
+
+```css
+.card {
+  gap: 12px;                                   /* 文本区与按钮行之间 */
+  padding-top: 8px;
+  border: 0;
+  border-radius: var(--dsw-radius-panel);       /* 28px */
+  background: var(--dsw-specific-input-major);  /* 亮 #fff / 暗 rgb(44,44,46) */
+  box-shadow: var(--dsw-elevation-soft);
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l2);
+  font-size: 14px; line-height: 24px;
+}
+```
+
+重点是**边框不是边框**：DSH 把描边画在 elevation 里（`elevation-stroke-color`），所以它
+不占布局、不参与 `border-box` 计算。聚焦时是描边加深，不是加粗一圈光晕。
+
+`--dsw-radius-panel: 28px` 来自 `base.css`（不在 design-platform.css 里）——那里才是
+整套半径阶梯：`xs 4 / sm 8 / md 12 / lg 16 / xl 20 / panel 28`。
+
+`--dsw-elevation-soft` 不在这个 asar 里：`base.css` 的注释说明它由上游 deepsuite 的
+`theme/global.css` 提供。这里用它能重绑的 `border-l2` 重建了同一对描边 + 阴影。
+
+### 顺带修掉一个一直显示错的小图标
+
+工具组前面的展开标记一直是个小圆点。查下来：`content:'▸'`（U+25B8）在字体栈里**没有
+字形**，浏览器回退成了别的字符。改成用 border 画三角形后，探测确认属性全对
+（`content:""`、5×8px、`rgb(97,102,107)`）——但截图里看着还是个点，因为 5px 实在太小。
+放大到 6×10 才看得出来。
+
+**属性正确不等于看得见**，这一步只能靠截图确认。
+
 ## 复刻计划（剩余步骤）
 
 技术栈不同（DSH 是 React + CSS Modules，chat-agent 是原生 JS + 全局 CSS），所以**不是逐行
