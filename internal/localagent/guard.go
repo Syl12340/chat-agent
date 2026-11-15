@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
+
+	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
 const textLimit = 256 << 10
@@ -156,10 +158,29 @@ func (g *Guard) Read(path string) (string, error) {
 		return "", errors.New("workspace file is not bounded text")
 	}
 	raw, err := io.ReadAll(io.LimitReader(f, textLimit+1))
-	if err != nil || len(raw) > textLimit || !utf8.Valid(raw) || strings.IndexByte(string(raw), 0) >= 0 {
+	if err != nil || len(raw) > textLimit || strings.IndexByte(string(raw), 0) >= 0 {
 		return "", errors.New("workspace file is not bounded UTF-8 text")
 	}
-	return string(raw), nil
+	// Windows editors in a Chinese locale still write GB18030 by default, so a
+	// UTF-8-only read makes most of that machine's text files unreadable. Decode
+	// rather than refuse; anything that is not valid GB18030 still fails.
+	if utf8.Valid(raw) {
+		return string(raw), nil
+	}
+	if decoded, ok := decodeLegacyText(raw); ok {
+		return decoded, nil
+	}
+	return "", errors.New("workspace file is not bounded UTF-8 text")
+}
+
+// decodeLegacyText converts a GB18030 byte sequence to UTF-8. textLimit bounds
+// the input already, so the decoded string is bounded too.
+func decodeLegacyText(raw []byte) (string, bool) {
+	decoded, err := simplifiedchinese.GB18030.NewDecoder().Bytes(raw)
+	if err != nil || !utf8.Valid(decoded) {
+		return "", false
+	}
+	return string(decoded), true
 }
 
 func (g *Guard) Search(query string) ([]string, error) {

@@ -178,6 +178,33 @@ if status != "completed" { next.Paused = true }
 返回了已批准记录（读路径成立）。**写路径（update / forget / merge）仍然只有测试覆盖**，
 和 `care_preferences` 一样缺一次真实的用户原话。
 
+## 双端 Agent：中文 Windows 的文本读不出来的问题（0.7.5）
+
+本地 agent 第一次真跑时，`list` 成功、`read` 报 `workspace file is not bounded UTF-8 text`。
+当时以为是我把测试文件写错了编码，查下去发现两件事：
+
+1. 那个文件确实不是 UTF-8：首字节 `D5 E2 CA C7` 是 GBK 的「这是」。我用 PowerShell
+   `Set-Content` 写的，中文 Windows 上它默认就是 GBK。
+2. 但这暴露的**不是测试问题，是产品缺口**：中文 Windows 的编辑器（记事本、VS Code 默认、
+   Office 导出）至今大量写 GB18030。本地 agent 只吃 UTF-8，等于在这台机器上读不了大部分
+   中文文本文件——而这正是它存在的理由。
+
+修法：UTF-8 校验失败后再尝试 GB18030 解码，成功就返回文本；仍然不是合法 GB18030 的（二进制）
+继续拒绝。解码在 UTF-8 通过之后才发生，所以已经是 UTF-8 的文件一个字都不会被改动。
+
+为了这个引入了 `golang.org/x/text`（此前项目只有 websocket 一个三方依赖），理由和许可证
+记录在 `THIRD_PARTY_NOTICES.md`，BSD-3 全文在 `licenses/golang-x-text-BSD.txt`。
+
+### 端到端实测（0.7.5，本机 127.0.0.1:9992 → 服务器）
+
+| 步骤 | 结果 |
+| --- | --- |
+| list | 返回 5 个真实文件 |
+| read `笔记.txt`（GBK） | 正确解码为「这是本地 agent 演示目录。里面只有几段文字，没有隐私内容。」 |
+| `local_action` hostname | 正确走到审批链，模型解释风险并请用户确认，没有擅自执行 |
+
+临时会话验证完已删除。
+
 ## 输入区与侧栏（0.7.4）
 
 ### 发送和停止不再抢同一个位置

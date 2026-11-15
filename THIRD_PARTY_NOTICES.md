@@ -12,6 +12,19 @@ The Go package is used only by the optional QQ Open Platform gateway adapter in
 transport; chat-agent continues to own identity binding, session routing,
 authorization, durable delivery settlement and Agent execution.
 
+## golang.org/x/text 0.44.0
+
+Source: https://cs.opensource.google/go/x/text/+/refs/tags/v0.44.0
+
+Copyright 2009 The Go Authors. Licensed under the BSD 3-Clause License; the
+complete notice is retained in [licenses/golang-x-text-BSD.txt](licenses/golang-x-text-BSD.txt).
+
+Used only by `internal/localagent` to decode GB18030 text that the paired
+computer's own editors still produce by default in a Chinese locale. Before
+this, a UTF-8-only read made most text files on that machine unreadable. The
+decoder runs only after the strict UTF-8 path fails, so nothing that is already
+valid UTF-8 is touched, and binary files are still refused.
+
 ## DeepSeek Harness
 
 Source: https://github.com/deepseek-ai/deepseek-harness
