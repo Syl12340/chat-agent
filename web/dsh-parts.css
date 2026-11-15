@@ -173,6 +173,60 @@
   border-radius: 8px;
 }
 
+/* Collapsed rail: DSH's SIDEBAR_COLLAPSED is "a 24px icon column between 16px
+   horizontal paddings", i.e. 56px. Everything that carries text goes; the logo and
+   the new-session glyph stay. Scoped to desktop because the mobile sidebar is a
+   drawer, where a 56px strip would be the wrong widget entirely. */
+@media (min-width: 761px) {
+  body.rail-collapsed .sidebar {
+    width: 56px;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  body.rail-collapsed .sidebar .brand span,
+  body.rail-collapsed .sidebar .new-chat-label,
+  body.rail-collapsed .sidebar .new-chat kbd,
+  body.rail-collapsed .sidebar .list-heading,
+  body.rail-collapsed .sidebar #session-filter,
+  body.rail-collapsed .sidebar #sessions,
+  body.rail-collapsed .sidebar #agent-entrypoints,
+  body.rail-collapsed .sidebar #shell-status {
+    display: none;
+  }
+
+  body.rail-collapsed .sidebar .brand {
+    margin: 0 0 12px;
+    justify-content: center;
+  }
+
+  body.rail-collapsed .sidebar .new-chat {
+    width: 24px;
+    min-width: 24px;
+    height: 24px;
+    min-height: 24px;
+    padding: 0;
+    margin: 0 auto 8px;
+    justify-content: center;
+    border: 0;
+    background: none;
+    font-size: 16px;
+  }
+
+  /* At 56px the footer's two text labels stack into a vertical column, so the whole
+     block goes rather than reflowing into unreadable fragments. */
+  body.rail-collapsed .sidebar .sidebar-footer {
+    display: none;
+  }
+}
+
+/* Collapsing the rail is a desktop affordance; on mobile the sidebar is a drawer. */
+.rail-toggle { display: none; }
+
+@media (min-width: 761px) {
+  .rail-toggle { display: inline-flex; }
+}
+
 @media (max-width: 760px) {
   .messages { padding: 12px 16px 20px; }
   .message-body { font-size: 15px; line-height: 24px; }

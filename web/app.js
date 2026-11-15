@@ -24,7 +24,7 @@ import { createLocalAgentUI } from '/local-agent-ui.js';
 import { createCoursewareUI } from '/courseware.js';
 import { adoptTransportInfo, createTransportState, observeTransport, transportFailed, transportHeaders, transportNetworkChanged } from '/transport.js';
 const $ = id => document.getElementById(id);
-const ui = Object.fromEntries(['sidebar','drawer-scrim','menu','new-chat','sessions','session-count','logout','chat-title','connection-label','demo-badge','conversation','welcome','messages','prompt','composer','send','stop','notice','model-label','login-overlay','login-form','access-token','login-button','login-error','settings','settings-dialog','close-settings','connection-info','reset-chat','delete-session','offline-banner','install'].map(id => [id, $(id)]));
+const ui = Object.fromEntries(['sidebar','drawer-scrim','menu','rail-toggle','new-chat','sessions','session-count','logout','chat-title','connection-label','demo-badge','conversation','welcome','messages','prompt','composer','send','stop','notice','model-label','login-overlay','login-form','access-token','login-button','login-error','settings','settings-dialog','close-settings','connection-info','reset-chat','delete-session','offline-banner','install'].map(id => [id, $(id)]));
 for (const id of ['memory-open','memory-count','role-open','memory-dialog','memory-close','memory-role-name','memory-list','memory-form','memory-content','memory-status','memory-save','memory-cancel-edit','memory-form-label','memory-export','memory-message','role-dialog','role-close','role-id-label','role-title','role-form','role-file','role-content','role-save','role-skills','role-message','compact-context','compact-message','summary-details','summary-content']) ui[id] = $(id);
 const storage = {
   get(key) { try { return sessionStorage.getItem(key); } catch { return null; } },
@@ -1051,6 +1051,20 @@ ui.logout.addEventListener('click', logout);
 ui['new-chat'].addEventListener('click', newChat);
 $('session-filter').addEventListener('input',renderSessions);
 ui.menu.addEventListener('click', () => drawer(!ui.sidebar.classList.contains('open')));
+// DSH collapses the rail to a 56px icon column. The choice is a preference, so it
+// lives in localStorage rather than the session-scoped store.
+const railStored = () => { try { return localStorage.getItem('chat-rail') === '1'; } catch { return false; } };
+function setRail(collapsed, remember = true) {
+  document.body.classList.toggle('rail-collapsed', collapsed);
+  if (!ui['rail-toggle']) return;
+  ui['rail-toggle'].setAttribute('aria-expanded', String(!collapsed));
+  ui['rail-toggle'].setAttribute('aria-label', collapsed ? '展开会话列表' : '收起会话列表');
+  if (remember) { try { localStorage.setItem('chat-rail', collapsed ? '1' : '0'); } catch {} }
+}
+if (ui['rail-toggle']) {
+  setRail(railStored(), false);
+  ui['rail-toggle'].addEventListener('click', () => setRail(!document.body.classList.contains('rail-collapsed')));
+}
 ui['drawer-scrim'].addEventListener('click', () => drawer(false));
 ui.composer.addEventListener('submit', sendMessage);
 ui.stop.addEventListener('click', stopMessage);

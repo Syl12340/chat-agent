@@ -201,6 +201,24 @@ DSH 用的是**画出来的 2×2 圆点**加 8px 间距。把 chip 的底色和�
 行圆角 `radius-sm`（8px）。会话行本来就已经是 32px，只把新会话按钮从 40px 收到 36px、
 圆角从 9px 收到 8px。
 
+## 第六步：折叠图标栏（已完成，0.7.15）
+
+DSH 的 `SIDEBAR_COLLAPSED = 56`，注释写着 "a 24px icon column between 16px horizontal
+paddings"。顶栏加了 `#rail-toggle`，点击在 280px 与 56px 之间切换，选择存进 `localStorage`
+（**不是**项目里的 `storage` 封装——那个用的是 `sessionStorage`，关掉标签页就丢，不适合做偏好）。
+
+实测：`280 → 56 → 280`，`aria-expanded` 同步为 `true/false/false→true`，会话列表与品牌文字
+在折叠时隐藏，`localStorage['chat-rail']` 为 `1`/`0`。
+
+折叠态要隐藏的东西比想象的少但也有一处意外：`.sidebar-footer`（「访问已保护 / 退出」）
+在 56px 宽度里会逐字换行，变成一列竖排文字撑满高度。第一版只给它加了 `justify-content:
+center`，截图一看就发现了——**折叠态没有逐项检查**，只检查了宽度和会话列表。
+
+### 只在桌面生效
+
+移动端的侧栏是抽屉（`SIDEBAR_DRAWER_BREAKPOINT = 768`），56px 的图标栏在那里是完全错误的
+控件。所以 `.rail-toggle` 默认 `display:none`，`@media (min-width:761px)` 才出现。
+
 ## 复刻计划（剩余步骤）
 
 技术栈不同（DSH 是 React + CSS Modules，chat-agent 是原生 JS + 全局 CSS），所以**不是逐行

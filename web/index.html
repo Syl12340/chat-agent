@@ -33,7 +33,7 @@
     <button id="drawer-scrim" class="drawer-scrim" aria-label="关闭会话列表" hidden></button>
     <aside id="sidebar" class="sidebar" aria-label="会话导航">
       <a class="brand" href="/" aria-label="chat-agent 首页"><img src="/icon-192.png" alt="" width="38" height="38"><span>chat-agent<span class="brand-sub">你的随身助手</span></span></a>
-      <button id="new-chat" class="new-chat"><span aria-hidden="true">＋</span> 开始新会话 <kbd>N</kbd></button>
+      <button id="new-chat" class="new-chat"><span aria-hidden="true">＋</span><span class="new-chat-label">开始新会话</span> <kbd>N</kbd></button>
       <div id="agent-entrypoints" hidden><button id="memory-open" disabled>记忆管理 <span id="memory-count" hidden></span></button><button id="tasks-open" disabled>待办提醒 <span id="tasks-count" hidden></span></button><button id="role-open" disabled>角色设置</button><button id="role-proposals-open" aria-controls="role-proposals-dialog" disabled>角色变化建议</button><button id="companion-open" disabled>陪伴偏好</button><button id="activities-open" disabled>共同活动</button><button id="topics-open" aria-controls="topics-dialog" disabled>共同话题</button><button id="courseware-open" aria-controls="courseware-dialog" disabled>课件学习</button><button id="local-agent-open" aria-controls="local-agent-dialog" disabled>本机工作台</button><button id="life-open" disabled>事件记忆</button><button id="care-open" disabled>关怀收件箱 <span id="care-count" hidden></span></button></div>
       <div class="list-heading">最近会话 <span id="session-count">0</span></div>
       <label class="sr-only" for="session-filter">筛选会话标题</label><input id="session-filter" class="session-filter" type="search" placeholder="筛选会话标题" maxlength="120" autocomplete="off" aria-controls="sessions">
@@ -52,6 +52,7 @@
     <main class="main-panel">
       <header class="topbar">
         <button id="menu" class="icon-button mobile-menu" aria-label="打开会话列表" aria-controls="sidebar" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+        <button id="rail-toggle" class="icon-button rail-toggle" aria-label="收起会话列表" aria-controls="sidebar" aria-expanded="true" title="收起/展开会话列表"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
         <div class="conversation-heading"><label class="model-select-label"><span class="sr-only">对话模型</span><select id="model-picker" class="model-picker" aria-label="选择对话模型" disabled><option>chat-agent</option></select></label><span id="chat-title">新的开始</span><small><span class="status-dot"></span><span id="connection-label">等待连接</span></small></div>
         <div class="topbar-actions"><span id="demo-badge" class="demo-badge" hidden>本地演示</span><button id="settings" class="icon-button" aria-label="连接信息"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v1"/></svg></button><button id="reset-chat" class="icon-button" aria-label="重置当前会话" title="重置当前会话" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1 7M4 4v6h6"/></svg></button><button id="delete-session" class="icon-button" aria-label="删除这个会话" title="删除这个会话" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg></button></div>
       </header>
