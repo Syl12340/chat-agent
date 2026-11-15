@@ -91,6 +91,88 @@
   transform: rotate(90deg);
 }
 
+/* Tool calls are process rows in DSH, not cards. ToolRow.module.css draws one
+   24px line: [16 leading] gap6 [title 13/24] gap8 [2x2 dot] gap8 [summary].
+   Ours was a bordered, filled, rounded card at 56px, so a turn that read a clock
+   and a todo list looked heavier than the answer it produced. */
+.tool-log {
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  margin: 0;
+}
+
+.tool-log summary {
+  min-height: 24px;
+  padding: 0 2px;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 24px;
+}
+
+.tool-title,
+.tool-meta {
+  font-size: 13px;
+  line-height: 24px;
+}
+
+/* DSH separates trailing facts with a drawn 2x2 dot, not a pill. Our chips carried
+   a fill and 7px of padding each, which is what still made a process row look like
+   a card even after the border and background were gone. */
+.tool-meta > span {
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.tool-meta > span + span::before {
+  content: '';
+  display: inline-block;
+  width: 2px;
+  height: 2px;
+  border-radius: 1px;
+  margin: 0 8px;
+  vertical-align: middle;
+  background: var(--dsw-alias-label-caption);
+}
+
+.tool-group {
+  margin: 0;
+}
+
+.tool-group-summary {
+  min-height: 24px;
+  padding: 0 2px;
+  font-size: 13px;
+  line-height: 24px;
+}
+
+/* DSH nests rows under the turn without a rail: the 16px leading plus gap6 reads
+   as the indent. The rail we drew is the one thing that made them look boxed. */
+.tool-group-list {
+  border-left: 0;
+  margin-left: 0;
+  padding-left: 22px;
+}
+
+.tool-group-list .tool-log {
+  margin: 0;
+}
+
+/* Sidebar rows against SidebarRoot.module.css: --dsh-sidebar-row-padding 12px,
+   new-session row 36px, rows radius-sm (8px). Our session rows were already 32px. */
+.sidebar .new-chat {
+  min-height: 36px;
+  border-radius: 8px;
+}
+
+.sidebar .session-row,
+.sidebar .session-filter {
+  border-radius: 8px;
+}
+
 @media (max-width: 760px) {
   .messages { padding: 12px 16px 20px; }
   .message-body { font-size: 15px; line-height: 24px; }

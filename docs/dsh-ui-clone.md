@@ -179,6 +179,28 @@ DSH 的 `InputBar.module.css` 里 `.card` 是另一套语言：
 
 **属性正确不等于看得见**，这一步只能靠截图确认。
 
+## 第五步：工具行与侧栏行（已完成，0.7.12）
+
+工具调用原来是 56px 的圆角卡片（有描边、有底色、有阴影）。DSH 的 `ToolRow.module.css`
+开头就把规格写在注释里：
+
+```
+24px single line: [16 leading] gap6 [title 13/24] gap8 [2x2 dot] gap8 [summary FILL truncate]
+```
+
+也就是说**工具调用是过程行，不是卡片**。一个读了时钟又读待办的回合，看起来比它产出的答案
+还重——这就是原来的问题。
+
+改完实测 `rowHeight 24`、`rowFont 13px`、`border 0`、`background transparent`，与 DSH 一致。
+
+还有一个更细的地方：行尾的「已完成」「服务端」原来是**胶囊 chip**（带底色、7px 内边距）。
+DSH 用的是**画出来的 2×2 圆点**加 8px 间距。把 chip 的底色和内边距去掉还不够——只要还是
+带 padding 的块，整行看着就像卡片。这一步是靠截图才看出来的。
+
+侧栏那边对照 `SidebarRoot.module.css`：`--dsh-sidebar-row-padding: 12px`、新会话行 36px、
+行圆角 `radius-sm`（8px）。会话行本来就已经是 32px，只把新会话按钮从 40px 收到 36px、
+圆角从 9px 收到 8px。
+
 ## 复刻计划（剩余步骤）
 
 技术栈不同（DSH 是 React + CSS Modules，chat-agent 是原生 JS + 全局 CSS），所以**不是逐行
