@@ -119,6 +119,30 @@ DSH 的列宽不是拍脑袋的，写在 `dsh-client-ui-layout/src/client/column
 解法是把分支在同一个文件里重述一遍（264px 是 DSH 的 `SIDEBAR_MIN`）。这类问题只有把
 加载顺序和断点放在一起看才能发现。
 
+## 第三步：消息列（已完成，0.7.10）
+
+之前每轮对话都像一张浮在空白里的卡片：消息之间 26px、正文 15px/1.75。对照 DSH 的
+`dsh-client-ui-chat` 之后发现两个数都不对：
+
+| 量 | 我们原来 | DSH | 出处 |
+| --- | --- | --- | --- |
+| 消息之间 | `margin-bottom: 26px` | 4px / 同回合 12px | `ChatView.module.css` |
+| 正文字号 | 15px | 14px | `AssistantMarkdown.module.css` |
+| 正文行高 | 1.75（≈26px） | **24px** | 同上 |
+| 正文块间距 | 无 | 16px | `.body { --dsh-assistant-block-gap: 16px }` |
+| 用户消息 | 15px / 1.65 | 13px / 18px | `MessageItem.module.css` |
+| 用户气泡宽度 | 80% | `min(702‰×列宽, 82%)` | `userStack` |
+| 内容列 | 816px | 748px | `ChatView.module.css` |
+
+**关键在行高而不在间距**：DSH 几乎不给消息之间留距离（4–12px），呼吸感全靠正文内部
+16px 的块间距。我们反过来——消息隔 26px，正文块之间没有额外间距。这就是「浮着」的来源。
+
+### 一个算术陷阱
+
+DSH 把 padding 放在滚动容器上、在内部限制列宽，所以 748px 是**正文本身的宽度**。
+我们把 padding 和 max-width 放在同一个盒子上，直接写 `max-width: 748px` 会让正文只有
+700px（748 − 2×24）。写成 **796px** 才对——第一次就踩了，截图一量就发现了。
+
 ## 复刻计划（剩余步骤）
 
 技术栈不同（DSH 是 React + CSS Modules，chat-agent 是原生 JS + 全局 CSS），所以**不是逐行

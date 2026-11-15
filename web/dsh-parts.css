@@ -1,0 +1,55 @@
+/* Third clone step: the message column, measured against DSH rather than guessed.
+
+   DSH does not space messages apart. Its flow gap is 4px, or 12px between parts
+   of one response, and the breathing room comes from the 16px gap *inside* the
+   assistant body between markdown blocks. chat-agent put 26px between messages
+   and 15px/1.75 type in them, so every turn read as a separate card floating in
+   whitespace. Values below are from dsh-client-ui-chat:
+     AssistantMarkdown.module.css  font-size 14px, line-height 24px, block gap 16px
+     MessageItem.module.css        user type 13px/18px, bubble min(702/1000 viewport, 82%)
+     ChatView.module.css           column max-width 748px, scroll padding 16px
+*/
+
+/* DSH puts the 16px padding on the scroller and caps the column inside it, so 748px
+   is the width of the text itself. Here the padding lives on the same box, so the
+   cap has to include it or the column would be 48px narrower than DSH's. */
+.messages {
+  max-width: 796px;
+  padding: 16px 24px 24px;
+}
+
+/* Round-level separation survives as a single gap; within a turn the body's own
+   16px block gap does the work. */
+.message {
+  margin-bottom: 12px;
+}
+
+.message-body {
+  font-size: 14px;
+  line-height: 24px;
+}
+
+.message.user .message-body {
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.message.user .message-content {
+  max-width: 82%;
+}
+
+/* DSH's block rhythm: consecutive markdown blocks sit 16px apart, which is what
+   actually keeps a long answer readable once the space between messages is gone. */
+.message-body > * + * {
+  margin-block-start: 16px;
+}
+
+.message-body > * {
+  margin-block-end: 0;
+}
+
+@media (max-width: 760px) {
+  .messages { padding: 12px 16px 20px; }
+  .message-body { font-size: 15px; line-height: 24px; }
+  .message.user .message-body { font-size: 14px; }
+}
