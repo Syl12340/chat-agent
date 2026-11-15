@@ -474,6 +474,7 @@ function card(role, text = '', key = '', images = [], context = null) {
   content.append(label, logs, attachments, body, status); if(role==='assistant'){actions.append(copy);content.append(actions);}
   article.append(avatar, content); ui.messages.append(article);
   const result = { node: article, body, status, logs, attachments, tools: new Map(), text: '',
+    startedAt: Date.now(), currentTool: '',
     appendSegment(value,source) {
       this.text=[this.text,value].filter(Boolean).join('\n\n');
       copy.disabled=!this.text;
@@ -511,7 +512,7 @@ function card(role, text = '', key = '', images = [], context = null) {
   copy.addEventListener('click',()=>copyText(result.text,copy));
   copy.disabled=!text;
   const original=result.setText; result.setText=function(value){original.call(this,value);copy.disabled=!value;};
-  result.setText(text); return result;
+  result.setText(text); liveMessages.add(result); return result;
 }
 
 function renderUserContent(body,text) {
@@ -526,7 +527,34 @@ function renderUserContent(body,text) {
   label.textContent='查看原始答案'; source.textContent=text; details.append(label,source); body.append(summary,details);
 }
 
+// A running turn keeps its elapsed time honest even when no new event arrives;
+// a long step used to leave the status line frozen.
+const liveMessages = new Set();
+setInterval(() => {
+  // The turn is rebuilt on every poll, so the start time lives on the session
+  // rather than on any one card; otherwise elapsed time restarts at zero.
+  if (!document.querySelector('.message.pending')) { state.turnStartedAt = 0; liveMessages.clear(); return; }
+  if (!state.turnStartedAt) state.turnStartedAt = Date.now();
+  for (const message of liveMessages) {
+    if (!message.node.isConnected || !message.node.classList.contains('pending')) { liveMessages.delete(message); continue; }
+    message.status.textContent = stepLabel(message);
+  }
+}, 1000);
+
+function stepLabel(message) {
+  // One turn can now run many steps, so "正在回复…" stopped being information. Show
+  // which step, what is running, and how long the turn has been going.
+  const steps = message.tools.size;
+  const seconds = Math.max(0, Math.round((Date.now() - (state.turnStartedAt || message.startedAt)) / 1000));
+  const elapsed = seconds >= 60 ? `${Math.floor(seconds / 60)}m${seconds % 60}s` : `${seconds}s`;
+  const doing = message.currentTool ? `正在执行 ${message.currentTool}` : '等待模型回应';
+  return steps ? `第 ${steps} 步 · ${doing} · 已用 ${elapsed}` : `${doing} · 已用 ${elapsed}`;
+}
+
 function toolLog(message, data, pending = false) {
+  // The turn is alive as long as a tool is being added or resolved.
+  message.currentTool = pending ? (data.name || '') : '';
+  if (message.node.classList.contains('pending')) message.status.textContent = stepLabel(message);
   let log = message.tools.get(data.id);
   if (!log) {
     const details = document.createElement('details'); details.className = 'tool-log';
@@ -708,7 +736,7 @@ function renderHistory(messages, turns = [], hashes = new Map()) {
       calls.set(`${root.id}:${tool.id}`,{card:current,name:tool.name});
     }
     current.node.classList.add(root.status === 'running' ? 'pending':'unfinished');
-    current.status.textContent = root.status === 'running' ? (root.text ? '正在回复…':root.thinking && root.thinking!=='off' ? '正在思考或等待模型回应…':'正在等待模型回应…') : root.error || '这段回复未完成，没有自动重试。';
+    current.status.textContent = root.status === 'running' ? stepLabel(current) : root.error || '这段回复未完成，没有自动重试。';
     current = null; currentStart = -1;
   };
   for (let index=0;index<messages.length;index++) {

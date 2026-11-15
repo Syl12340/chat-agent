@@ -766,6 +766,34 @@ func (s *LifeStore) Care(role string) ([]CareItem, error) {
 	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
 	return out, nil
 }
+// careInterval stretches the configured floor after the user said "less". That
+// feedback is the only explicit signal this feature collects, so ignoring it
+// would make the question pointless. The stretch is bounded: a bad week should
+// make check-ins rarer, not switch them off for good.
+func careInterval(p CareSettings, items []CareItem, role string, now time.Time) time.Duration {
+	base := time.Duration(p.MinIntervalMinutes) * time.Minute
+	cutoff := now.Add(-30 * 24 * time.Hour)
+	less, rated := 0, 0
+	for _, item := range items {
+		if item.RoleID != role || item.Feedback == "" || item.CreatedAt.Before(cutoff) {
+			continue
+		}
+		rated++
+		if item.Feedback == "less" {
+			less++
+		}
+	}
+	const ceiling = 24 * time.Hour
+	switch {
+	case rated == 0 || less == 0:
+		return base
+	case less*2 >= rated:
+		return min(4*base, ceiling)
+	default:
+		return min(2*base, ceiling)
+	}
+}
+
 func (s *LifeStore) ClaimCare(role, id string, automatic bool, now time.Time, location *time.Location) (CareItem, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -776,6 +804,7 @@ func (s *LifeStore) ClaimCare(role, id string, automatic bool, now time.Time, lo
 	if !ok || !p.Enabled || (automatic && !p.AutoGenerate) || quiet(p, now, location) || (p.SnoozeUntil != nil && now.Before(*p.SnoozeUntil)) {
 		return CareItem{}, ErrCareBlocked
 	}
+	interval := careInterval(p, s.state.Care, role, now)
 	for _, old := range s.state.Care {
 		if old.RoleID != role {
 			continue
@@ -785,12 +814,12 @@ func (s *LifeStore) ClaimCare(role, id string, automatic bool, now time.Time, lo
 			timestamp := old.CreatedAt
 			attempt = &timestamp
 		}
-		if attempt != nil && now.Before(attempt.Add(time.Duration(p.MinIntervalMinutes)*time.Minute)) {
+		if attempt != nil && now.Before(attempt.Add(interval)) {
 			return CareItem{}, ErrCareBlocked
 		}
 	}
 	for _, attempt := range s.state.TopicAttempts {
-		if attempt.RoleID == role && now.Before(attempt.AttemptedAt.Add(time.Duration(p.MinIntervalMinutes)*time.Minute)) {
+		if attempt.RoleID == role && now.Before(attempt.AttemptedAt.Add(interval)) {
 			return CareItem{}, ErrCareBlocked
 		}
 	}
