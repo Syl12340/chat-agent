@@ -407,6 +407,17 @@ func (s *Server) runCare(r *http.Request, role, id string, automatic bool) (comp
 			}
 		}
 	}
+	// A check-in that was never answered is not a reason to send another one.
+	// This is decided here rather than in the prompt so it cannot drift: on
+	// 2026-11-12 one quiet evening produced three "you should sleep" messages in
+	// forty minutes, none of them answered.
+	if s.unansweredCheckIn(role, history, now) {
+		item, silenceErr := s.life.SilenceCare(role, id, claimed.Revision)
+		if silenceErr != nil {
+			return companion.CareItem{}, silenceErr
+		}
+		return item, nil
+	}
 	trigger := map[string]any{"origin": "care", "trigger_id": claimed.ID, "preferences": pref.Preferences, "event": episode, "approved_memories": facts, "recent_check_ins": recent, "scheduled_title": claimed.Title, "current_time": now.In(s.location).Format(time.RFC3339)}
 	preferred := ""
 	if episode != nil {
@@ -471,6 +482,69 @@ strong instruction to avoid a similar topic, opening, question or tone. Do not
 infer any broader personality trait or silently change the user's settings. If there
 is no natural, truthful reason to speak now, return exactly [沉默]. Otherwise
 return only the check-in text, without JSON, headings or a chat-ui block.`
+
+// careUnansweredWindow bounds how long a check-in still counts as "just sent".
+// Past it, quiet is more likely a different part of the day than someone
+// ignoring the last message, so speaking again is fair.
+const careUnansweredWindow = 12 * time.Hour
+
+// newestCheckIn returns the freshest delivered check-in that has a known place
+// in a conversation, which is what makes "did anyone answer it" answerable.
+func newestCheckIn(history []companion.CareItem, now time.Time) (companion.CareItem, bool) {
+	var last companion.CareItem
+	var lastAt time.Time
+	found := false
+	for _, item := range history {
+		if item.Content == "" || item.SessionID == "" || item.MessageIndex == nil {
+			continue
+		}
+		if item.Status != "ready" && item.Status != "seen" && item.Status != "delivering" {
+			continue
+		}
+		at := item.CreatedAt
+		if item.AttemptedAt != nil {
+			at = *item.AttemptedAt
+		}
+		if now.Sub(at) > careUnansweredWindow {
+			continue
+		}
+		if !found || at.After(lastAt) {
+			last, lastAt, found = item, at, true
+		}
+	}
+	return last, found
+}
+
+// unansweredCheckIn reports whether the newest fresh check-in was ever answered.
+// It only looks at the conversation the check-in landed in, so a user who moved
+// to another conversation still counts as having replied.
+func (s *Server) unansweredCheckIn(role string, history []companion.CareItem, now time.Time) bool {
+	last, ok := newestCheckIn(history, now)
+	if !ok {
+		return false
+	}
+	id, session, err := s.proactiveSession(role, last.SessionID)
+	if err != nil || session == nil || id != last.SessionID {
+		return false
+	}
+	messages := session.Messages()
+	if *last.MessageIndex < 0 || *last.MessageIndex >= len(messages) {
+		return false
+	}
+	return !answeredAfter(messages, *last.MessageIndex)
+}
+
+// answeredAfter reports whether the user said anything after that message.
+// Anything they say counts, because a check-in that nudged the conversation
+// forward did its job even when the reply was about something else.
+func answeredAfter(messages []probe.Message, index int) bool {
+	for _, message := range messages[index+1:] {
+		if message.Role == "user" {
+			return true
+		}
+	}
+	return false
+}
 
 func (s *Server) generateCare(w http.ResponseWriter, r *http.Request) {
 	role, ok := s.memoryRole(w, r)
