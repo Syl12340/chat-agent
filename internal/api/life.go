@@ -410,8 +410,9 @@ func (s *Server) runCare(r *http.Request, role, id string, automatic bool) (comp
 	// A check-in that was never answered is not a reason to send another one.
 	// This is decided here rather than in the prompt so it cannot drift: on
 	// 2026-11-12 one quiet evening produced three "you should sleep" messages in
-	// forty minutes, none of them answered.
-	if s.unansweredCheckIn(role, history, now) {
+	// forty minutes, none of them answered. Only the automatic path is held back;
+	// a person who asks for one now has already decided they want it.
+	if automatic && s.unansweredCheckIn(role, history, now) {
 		item, silenceErr := s.life.SilenceCare(role, id, claimed.Revision)
 		if silenceErr != nil {
 			return companion.CareItem{}, silenceErr
@@ -419,6 +420,7 @@ func (s *Server) runCare(r *http.Request, role, id string, automatic bool) (comp
 		return item, nil
 	}
 	trigger := map[string]any{"origin": "care", "trigger_id": claimed.ID, "preferences": pref.Preferences, "event": episode, "approved_memories": facts, "recent_check_ins": recent, "scheduled_title": claimed.Title, "current_time": now.In(s.location).Format(time.RFC3339)}
+	trigger["motivation"] = careMotivation(history, claimed, now)
 	preferred := ""
 	if episode != nil {
 		preferred = episode.SourceSessionID
@@ -481,7 +483,47 @@ is explicit recent feedback, treat "helpful" as a weak cue and "less" as a
 strong instruction to avoid a similar topic, opening, question or tone. Do not
 infer any broader personality trait or silently change the user's settings. If there
 is no natural, truthful reason to speak now, return exactly [沉默]. Otherwise
-return only the check-in text, without JSON, headings or a chat-ui block.`
+return only the check-in text, without JSON, headings or a chat-ui block.
+The motivation object is reference data about this opportunity, not a reason to
+speak by itself. motivation.check_ins_for_this_episode counts what was already
+sent about this same event: when it is one or more, do not repeat the same
+concern, opening, question or advice unless something concrete has changed, and
+prefer [沉默] when only the wording would be new. motivation.hours_since_due is
+how long this opportunity waited: a large number means the moment has probably
+passed, so speak only if the message still fits the current time.`
+
+// checkInsForEpisode counts the check-ins already delivered about one event.
+// The three 2026-11-12 messages had different episode IDs, so this is not a
+// de-duplication rule; it is material the model can weigh when deciding whether
+// there is still something new to say.
+func checkInsForEpisode(history []companion.CareItem, episodeID string) int {
+	if episodeID == "" {
+		return 0
+	}
+	count := 0
+	for _, item := range history {
+		if item.EpisodeID != episodeID || item.Content == "" {
+			continue
+		}
+		if item.Status == "ready" || item.Status == "seen" || item.Status == "delivering" {
+			count++
+		}
+	}
+	return count
+}
+
+// careMotivation describes why this opportunity exists now, in numbers the model
+// can act on instead of an adjective it has to guess at.
+func careMotivation(history []companion.CareItem, claimed companion.CareItem, now time.Time) map[string]any {
+	motivation := map[string]any{
+		"check_ins_for_this_episode": checkInsForEpisode(history, claimed.EpisodeID),
+		"hours_since_due":            int(now.Sub(claimed.DueAt).Hours()),
+	}
+	if claimed.EpisodeID != "" {
+		motivation["has_event"] = true
+	}
+	return motivation
+}
 
 // careUnansweredWindow bounds how long a check-in still counts as "just sent".
 // Past it, quiet is more likely a different part of the day than someone

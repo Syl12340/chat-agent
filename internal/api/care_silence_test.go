@@ -50,6 +50,49 @@ func TestNewestCheckInPicksTheLatestDelivered(t *testing.T) {
 	}
 }
 
+func TestCheckInsForEpisodeCountsOnlyWhatWasDelivered(t *testing.T) {
+	item := func(status, episode, content string) companion.CareItem {
+		return companion.CareItem{Status: status, EpisodeID: episode, Content: content}
+	}
+	history := []companion.CareItem{
+		item("seen", "event-a", "该睡了"),
+		item("ready", "event-a", "明天再写"),
+		item("silent", "event-a", ""),
+		item("failed", "event-a", "出错了"),
+		item("seen", "event-b", "别的"),
+	}
+	if got := checkInsForEpisode(history, "event-a"); got != 2 {
+		t.Fatalf("event-a = %d, want 2", got)
+	}
+	if got := checkInsForEpisode(history, "event-b"); got != 1 {
+		t.Fatalf("event-b = %d, want 1", got)
+	}
+	// An event-less opportunity must not inherit another event's count.
+	if got := checkInsForEpisode(history, ""); got != 0 {
+		t.Fatalf("empty episode = %d, want 0", got)
+	}
+}
+
+func TestCareMotivationReportsStaleness(t *testing.T) {
+	now := time.Date(2026, 11, 12, 23, 0, 0, 0, time.UTC)
+	claimed := companion.CareItem{EpisodeID: "event-a", DueAt: now.Add(-3 * time.Hour)}
+	history := []companion.CareItem{{Status: "seen", EpisodeID: "event-a", Content: "该睡了"}}
+	motivation := careMotivation(history, claimed, now)
+	if motivation["hours_since_due"] != 3 {
+		t.Fatalf("hours_since_due = %v", motivation["hours_since_due"])
+	}
+	if motivation["check_ins_for_this_episode"] != 1 {
+		t.Fatalf("check_ins = %v", motivation["check_ins_for_this_episode"])
+	}
+	if motivation["has_event"] != true {
+		t.Fatalf("has_event = %v", motivation["has_event"])
+	}
+	// A daily greeting carries no event, and must not claim one.
+	if _, ok := careMotivation(nil, companion.CareItem{DueAt: now}, now)["has_event"]; ok {
+		t.Fatal("event-less opportunity reported has_event")
+	}
+}
+
 func TestAnsweredAfter(t *testing.T) {
 	messages := []probe.Message{
 		{Role: "user", Content: "在写文档"},
