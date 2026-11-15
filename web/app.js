@@ -558,6 +558,27 @@ function stepLabel(message) {
   return steps ? `第 ${steps} 步 · ${doing} · 已用 ${elapsed}` : `${doing} · 已用 ${elapsed}`;
 }
 
+// One card per call turned a three-tool turn into three stacked boxes. Past the
+// first call the run folds into one collapsible group: the step line already says
+// which tool is running, so the detail can stay one click away.
+function groupToolLog(message, node) {
+  if (!message.toolGroup) {
+    const cards = message.logs.querySelectorAll('.tool-log');
+    if (!cards.length) { message.logs.append(node); return; }
+    const group = document.createElement('details'); group.className = 'tool-group';
+    const summary = document.createElement('summary'); summary.className = 'tool-group-summary';
+    const list = document.createElement('div'); list.className = 'tool-group-list';
+    group.append(summary, list);
+    for (const card of cards) list.append(card);
+    message.logs.append(group);
+    message.toolGroup = group;
+    message.toolGroupSummary = summary;
+    message.toolGroupList = list;
+  }
+  message.toolGroupList.append(node);
+  message.toolGroupSummary.textContent = `${message.toolGroupList.children.length} 个工具调用`;
+}
+
 function toolLog(message, data, pending = false) {
   // The turn is alive as long as a tool is being added or resolved.
   message.currentTool = pending ? (data.name || '') : '';
@@ -578,7 +599,7 @@ function toolLog(message, data, pending = false) {
     const body = document.createElement('div'); body.className = 'tool-body';
     body.append(args, presentation, output);
     details.append(summary, body);
-    message.logs.append(details);
+    groupToolLog(message, details);
     log = { summary, heading, meta, args, presentation, output, body, node: details };
     message.tools.set(data.id, log);
   }

@@ -1,0 +1,41 @@
+/* Tool runs read as one line until opened.
+
+   Every call used to get its own card, so a turn that read a clock and a todo
+   list pushed the conversation down by ~180px before saying anything. Past the
+   first call the cards now fold into a group; the in-turn step line already
+   names the running tool, so nothing is hidden that the user was reading. */
+
+.tool-group {
+  margin: 2px 0 6px;
+}
+
+.tool-group-summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 2px;
+  font-size: 12px;
+  color: var(--on-surface-variant);
+}
+
+.tool-group-summary::-webkit-details-marker { display: none; }
+
+.tool-group-summary::before {
+  content: '▸';
+  font-size: 10px;
+  opacity: .7;
+}
+
+.tool-group[open] > .tool-group-summary::before { content: '▾'; }
+
+.tool-group-summary:hover { color: var(--on-surface); }
+
+.tool-group-list {
+  padding-left: 6px;
+  border-left: 1px solid var(--outline-variant);
+  margin-left: 4px;
+}
+
+.tool-group-list .tool-log { margin: 4px 0; }
