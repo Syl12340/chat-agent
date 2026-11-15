@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,6 +60,7 @@ func TestLocalAgentTaskRoundTrip(t *testing.T) {
 	}
 
 	receipt := localagent.Receipt{Protocol: localagent.Protocol, OperationID: "op_test_1", Status: "completed", Output: "contents"}
+	receipt.RequestSHA256 = localTaskDigest(claimed)
 	completeRequest := localRequest(t, http.MethodPost, "/api/local-agent/v1/tasks/op_test_1/complete",
 		map[string]any{"device_id": "dev-box", "receipt": receipt}, "dev-box", "secret-token")
 	// Calling the handler directly skips the mux, so the path variable has to be
@@ -95,9 +98,73 @@ func TestLocalAgentClaimEmpty(t *testing.T) {
 	server := localAgentServer()
 	recorder := httptest.NewRecorder()
 	server.localAgentClaim(recorder, localRequest(t, http.MethodPost, "/api/local-agent/v1/tasks/claim",
-		map[string]any{"device_id": "dev-box"}, "dev-box", "secret-token"))
+		map[string]any{"protocol": localagent.Protocol, "device_id": "dev-box"}, "dev-box", "secret-token"))
 	if recorder.Code != http.StatusNoContent {
 		t.Fatalf("want 204, got %d", recorder.Code)
+	}
+}
+
+func TestLocalAgentRejectsForeignOrMismatchedReceipt(t *testing.T) {
+	server := localAgentServer()
+	server.config.LocalAgent.Devices["other-box"] = "other-token"
+	task := localagent.Task{Protocol: localagent.Protocol, OperationID: "op_bound", Kind: "read", Path: "hello.txt"}
+	server.localQueue.enqueue(task, "dev-box", time.Minute)
+	if claimed := server.localQueue.claim("dev-box", []string{"read"}); claimed == nil {
+		t.Fatal("task was not claimed")
+	}
+	receipt := localagent.Receipt{Protocol: localagent.Protocol, OperationID: task.OperationID, RequestSHA256: localTaskDigest(task), Status: "completed"}
+	request := localRequest(t, http.MethodPost, "/api/local-agent/v1/tasks/op_bound/complete",
+		map[string]any{"device_id": "other-box", "receipt": receipt}, "other-box", "other-token")
+	request.SetPathValue("operation", task.OperationID)
+	response := httptest.NewRecorder()
+	server.localAgentComplete(response, request)
+	if response.Code != http.StatusConflict {
+		t.Fatalf("foreign device receipt: want 409, got %d", response.Code)
+	}
+	receipt.RequestSHA256 = strings.Repeat("0", 64)
+	request = localRequest(t, http.MethodPost, "/api/local-agent/v1/tasks/op_bound/complete",
+		map[string]any{"device_id": "dev-box", "receipt": receipt}, "dev-box", "secret-token")
+	request.SetPathValue("operation", task.OperationID)
+	response = httptest.NewRecorder()
+	server.localAgentComplete(response, request)
+	if response.Code != http.StatusConflict {
+		t.Fatalf("mismatched receipt: want 409, got %d", response.Code)
+	}
+}
+
+func TestLocalAgentReceiptSurvivesServerRestart(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "operations.json")
+	queue := newLocalQueue(statePath)
+	task := localagent.Task{Protocol: localagent.Protocol, OperationID: "op_durable", SessionID: "chat_1", RoleID: "companion", RequestID: "request_1", Kind: "share", Artifacts: []string{"result.txt"}}
+	queue.enqueue(task, "dev-box", time.Minute)
+	if claimed := queue.claim("dev-box", []string{"artifact-metadata"}); claimed == nil {
+		t.Fatal("task was not claimed")
+	}
+	artifact := localagent.Artifact{Name: "result.txt", MediaType: "text/plain", Bytes: 6, SHA256: strings.Repeat("a", 64)}
+	receipt := localagent.Receipt{Protocol: localagent.Protocol, OperationID: task.OperationID, RequestSHA256: localTaskDigest(task), Status: "completed", Artifacts: []localagent.Artifact{artifact}, CompletedAt: time.Now().UTC()}
+	restarted := newLocalQueue(statePath)
+	if restored, ok := restarted.tasks[task.OperationID]; !ok || restored.SessionID != task.SessionID || restored.RoleID != task.RoleID || restored.RequestID != task.RequestID || localTaskDigest(restored) != localTaskDigest(task) {
+		t.Fatalf("full task identity did not survive restart: %+v ok=%v", restored, ok)
+	}
+	if _, found, err := restarted.complete("dev-box", receipt); err != nil || found {
+		t.Fatalf("late completion failed: active=%v err=%v", found, err)
+	}
+	reopened := newLocalQueue(statePath)
+	if restored, ok := reopened.artifact(task.OperationID, artifact.SHA256); !ok || restored.Name != artifact.Name {
+		t.Fatalf("artifact receipt did not survive restart: %+v ok=%v", restored, ok)
+	}
+	_, operations := reopened.snapshot(map[string]string{"dev-box": "token"})
+	if len(operations) != 1 || operations[0].Status != "completed" || operations[0].Artifacts != 1 || len(operations[0].Files) != 1 || operations[0].Files[0].DownloadURL != "/api/local-agent/artifacts/op_durable/"+artifact.SHA256 {
+		t.Fatalf("operation did not survive restart: %+v", operations)
+	}
+	// Artifact authorization belongs to the durable operation, not only to the
+	// bounded recent-receipt cache.
+	reopened.receipts = map[string]localagent.Receipt{}
+	reopened.order = nil
+	reopened.saveLocked()
+	archived := newLocalQueue(statePath)
+	if restored, ok := archived.artifact(task.OperationID, artifact.SHA256); !ok || restored.Name != artifact.Name {
+		t.Fatalf("artifact metadata expired with receipt cache: %+v ok=%v", restored, ok)
 	}
 }
 

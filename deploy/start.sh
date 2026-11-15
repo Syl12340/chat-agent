@@ -25,10 +25,16 @@ esac
 
 # The turn budget covers every model call in one turn, not just one request: a
 # turn that runs a tool and then asks the model to read the result spends it
-# twice, and a 32 KiB tool result spends a lot more of it. 30s is the built-in
-# default and is too tight for that on a live model with thinking enabled.
+# twice. The built-in default is a continuous loop with a five-minute wall-clock
+# budget. Operators may restore explicit count ceilings without changing code.
 if [ -n "${CHAT_TURN_TIMEOUT:-}" ]; then
     set -- "$@" -timeout "$CHAT_TURN_TIMEOUT"
+fi
+if [ -n "${CHAT_MAX_TURNS:-}" ]; then
+    set -- "$@" -max-turns "$CHAT_MAX_TURNS"
+fi
+if [ -n "${CHAT_MAX_TOOLS:-}" ]; then
+    set -- "$@" -max-tools "$CHAT_MAX_TOOLS"
 fi
 
 exec /opt/chat-agent/current/chat-agent -listen 127.0.0.1:9991 "$@"

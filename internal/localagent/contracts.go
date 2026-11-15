@@ -17,6 +17,12 @@ var Kinds = []string{"list", "read", "search", "share", "write", "exec"}
 type Task struct {
 	Protocol    string `json:"protocol"`
 	OperationID string `json:"operation_id"`
+	// The host binds a task to the turn that authorized it. The endpoint does
+	// not use these fields to broaden access; it echoes their inclusion through
+	// RequestSHA256 so a receipt cannot be moved to another conversation.
+	SessionID string `json:"session_id,omitempty"`
+	RoleID    string `json:"role_id,omitempty"`
+	RequestID string `json:"request_id,omitempty"`
 	// Kind is one of Kinds. "exec" runs the named entry of the operator's fixed
 	// action allow-list; it is not a command line and takes no arguments.
 	Kind    string `json:"kind"`

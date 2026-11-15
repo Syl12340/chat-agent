@@ -406,7 +406,7 @@ func (s *Server) agentForTurn(sess *probe.Session, inputs []string, sessionID st
 		c.Tools = append(c.Tools, s.pluginTools(s.toolCapabilities(), sessionID, role.ID)...)
 		c.Tools = append(c.Tools, s.decisionTool()...)
 		c.Tools = append(c.Tools, s.imageTools(role.ID, sessionID, c.RequestID)...)
-		c.Tools = append(c.Tools, s.localAgentTools()...)
+		c.Tools = append(c.Tools, s.localAgentTools(localTaskScope{SessionID: sessionID, RoleID: role.ID, RequestID: c.RequestID})...)
 	}
 	if strings.TrimSpace(strings.Join(inputs, "\n")) == "" || len(uiResponses) > 0 {
 		// Embedded image text is reference, never the user's authorization.

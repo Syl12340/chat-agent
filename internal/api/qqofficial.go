@@ -131,7 +131,8 @@ func (q *qqOfficialIntegration) receive(ctx context.Context, envelope channelsto
 		return err
 	}
 	images := q.downloadImages(ctx, sess.RoleID(), mapping.SessionID, envelope.Message.Attachments)
-	_, _, err = q.server.SubmitTurn(ctx, TurnSubmission{SessionID: mapping.SessionID, RequestID: envelope.EventID, Content: envelope.Message.Text, Mode: "auto", Images: images, DeferStart: true})
+	origin := turns.TurnOrigin{Kind: "channel", Platform: envelope.Platform, AccountID: envelope.AccountID, ConversationKind: envelope.Conversation.Kind, ConversationID: envelope.Conversation.ID, SenderID: envelope.Sender.ID}
+	_, _, err = q.server.SubmitTurn(ctx, TurnSubmission{SessionID: mapping.SessionID, RequestID: envelope.EventID, Content: envelope.Message.Text, Mode: "auto", Images: images, Origin: origin, DeferStart: true})
 	if err != nil {
 		_ = q.store.SetInboxState(envelope.EventID, "needs_attention", mapping.SessionID)
 		return err
@@ -196,6 +197,9 @@ func (q *qqOfficialIntegration) ensureSession(envelope channelstore.Envelope) (c
 	if historyErr != nil {
 		return channelstore.Mapping{}, nil, historyErr
 	}
+	if err := q.server.markChannelAudience(key, mapping.SessionID); err != nil {
+		return channelstore.Mapping{}, nil, err
+	}
 	sess, err := q.server.session(mapping.SessionID)
 	if err != nil || sess.RoleID() != key.RoleID {
 		return channelstore.Mapping{}, nil, errors.Join(errors.New("QQ official session role mismatch"), err)
@@ -208,18 +212,25 @@ func (q *qqOfficialIntegration) ensureSession(envelope channelstore.Envelope) (c
 }
 
 func (q *qqOfficialIntegration) TurnCompleted(_ context.Context, item TurnCompletion) error {
+	if item.Origin.Kind == "channel" && item.Origin.Platform != "qq-official" {
+		return nil
+	}
 	mapping, ok := q.store.MappingForSession(item.SessionID)
 	if !ok {
 		return nil
 	}
+	if item.Origin.Kind == "channel" && (item.Origin.AccountID != mapping.Key.AccountID || item.Origin.ConversationKind != mapping.Key.ConversationKind || item.Origin.ConversationID != mapping.Key.ConversationID) {
+		return nil
+	}
 	var origin channelstore.InboxRecord
+	originFound := false
 	for _, requestID := range append(append([]string{}, item.RequestIDs...), item.RequestID) {
 		if candidate, found := q.store.InboxForRequest(item.SessionID, requestID); found {
-			origin, ok = candidate, true
+			origin, originFound = candidate, true
 			break
 		}
 	}
-	if !ok {
+	if !originFound {
 		return nil
 	}
 	text := channelstore.RenderText(item.Text)
@@ -274,7 +285,7 @@ func (q *qqOfficialIntegration) reconcile() error {
 					text = turn.Text
 				}
 			}
-			if err := q.TurnCompleted(context.Background(), TurnCompletion{SessionID: inbox.SessionID, RequestID: root, RequestIDs: requestIDs, Text: text, CompletedAt: time.Now().UTC()}); err != nil {
+			if err := q.TurnCompleted(context.Background(), TurnCompletion{SessionID: inbox.SessionID, RequestID: root, RequestIDs: requestIDs, Text: text, Origin: current.Origin, CompletedAt: time.Now().UTC()}); err != nil {
 				return err
 			}
 		case "failed", "canceled", "interrupted", "withdrawn":

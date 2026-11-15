@@ -138,20 +138,21 @@ type Server struct {
 	localQueue *localQueue
 	// approvals holds host-issued, single-use authorizations. It is the only
 	// source of consent for a call that could not be assessed.
-	approvals      *probe.ApprovalStore
-	topics         *topics.Store
-	topicSource    topicGateway
-	topicSweepMu   sync.Mutex
-	push           *pushStore
-	pushSlots      chan struct{}
-	images         *media.Store
-	modelConfigs   *modelconfig.Store
-	mediaMu        sync.Mutex
-	activeImageJob imageWork // protected by mediaMu
-	onebot         *oneBotIntegration
-	qqofficial     *qqOfficialIntegration
-	identities     *channelstore.IdentityStore
-	turnObserver   TurnCompletionObserver
+	approvals         *probe.ApprovalStore
+	topics            *topics.Store
+	topicSource       topicGateway
+	topicSweepMu      sync.Mutex
+	push              *pushStore
+	pushSlots         chan struct{}
+	images            *media.Store
+	modelConfigs      *modelconfig.Store
+	mediaMu           sync.Mutex
+	activeImageJob    imageWork // protected by mediaMu
+	onebot            *oneBotIntegration
+	qqofficial        *qqOfficialIntegration
+	identities        *channelstore.IdentityStore
+	channelAudienceMu sync.Mutex
+	turnObserver      TurnCompletionObserver
 	// transportGeneration identifies this live server process. It is not an
 	// authorization secret or a storage generation: clients use it only to
 	// discard connection-local assumptions and request authoritative snapshots
@@ -438,6 +439,18 @@ func New(c Config) (*Server, error) {
 		}(), identities.Close(), coursewareStore.Close(), images.Close(), push.close(), topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
 	}
 	s.qqofficial = qqofficial
+	if err := s.backfillChannelAudiences(); err != nil {
+		workCancel()
+		pluginCatalog.StopAll(context.Background())
+		webClient.Close()
+		if qqofficial != nil {
+			_ = qqofficial.Close(context.Background())
+		}
+		if onebot != nil {
+			_ = onebot.Close(context.Background())
+		}
+		return nil, errors.Join(err, identities.Close(), coursewareStore.Close(), images.Close(), push.close(), topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
+	}
 	var channelObservers []TurnCompletionObserver
 	if onebot != nil {
 		channelObservers = append(channelObservers, onebot)
@@ -603,7 +616,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		model = "chat-agent Demo"
 	}
 	identity := currentAuth(r)
-	writeJSON(w, 200, map[string]any{"name": "chat-agent", "version": version, "auth_method": identity.Method, "device_id": identity.Device.ID, "device_admin": identity.Method == "owner" || identity.Device.Admin, "speech_enabled": s.speechEnabled(), "speech_max_chars": 1200, "model": model, "demo": s.config.Agent.Demo, "max_output": s.config.Agent.MaxOutputTokens, "thinking_max_output": s.config.ThinkingMaxOutput, "timeout_seconds": s.config.Agent.Timeout.Seconds(), "time_zone": s.location.String(), "web_fetch": s.web.FetchEnabled(), "web_search": s.web.SearchEnabled(), "image_generation": s.imageAvailable(), "image_reason": s.imageUnavailableReason(), "reminder_delivery": "inbox", "scheduler_ok": s.schedulerOK.Load(), "onebot_enabled": s.onebot != nil, "qq_official_enabled": s.qqofficial != nil, "transport": s.transportInfo(r)})
+	writeJSON(w, 200, map[string]any{"name": "chat-agent", "version": version, "auth_method": identity.Method, "device_id": identity.Device.ID, "device_admin": identity.Method == "owner" || identity.Device.Admin, "speech_enabled": s.speechEnabled(), "speech_max_chars": 1200, "model": model, "demo": s.config.Agent.Demo, "max_output": s.config.Agent.MaxOutputTokens, "thinking_max_output": s.config.ThinkingMaxOutput, "max_turns": s.config.Agent.MaxTurns, "max_tools": s.config.Agent.MaxToolCalls, "continuous_loop": s.config.Agent.MaxTurns == 0 && s.config.Agent.MaxToolCalls == 0, "timeout_seconds": s.config.Agent.Timeout.Seconds(), "time_zone": s.location.String(), "web_fetch": s.web.FetchEnabled(), "web_search": s.web.SearchEnabled(), "image_generation": s.imageAvailable(), "image_reason": s.imageUnavailableReason(), "reminder_delivery": "inbox", "scheduler_ok": s.schedulerOK.Load(), "onebot_enabled": s.onebot != nil, "qq_official_enabled": s.qqofficial != nil, "transport": s.transportInfo(r)})
 }
 
 func validID(id string) bool {

@@ -63,7 +63,7 @@ func (s *Server) proactiveSession(role, preferred string) (string, *probe.Sessio
 	var fallback *probe.Session
 	for _, id := range ordered {
 		sess, openErr := s.session(id)
-		if openErr != nil || sess.RoleID() != role {
+		if openErr != nil || sess.RoleID() != role || s.publicChannelSession(id) {
 			continue
 		}
 		if id == preferred || hasUserConversation(sess.Messages()) {

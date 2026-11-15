@@ -58,7 +58,7 @@ func endpoint(t *testing.T, handler func(http.ResponseWriter, *http.Request, req
 				t.Errorf("invalid runtime snapshot: %v", err)
 				continue
 			}
-			finalReply = len(req.Tools) == 0 && message.Role == "user" && snapshot.Source == "runtime-context" && !snapshot.ToolsAvailable && snapshot.ResponsesLeft > 0 && (snapshot.CallsLeft == 0 || snapshot.ResponsesLeft == 1) && strings.Contains(message.Content, "No tool calls are available in this step")
+			finalReply = len(req.Tools) == 0 && message.Role == "user" && snapshot.Source == "runtime-context" && !snapshot.ToolsAvailable && (snapshot.CallsLeft == 0 || snapshot.ResponsesLeft == 1) && strings.Contains(message.Content, "No tool calls are available in this step")
 		}
 		if req.Model != "test-model" || !req.Stream || req.MaxOutput != 0 || (!validTools && !finalReply) {
 			t.Errorf("unexpected model, stream, output limit or tools: %+v", req)
@@ -171,6 +171,51 @@ func TestStreamingToolLoop(t *testing.T) {
 	defer reopened.Close()
 	if len(reopened.messages) != 6 || len(reopened.messages[1].ToolCalls) != 3 || reopened.messages[2].ToolCallID != "call-clock" || reopened.messages[5].Content != "Time received." {
 		t.Fatal("tool-call transcript did not survive reopening")
+	}
+}
+
+type continuousLoopProvider struct{ calls int }
+
+func (p *continuousLoopProvider) Stream(_ context.Context, request ModelRequest, emit func(Event)) (Message, error) {
+	p.calls++
+	if p.calls <= 6 {
+		if len(request.Tools) != 1 || !request.HostStep.ToolsAllowed {
+			return Message{}, errors.New("continuous step lost its tool catalog")
+		}
+		call := ToolCall{ID: fmt.Sprintf("call-%d", p.calls), Type: "function", Function: FunctionCall{Name: "echo_step", Arguments: fmt.Sprintf(`{"value":%d}`, p.calls)}}
+		return Message{Role: "assistant", ToolCalls: []ToolCall{call}}, nil
+	}
+	if len(request.Tools) != 1 || !request.HostStep.ToolsAllowed {
+		return Message{}, errors.New("continuous loop was forced into a final-only boundary")
+	}
+	if emit != nil {
+		emit(Event{Type: EventTextDelta, Text: "finished after six tools"})
+	}
+	return Message{Role: "assistant", Content: "finished after six tools"}, nil
+}
+
+func TestContinuousLoopRunsBeyondLegacyFourStepLimit(t *testing.T) {
+	provider := &continuousLoopProvider{}
+	c := DefaultConfig()
+	c.Model, c.Provider, c.Timeout = "fixture", provider, 5*time.Second
+	c.DisableBuiltinClock = true
+	c.Tools = []Tool{{Name: "echo_step", Parameters: json.RawMessage(`{"type":"object","properties":{"value":{"type":"integer"}},"required":["value"],"additionalProperties":false}`), Execute: func(_ context.Context, raw json.RawMessage) (ToolResult, error) {
+		return ToolResult{Output: string(raw)}, nil
+	}}}
+	sess := NewSession()
+	agent, err := New(c, sess)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = Run(context.Background(), agent, c.Timeout, "keep going until the task is complete", nil); err != nil {
+		t.Fatal(err)
+	}
+	if provider.calls != 7 {
+		t.Fatalf("continuous loop stopped after %d model steps", provider.calls)
+	}
+	messages := sess.Messages()
+	if len(messages) != 14 || messages[len(messages)-1].Content != "finished after six tools" {
+		t.Fatalf("continuous loop transcript is incomplete: %d messages", len(messages))
 	}
 }
 

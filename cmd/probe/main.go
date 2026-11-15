@@ -27,8 +27,8 @@ func main() {
 func run() (runErr error) {
 	c := probe.DefaultConfig()
 	flag.DurationVar(&c.Timeout, "timeout", c.Timeout, "maximum run duration")
-	flag.IntVar(&c.MaxTurns, "max-turns", c.MaxTurns, "maximum model/tool loop turns")
-	flag.IntVar(&c.MaxToolCalls, "max-tools", c.MaxToolCalls, "maximum executed tools per run")
+	flag.IntVar(&c.MaxTurns, "max-turns", c.MaxTurns, "maximum model/tool loop turns; 0 continues until final response, cancel or timeout")
+	flag.IntVar(&c.MaxToolCalls, "max-tools", c.MaxToolCalls, "maximum executed tools per run; 0 uses the continuous loop")
 	flag.IntVar(&c.MaxOutputTokens, "max-output", c.MaxOutputTokens, "output tokens per generation")
 	flag.StringVar(&c.TokenParameter, "token-parameter", c.TokenParameter, "max_tokens or max_completion_tokens")
 	key := flag.String("session", "p0", "session key (reuse to resume)")

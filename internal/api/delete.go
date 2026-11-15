@@ -61,6 +61,10 @@ func (s *Server) deleteSession(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 503, map[string]any{"error": "删除已登记，但持久界面尚未完全清理；请再次删除以继续", "delete_id": deleteID})
 		return
 	}
+	if err := s.removeSessionAudience(id); err != nil {
+		writeJSON(w, 503, map[string]any{"error": "删除已登记，但会话隐私范围尚未完全清理；请再次删除以继续", "delete_id": deleteID})
+		return
+	}
 	if err := s.runtime.CompleteDeletion(deleteID); err != nil {
 		writeJSON(w, 503, map[string]any{"error": "会话内容已清理，但删除登记尚未结算；请再次删除以继续", "delete_id": deleteID})
 		return

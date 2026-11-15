@@ -23,6 +23,7 @@ type TurnSubmission struct {
 	Model      string
 	Thinking   string
 	Images     []media.Image
+	Origin     turns.TurnOrigin
 	DeferStart bool
 }
 
@@ -46,6 +47,7 @@ type TurnCompletion struct {
 	RequestID   string
 	RequestIDs  []string
 	Text        string
+	Origin      turns.TurnOrigin
 	CompletedAt time.Time
 }
 
@@ -141,14 +143,14 @@ func (s *Server) SubmitTurn(ctx context.Context, input TurnSubmission) (turns.Tu
 			return turns.Turn{}, false, listErr
 		}
 		for _, turn := range existing {
-			if turn.ID == input.RequestID && turn.Content == input.Content && turn.Mode == input.Mode && turn.Model == input.Model && turn.Thinking == input.Thinking && sameImages(turn.Images, input.Images) {
+			if turn.ID == input.RequestID && turn.Content == input.Content && turn.Mode == input.Mode && turn.Model == input.Model && turn.Thinking == input.Thinking && turn.Origin == input.Origin && sameImages(turn.Images, input.Images) {
 				turn.QueueDisposition = "duplicate"
 				return turn, true, nil
 			}
 		}
 		return turns.Turn{}, false, submissionError(http.StatusTooManyRequests, "同时生成的会话过多，请稍后发送", nil)
 	}
-	turn, duplicate, err := s.turns.EnqueueWithOptions(input.SessionID, input.RequestID, input.Content, input.Mode, input.Model, input.Thinking, input.Images)
+	turn, duplicate, err := s.turns.EnqueueWithOrigin(input.SessionID, input.RequestID, input.Content, input.Mode, input.Model, input.Thinking, input.Images, input.Origin)
 	if err != nil {
 		return turns.Turn{}, false, err
 	}

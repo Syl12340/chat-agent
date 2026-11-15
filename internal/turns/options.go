@@ -34,8 +34,28 @@ func validOptions(model, thinking string, images []media.Image) bool {
 	}
 	return true
 }
-func optionsDigest(content, mode, model, thinking string, images []media.Image) string {
-	if model == "" && thinking == "" && len(images) == 0 {
+func validOrigin(origin TurnOrigin) bool {
+	if origin.Kind == "" {
+		return origin.Platform == "" && origin.AccountID == "" && origin.ConversationKind == "" && origin.ConversationID == "" && origin.SenderID == ""
+	}
+	if origin.Kind != "channel" || origin.Platform == "" || origin.AccountID == "" || origin.ConversationID == "" || origin.SenderID == "" {
+		return false
+	}
+	if origin.ConversationKind != "private" && origin.ConversationKind != "group" {
+		return false
+	}
+	for _, value := range []string{origin.Platform, origin.AccountID, origin.ConversationID, origin.SenderID} {
+		if len(value) > 512 || strings.TrimSpace(value) != value || strings.ContainsAny(value, "\r\n\x00") {
+			return false
+		}
+	}
+	return true
+}
+
+func sameOrigin(a, b TurnOrigin) bool { return a == b }
+
+func optionsDigest(content, mode, model, thinking string, images []media.Image, origin TurnOrigin) string {
+	if model == "" && thinking == "" && len(images) == 0 && origin.Kind == "" {
 		return digest(content, mode)
 	}
 	type imageIdentity struct {
@@ -52,7 +72,8 @@ func optionsDigest(content, mode, model, thinking string, images []media.Image) 
 	value, _ := json.Marshal(struct {
 		Content, Mode, Model, Thinking string
 		Images                         []imageIdentity
-	}{content, mode, model, thinking, identities})
+		Origin                         TurnOrigin
+	}{content, mode, model, thinking, identities, origin})
 	hash := sha256.Sum256(value)
 	return hex.EncodeToString(hash[:])
 }

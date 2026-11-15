@@ -82,6 +82,11 @@ func (s *Server) sessionChannel(sessionID string) (channelSessionInfo, bool) {
 }
 
 func (s *Server) publicChannelSession(sessionID string) bool {
+	if _, found, err := s.groupAudience(sessionID); found || err != nil {
+		// A damaged or temporarily unreadable scope record fails closed. It is
+		// safer to withhold owner context than to guess this is a private chat.
+		return true
+	}
 	info, ok := s.sessionChannel(sessionID)
 	return ok && info.ConversationKind == "group"
 }
@@ -165,8 +170,26 @@ func (s *Server) linkChannelSession(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusNotFound, "没有找到可关联的 IM 会话")
 		return
 	}
+	sourceQueued, _, sourceQueueErr := s.turns.HasQueued(input.ChannelSessionID)
+	targetQueued, _, targetQueueErr := s.turns.HasQueued(targetID)
+	if sourceQueueErr != nil || targetQueueErr != nil {
+		fail(w, http.StatusServiceUnavailable, "暂时无法核对两个会话的队列")
+		return
+	}
+	if sourceQueued || targetQueued {
+		fail(w, http.StatusConflict, "请先处理两个会话中的排队消息")
+		return
+	}
+	if mapping.Key.ConversationKind == "group" && len(target.Messages()) > 0 {
+		fail(w, http.StatusConflict, "群聊只能关联到没有私人历史的新会话")
+		return
+	}
 	if _, occupied := s.sessionChannel(targetID); occupied {
 		fail(w, http.StatusConflict, "目标会话已经关联了 IM 渠道")
+		return
+	}
+	if err := s.markChannelAudience(mapping.Key, targetID); err != nil {
+		fail(w, http.StatusServiceUnavailable, "暂时无法固定群聊隐私范围")
 		return
 	}
 	if err := store.RelinkMapping(mapping.Key, targetID); err != nil {

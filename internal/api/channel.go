@@ -130,8 +130,14 @@ func (o *oneBotIntegration) signal() {
 }
 
 func (o *oneBotIntegration) TurnCompleted(_ context.Context, item TurnCompletion) error {
+	if item.Origin.Kind == "channel" && item.Origin.Platform != "onebot-v11" {
+		return nil
+	}
 	mapping, ok := o.store.MappingForSession(item.SessionID)
 	if !ok {
+		return nil
+	}
+	if item.Origin.Kind == "channel" && (item.Origin.AccountID != mapping.Key.AccountID || item.Origin.ConversationKind != mapping.Key.ConversationKind || item.Origin.ConversationID != mapping.Key.ConversationID) {
 		return nil
 	}
 	originated := false
@@ -198,7 +204,7 @@ func (o *oneBotIntegration) reconcile() error {
 					text = item.Text
 				}
 			}
-			if err := o.TurnCompleted(context.Background(), TurnCompletion{SessionID: inbox.SessionID, RequestID: root, RequestIDs: requestIDs, Text: text, CompletedAt: time.Now().UTC()}); err != nil {
+			if err := o.TurnCompleted(context.Background(), TurnCompletion{SessionID: inbox.SessionID, RequestID: root, RequestIDs: requestIDs, Text: text, Origin: current.Origin, CompletedAt: time.Now().UTC()}); err != nil {
 				return err
 			}
 		case "failed", "canceled", "interrupted", "withdrawn":
@@ -314,7 +320,8 @@ func (s *Server) oneBotWebhook(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	_, _, err = s.SubmitTurn(r.Context(), TurnSubmission{SessionID: mapping.SessionID, RequestID: envelope.EventID, Content: envelope.Message.Text, Mode: "auto", DeferStart: true})
+	origin := turns.TurnOrigin{Kind: "channel", Platform: envelope.Platform, AccountID: envelope.AccountID, ConversationKind: envelope.Conversation.Kind, ConversationID: envelope.Conversation.ID, SenderID: envelope.Sender.ID}
+	_, _, err = s.SubmitTurn(r.Context(), TurnSubmission{SessionID: mapping.SessionID, RequestID: envelope.EventID, Content: envelope.Message.Text, Mode: "auto", Origin: origin, DeferStart: true})
 	if err != nil {
 		_ = s.onebot.store.SetInboxState(envelope.EventID, "needs_attention", mapping.SessionID)
 		turnSubmissionFailure(w, err)
@@ -348,6 +355,9 @@ func (s *Server) ensureOneBotSession(envelope channelstore.Envelope) (channelsto
 	}
 	if historyErr != nil {
 		return channelstore.Mapping{}, nil, historyErr
+	}
+	if err := s.markChannelAudience(key, mapping.SessionID); err != nil {
+		return channelstore.Mapping{}, nil, err
 	}
 	sess, err := s.session(mapping.SessionID)
 	if err != nil || sess.RoleID() != key.RoleID {

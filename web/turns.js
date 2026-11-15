@@ -27,6 +27,11 @@ export function createTurnsUI({ state, json, storage, onError, onHistory, onStat
   const current = (sid,stamp) => state.token && session === sid && state.current === sid && generation === stamp;
   const canRead = () => state.token && session && state.current === session && navigator.onLine && document.visibilityState === 'visible';
   const say = text => { ui['turn-queue-error'].textContent = text || ''; ui['turn-queue-error'].hidden = !text; };
+  const originLabel = item => item?.origin?.kind === 'channel'
+    ? item.origin.platform === 'qq-official' ? 'QQ'
+      : item.origin.platform === 'onebot-v11' ? 'QQ · OneBot'
+      : '外部消息'
+    : '';
   const savePending = () => { if (pending) storage.set(storageKey,JSON.stringify(pending)); else storage.remove(storageKey); };
   function restorePending(sid) {
     try {
@@ -55,7 +60,8 @@ export function createTurnsUI({ state, json, storage, onError, onHistory, onStat
     ui['turn-queue-list'].replaceChildren();
     for (const item of queued) {
       const row = document.createElement('div'); row.className = 'turn-queue-item'; row.dataset.requestId = item.id;
-      const label = document.createElement('span'); label.textContent = answerLabel(item.content) || item.content || `图片消息 · ${item.images?.length || 0} 张`; row.append(label);
+      const label = document.createElement('span'), source = originLabel(item), content = answerLabel(item.content) || item.content || `图片消息 · ${item.images?.length || 0} 张`;
+      label.textContent = source ? `${source} · ${content}` : content; row.append(label);
       const button = document.createElement('button'); button.type = 'button'; button.textContent = '撤回'; button.disabled = queueBusy || state.submitting;
       button.addEventListener('click',() => queueAction(async sid => json(path(sid,`/turns/${encodeURIComponent(item.id)}`),{method:'DELETE'})));
       row.append(button); ui['turn-queue-list'].append(row);

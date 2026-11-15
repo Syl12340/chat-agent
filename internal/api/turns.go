@@ -329,7 +329,7 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 				for _, turn := range batch {
 					requestIDs = append(requestIDs, turn.ID)
 				}
-				if observeErr := observer.TurnCompleted(ctx, TurnCompletion{SessionID: id, RequestID: root, RequestIDs: requestIDs, Text: text, CompletedAt: time.Now().UTC()}); observeErr != nil {
+				if observeErr := observer.TurnCompleted(ctx, TurnCompletion{SessionID: id, RequestID: root, RequestIDs: requestIDs, Text: text, Origin: batch[0].Origin, CompletedAt: time.Now().UTC()}); observeErr != nil {
 					log.Printf("turn completion observer failed")
 					_ = s.turns.Pause(id, true)
 					return

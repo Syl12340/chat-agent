@@ -1,22 +1,24 @@
 # chat-agent
 
-当前源码基线为 **0.7.0**；Android 默认构建为 **0.7.0-debug（versionCode 38）**，包名保持 `dev.chatagent.ai.debug`。M0–M4 的首个完整纵切已经进入主线；本版继续加入主动陪伴反馈、双端 Agent 工作台和课件分析/讲解/测试纵切。真实线上调用证据与仍有条件的能力统一记在[能力实测清单](docs/capability-check.md)；旧发布文档只保留为历史证据。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
+当前源码基线为 **0.7.0**；Android 默认构建为 **0.7.0-debug（versionCode 38）**，包名保持 `dev.chatagent.ai.debug`。已有主动陪伴反馈、Linux/本机执行、课件提取与学习对话入口、消息身份和持久界面等基础。完整状态与边界见[2026-11-15 项目评估](docs/project-assessment-2026-11-15.md)，接下来的大方向与具体能力见[产品方向与能力设计](docs/product-direction.md)，历史线上证据见[能力实测清单](docs/capability-check.md)。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
 
-0.24.0 以 format index + manifest 选择唯一 runtime 代，聊天/队列规范状态与 attempt/model/tool 运行事实处于同一代。旧 transcript v1/v2、turns v1/v2/v3 只由停机维护命令显式迁移；最新轮/整会话删除先登记再重写或清理，旧代和模型快照不会被读取器自动复活。生产配置仍使用 `ecnu-max`，本地搜索、设备白名单和加密 9992 入口保持不变。
+0.24.0 以 format index + manifest 选择唯一 runtime 代，聊天/队列规范状态与 attempt/model/tool 运行事实处于同一代。旧 transcript v1/v2、turns v1/v2/v3 只由停机维护命令显式迁移；当前 turns v5 还保存外部消息的来源、发送者与受众，用于合并和回复路由。最新轮/整会话删除先登记再重写或清理，旧代和模型快照不会被读取器自动复活。生产配置仍使用 `ecnu-max`，本地搜索、设备白名单和加密 9992 入口保持不变。
 
 0.19 引入的最多三张 JPEG/PNG 图片消息、ECNU Max/Plus 选择、关闭/中/高/超高思考强度，以及聊天阅读与输入界面继续保留，后台接收等 0.18 功能也保留。0.24 在 runtime history/turns 中保留这些字段，不静默降级；旧二进制不能直接写当前数据根。[功能与格式说明](docs/chat-0.19.md)、[Harness 规划](docs/dsh-harness-migration-plan.md)。
 
-独立实现的轻量个人 AI 助手，当前具备 P0–P3 核心能力：运行时、PWA 聊天、角色/记忆、待办和提醒收件箱。Go 标准库 + 原生 HTML/CSS/JavaScript，**Go 侧零第三方模块、无前端构建步骤**，网页资源嵌入单个可执行文件。前端数学渲染唯一外部依赖为本地固定 KaTeX 0.19.1，许可随包保留。
+轻量个人 AI 助手，具备运行时、PWA 聊天、角色/记忆、待办和提醒收件箱。Go 标准库优先，当前使用 `github.com/coder/websocket v1.8.15`；原生 HTML/CSS/JavaScript 无前端构建步骤，网页资源嵌入单个可执行文件。数学渲染使用本地固定 KaTeX 0.19.1，许可随包保留。允许按许可直接复用适合的成熟源码与组件。
 
 0.21 已合并交付原拟 0.20.1 参数记忆和 0.21 渲染/UI：按模型记住思考档位，Markdown 表格/嵌套列表、LaTeX/MathML、JSON 树、数据表/柱状图/流程图，以及同实例工作台和工具状态排版。普通网页与 Android 共享渲染，Android 新包通过原生存储解决随机代理端口导致的偏好丢失。[实施与边界](docs/rendering-and-ui-plan.md)。
 
-Channel P0–P2 已完成独立验签入口、Inbox/Outbox、稳定 session mapping、共享入队和防重复投递；它复用现有 Harness，不建立第二套 Agent Loop。稳定消息身份与持久 surface 已进入主线，下一阶段优先做陪伴/运行可靠性、双端 Agent 工作台和服务器小精灵 O2；SnowLuma/OneBot 及更多第三方 IM 继续低优先级。见[Channel 架构](docs/channel-integration-architecture.md)、[当前规划](docs/feature-plan.md)及[推进目标](docs/product-direction.md)。
+Channel 已有独立身份校验、Inbox/Outbox、session mapping 与共享 Harness，并新增 QQ 官方入口、账号绑定和图片处理。工作区已补来源/受众路由、跨源合并隔离和独立持久群作用域；真实 QQ/OneBot 仍关闭，不能仅配置凭据就视为完成接入。见[Channel 架构](docs/channel-integration-architecture.md)及[当前规划](docs/feature-plan.md)。
 
-**0.7.0 已交付**：睡前闲聊、一天复盘、共同兴趣和小目标陪伴。共同活动支持手动保存进展、跨会话继续、暂停与结束，只影响明确关联的会话。[使用说明](docs/activities-0.7.md)。原有[连续聊天、事件与关怀](docs/companion-0.6.md)、[陪伴偏好](docs/companion.md)继续保留。
+**共同活动（历史版本已交付）**：睡前闲聊、一天复盘、共同兴趣和小目标陪伴，支持保存进展、跨会话继续、暂停与结束。[历史使用说明](docs/activities-0.7.md)中的 0.7 属于版本号重置前的记录，不是本次 0.7.0 发布。原有[连续聊天、事件与关怀](docs/companion-0.6.md)、[陪伴偏好](docs/companion.md)继续保留。
 
-现有 Android/网页继续作为主要体验面；QQ 仅先实现主人私聊这一条受控入口，微信、B站、群聊和通用多平台网关保持后续优先级。当前已上线能力、实际缺口和后续建议排期统一见[当前规划](docs/feature-plan.md)。
+Android/网页继续作为主要体验面；QQ 与应用共享身份和获准记忆，但历史与回复受众需要明确区分。微信、B站保留适配方向，Telegram/飞书/企微暂缓。当前规划覆盖陪伴、双端 Agent、服务器管理、插件、学业、ComfyUI、UI/GenUI 和 IM，按能力与依赖描述，不安排工程排期。
 
 支持手机页面、设备白名单鉴权、会话列表、流式回答、停止生成、历史恢复、工具过程展示、Markdown/数学/结构渲染、统一助手人格、记忆审核与上下文压缩。Go 存储保持标准库，记忆使用版本化 JSON 与基础关键词检索，未引入原规格中的 SQLite/FTS5。
+
+普通用户对话现在采用[持续 Harness loop](docs/continuous-harness-loop-2026-11-15.md)：默认不按固定模型步数或工具次数提前收尾，而是持续执行 model → tool → model，直到模型完成、用户停止、运行失败或达到总时限。部署方仍可配置非零硬上限；后台主动关怀继续使用独立的单步短输出流程。
 
 ## 快速体验
 
@@ -68,7 +70,7 @@ $env:CHAT_MODEL='your-model-id'
 
 默认输出字段为 `max_tokens`。需要其他字段时显式设置 `-token-parameter max_completion_tokens`。不发送 `stream_options`，不自动重试收费请求或切换协议。
 
-可选参数：`-listen 127.0.0.1:8080`、`-data <目录>`、`-timeout 30s`、`-max-turns 4`、`-max-tools 4`、`-max-output 1024`。默认最多 4 个会话同时生成，每个会话同一时刻只有一个请求。
+常用参数：`-listen 127.0.0.1:8080`、`-data <目录>`、`-timeout 5m`。`-max-turns 0`、`-max-tools 0` 和 `-max-output 0` 是当前默认值，分别表示不设置固定 step 上限、不设置固定工具调用上限、不发送人为输出 token 上限；可传非零值施加部署硬边界。默认最多 4 个会话同时生成，每个会话同一时刻只有一个请求。
 
 Android 当前可以填写 `chat://47.117.40.74:9992`，通过固定服务器公钥的加密 TCP 直接连接云端；协议与密钥说明见 [加密传输](docs/encrypted-transport.md)。服务器同时保留回环 HTTP 与 SSH 隧道。普通浏览器若需公网 PWA，可另配 HTTPS 反向代理，关闭响应缓冲并保留 Host 和 Authorization 头；当前尚未提供公网浏览器 HTTPS 入口。[连接和维护步骤](deploy/README.md)。
 

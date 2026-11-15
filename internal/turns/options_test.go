@@ -1,11 +1,19 @@
 package turns
 
 import (
-	"errors"
 	"chat-agent/internal/media"
+	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
+
+func TestAppOriginRemainsLegacyCompatibleJSON(t *testing.T) {
+	raw, err := json.Marshal(Turn{ID: "app"})
+	if err != nil || strings.Contains(string(raw), `"origin"`) {
+		t.Fatalf("zero app origin changed legacy JSON: %s err=%v", raw, err)
+	}
+}
 
 func TestMultimodalQueueLifecycle(t *testing.T) {
 	dir := t.TempDir()
@@ -72,5 +80,32 @@ func TestMultimodalQueueLifecycle(t *testing.T) {
 	images, err := s.AllImages("session")
 	if err != nil || len(images) != 1 || images[0].ID != image.ID {
 		t.Fatal("full image reference list failed")
+	}
+}
+
+func TestQueueDoesNotMergeDifferentChannelAudiences(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	app := TurnOrigin{}
+	qq := TurnOrigin{Kind: "channel", Platform: "qq-official", AccountID: "app", ConversationKind: "private", ConversationID: "chat", SenderID: "owner"}
+	if _, _, err = s.EnqueueWithOrigin("session", "app_turn", "应用消息", "auto", "", "", nil, app); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = s.EnqueueWithOrigin("session", "qq_turn", "QQ 消息", "auto", "", "", nil, qq); err != nil {
+		t.Fatal(err)
+	}
+	batch, err := s.Begin("session", 0, func(Turn) bool { return true })
+	if err != nil || len(batch) != 1 || batch[0].ID != "app_turn" {
+		t.Fatalf("different audiences merged: %+v err=%v", batch, err)
+	}
+	if err = s.Finish("session", "app_turn", "completed", "reply", "", 2, nil); err != nil {
+		t.Fatal(err)
+	}
+	batch, err = s.Begin("session", 2, func(Turn) bool { return true })
+	if err != nil || len(batch) != 1 || batch[0].Origin != qq {
+		t.Fatalf("channel origin did not survive queue: %+v err=%v", batch, err)
 	}
 }

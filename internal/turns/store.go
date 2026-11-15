@@ -36,6 +36,20 @@ type ToolEvent struct {
 	ElapsedMS *int64                 `json:"elapsed_ms,omitempty"`
 	Approval  *probe.ApprovalRequest `json:"approval,omitempty"`
 }
+
+// TurnOrigin is the immutable delivery audience captured when a request enters
+// the queue. The zero value means the authenticated chat application. Channel
+// turns persist enough identity to prevent two senders or audiences from being
+// merged merely because they share a CA session.
+type TurnOrigin struct {
+	Kind             string `json:"kind,omitempty"`
+	Platform         string `json:"platform,omitempty"`
+	AccountID        string `json:"account_id,omitempty"`
+	ConversationKind string `json:"conversation_kind,omitempty"`
+	ConversationID   string `json:"conversation_id,omitempty"`
+	SenderID         string `json:"sender_id,omitempty"`
+}
+
 type Turn struct {
 	ID               string        `json:"id"`
 	Sequence         int           `json:"sequence"`
@@ -53,6 +67,7 @@ type Turn struct {
 	Model            string        `json:"model,omitempty"`
 	Thinking         string        `json:"thinking,omitempty"`
 	Images           []media.Image `json:"images,omitempty"`
+	Origin           TurnOrigin    `json:"origin,omitzero"`
 	// QueueDisposition is response-only admission metadata. The store leaves it
 	// empty so restart recovery remains based solely on Status and BatchID.
 	QueueDisposition string `json:"queue_disposition,omitempty"`
@@ -132,7 +147,7 @@ func decodeState(id string, b []byte) (*state, bool, error) {
 	if err := d.Decode(&st); err != nil {
 		return nil, false, err
 	}
-	if d.Decode(&extra) != io.EOF || st.Version < 1 || st.Version > 4 || st.SessionID != id || len(st.Items) > 2048 {
+	if d.Decode(&extra) != io.EOF || st.Version < 1 || st.Version > 5 || st.SessionID != id || len(st.Items) > 2048 {
 		return nil, false, errors.New("invalid turn ledger")
 	}
 	if st.Version == 1 {
@@ -155,6 +170,9 @@ func decodeState(id string, b []byte) (*state, bool, error) {
 		}
 		if !validOptions(t.Model, t.Thinking, t.Images) {
 			return nil, false, errors.New("invalid turn options")
+		}
+		if (st.Version < 5 && t.Origin.Kind != "") || !validOrigin(t.Origin) {
+			return nil, false, errors.New("invalid turn origin")
 		}
 		for _, tool := range t.Tools {
 			if st.Version < 4 && (tool.View != nil || tool.Status != "" || tool.ElapsedMS != nil || tool.Approval != nil) {
@@ -199,6 +217,7 @@ func ExportV3(id string, b []byte) ([]byte, error) {
 		return nil, err
 	}
 	for i := range st.Items {
+		st.Items[i].Origin = TurnOrigin{}
 		for j := range st.Items[i].Tools {
 			t := &st.Items[i].Tools[j]
 			t.View, t.ElapsedMS, t.Approval, t.Status = nil, nil, nil, ""
@@ -305,16 +324,19 @@ func (s *Store) Enqueue(id, rid, content, mode string) (Turn, bool, error) {
 	return s.EnqueueWithOptions(id, rid, content, mode, "", "", nil)
 }
 func (s *Store) EnqueueWithOptions(id, rid, content, mode, model, thinking string, images []media.Image) (Turn, bool, error) {
+	return s.EnqueueWithOrigin(id, rid, content, mode, model, thinking, images, TurnOrigin{})
+}
+func (s *Store) EnqueueWithOrigin(id, rid, content, mode, model, thinking string, images []media.Image, origin TurnOrigin) (Turn, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !storage.ValidID(rid) || strings.TrimSpace(content) == "" && len(images) == 0 || len(content) > 64<<10 || !validOptions(model, thinking, images) {
+	if !storage.ValidID(rid) || strings.TrimSpace(content) == "" && len(images) == 0 || len(content) > 64<<10 || !validOptions(model, thinking, images) || !validOrigin(origin) {
 		return Turn{}, false, ErrConflict
 	}
 	st, err := s.load(id)
 	if err != nil {
 		return Turn{}, false, err
 	}
-	hash := optionsDigest(content, mode, model, thinking, images)
+	hash := optionsDigest(content, mode, model, thinking, images, origin)
 	pending := 0
 	for _, r := range st.Items {
 		if r.ID == rid {
@@ -331,9 +353,12 @@ func (s *Store) EnqueueWithOptions(id, rid, content, mode, model, thinking strin
 		return Turn{}, false, ErrLimit
 	}
 	next := clone(st)
-	turn := Turn{ID: rid, Sequence: len(next.Items) + 1, Content: content, Mode: mode, Status: "queued", CreatedAt: time.Now().UTC(), Model: model, Thinking: thinking, Images: append([]media.Image(nil), images...)}
+	turn := Turn{ID: rid, Sequence: len(next.Items) + 1, Content: content, Mode: mode, Status: "queued", CreatedAt: time.Now().UTC(), Model: model, Thinking: thinking, Images: append([]media.Image(nil), images...), Origin: origin}
 	if model != "" || thinking != "" || len(images) > 0 {
 		next.Version = max(next.Version, 2)
+	}
+	if origin.Kind != "" {
+		next.Version = max(next.Version, 5)
 	}
 	next.Items = append(next.Items, record{Turn: turn, Digest: hash})
 	// Retain request digests for the entire bounded ledger; compact only payloads.
@@ -511,7 +536,7 @@ func (s *Store) Begin(id string, start int, merge func(Turn) bool) ([]Turn, erro
 		if r.Status != "queued" {
 			continue
 		}
-		if len(out) > 0 && (len(out) >= 4 || size+len(r.Content) > 64<<10 || r.Mode != mode || r.Model != out[0].Model || r.Thinking != out[0].Thinking || imageCount+len(r.Images) > 3 || !merge(cloneTurn(r.Turn)) || !merge(cloneTurn(out[0]))) {
+		if len(out) > 0 && (len(out) >= 4 || size+len(r.Content) > 64<<10 || r.Mode != mode || r.Model != out[0].Model || r.Thinking != out[0].Thinking || !sameOrigin(r.Origin, out[0].Origin) || imageCount+len(r.Images) > 3 || !merge(cloneTurn(r.Turn)) || !merge(cloneTurn(out[0]))) {
 			break
 		}
 		if len(out) == 0 {

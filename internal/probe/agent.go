@@ -22,7 +22,10 @@ type Config struct {
 	// UtilityModel handles background work that never faces the user: history
 	// summaries. Empty means Model. Compaction is the one place a cheaper model
 	// is safe, because its output is validated and rejected on failure.
-	UtilityModel                            string
+	UtilityModel string
+	// Zero turn/tool limits keep stepping until a final model response, cancel or
+	// timeout. A positive value is an operator-imposed hard ceiling. Output zero
+	// omits the provider parameter instead of inventing a default.
 	MaxTurns, MaxToolCalls, MaxOutputTokens int
 	Timeout                                 time.Duration
 	TokenParameter                          string
@@ -50,7 +53,10 @@ type Config struct {
 }
 
 func DefaultConfig() Config {
-	return Config{MaxTurns: 4, MaxToolCalls: 4, Timeout: 30 * time.Second, TokenParameter: "max_tokens", ContextBytes: 64 << 10, KeepRecentTurns: 4}
+	// A zero turn/tool budget means the harness keeps stepping until the model
+	// returns a final response. Cancellation, the run timeout, per-tool timeouts,
+	// approval gates and repeated-call detection remain the safety boundaries.
+	return Config{Timeout: 5 * time.Minute, TokenParameter: "max_tokens", ContextBytes: 64 << 10, KeepRecentTurns: 4}
 }
 
 type toolCallKey struct{}
@@ -191,8 +197,8 @@ func New(c Config, sess *Session) (*Agent, error) {
 	if (!c.Demo && (strings.TrimSpace(c.Model) == "" || (c.Provider == nil && c.APIKey == ""))) || sess == nil {
 		return nil, errors.New("API key, model and session are required")
 	}
-	if c.MaxTurns < 1 || c.MaxToolCalls < 1 || c.MaxOutputTokens < 0 || c.Timeout <= 0 || len(c.HostPrompt) > 16<<10 {
-		return nil, errors.New("turn, tool and timeout limits must be positive; output tokens cannot be negative (0 uses provider default)")
+	if c.MaxTurns < 0 || c.MaxToolCalls < 0 || c.MaxOutputTokens < 0 || c.Timeout <= 0 || len(c.HostPrompt) > 16<<10 {
+		return nil, errors.New("turn, tool and output limits cannot be negative; timeout must be positive")
 	}
 	if c.ContextBytes < 0 || c.KeepRecentTurns < 0 {
 		return nil, errors.New("context budget and preserved turns cannot be negative")
@@ -327,11 +333,16 @@ func RunMessages(ctx context.Context, a *Agent, timeout time.Duration, inputs []
 	lastBatch := ""
 	lastResults := []ToolResult{}
 	forceFinal := false
-	for turn := 0; turn < a.config.MaxTurns; turn++ {
+	for turn := 0; ; turn++ {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		toolsAllowed := !forceFinal && turn < a.config.MaxTurns-1 && calls < a.config.MaxToolCalls
+		if a.config.MaxTurns > 0 && turn >= a.config.MaxTurns {
+			return fmt.Errorf("agent exceeded configured maximum turns (%d)", a.config.MaxTurns)
+		}
+		turnBoundary := a.config.MaxTurns > 0 && turn >= a.config.MaxTurns-1
+		toolBoundary := a.config.MaxToolCalls > 0 && calls >= a.config.MaxToolCalls
+		toolsAllowed := !forceFinal && !turnBoundary && !toolBoundary
 		assembly, err := a.assemble(ctx, a.stepContext(turn, calls, toolsAllowed))
 		if err != nil {
 			return err
@@ -373,7 +384,7 @@ func RunMessages(ctx context.Context, a *Agent, timeout time.Duration, inputs []
 				result = lastResults[i]
 				result.CallID = call.ID
 				forceFinal = true
-			} else if calls >= a.config.MaxToolCalls {
+			} else if a.config.MaxToolCalls > 0 && calls >= a.config.MaxToolCalls {
 				result = normalizeToolResult(toolFailure("TOOL_LIMIT", "tool invocation limit reached"))
 			} else {
 				calls++
@@ -397,5 +408,4 @@ func RunMessages(ctx context.Context, a *Agent, timeout time.Duration, inputs []
 		}
 		lastBatch, lastResults = string(encodedBatch), results
 	}
-	return fmt.Errorf("agent exceeded maximum turns (%d)", a.config.MaxTurns)
 }

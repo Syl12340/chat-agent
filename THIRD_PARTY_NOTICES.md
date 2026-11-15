@@ -52,6 +52,10 @@ Additional design reference: DeepSeek Harness commit
   TypeScript sandbox runtime.
 - `packages/jobs/tool-jobs/src/index.ts` informs the separation of job
   submission, observation and cancellation in `internal/api/image_jobs.go`.
+- `packages/core/agent-loop/src/agent.ts` informs the continuous per-turn loop
+  termination used by `internal/probe/agent.go`: a run keeps stepping while
+  tool calls remain and finishes on a tool-free assistant result, cancellation
+  or failure. CA retains its own Go timeout, approval and repeat-call guards.
 - `packages/llm/llm/src/api-key.ts` and
   `packages/llm/llm-deepseek-api-key/src/{config,index}.ts` inform the printable
   API-key validation and per-request route snapshot used by

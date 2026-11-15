@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -74,16 +76,34 @@ type localDeviceState struct {
 	Capabilities []string  `json:"capabilities,omitempty"`
 }
 
+type localOperationFile struct {
+	Name        string `json:"name"`
+	MediaType   string `json:"media_type"`
+	Bytes       int64  `json:"bytes"`
+	SHA256      string `json:"sha256"`
+	DownloadURL string `json:"download_url"`
+}
+
 type localOperationView struct {
-	OperationID string     `json:"operation_id"`
-	DeviceID    string     `json:"device_id"`
-	Kind        string     `json:"kind"`
-	Target      string     `json:"target,omitempty"`
-	Status      string     `json:"status"`
-	Error       string     `json:"error,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	ClaimedAt   *time.Time `json:"claimed_at,omitempty"`
-	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	OperationID string               `json:"operation_id"`
+	DeviceID    string               `json:"device_id"`
+	RequestSHA  string               `json:"request_sha256,omitempty"`
+	Kind        string               `json:"kind"`
+	Target      string               `json:"target,omitempty"`
+	Status      string               `json:"status"`
+	Error       string               `json:"error,omitempty"`
+	Artifacts   int                  `json:"artifacts,omitempty"`
+	Files       []localOperationFile `json:"files,omitempty"`
+	CreatedAt   time.Time            `json:"created_at"`
+	ClaimedAt   *time.Time           `json:"claimed_at,omitempty"`
+	CompletedAt *time.Time           `json:"completed_at,omitempty"`
+}
+
+type localQueueState struct {
+	Version    int                  `json:"version"`
+	Operations []localOperationView `json:"operations"`
+	Tasks      []localagent.Task    `json:"tasks,omitempty"`
+	Receipts   []localagent.Receipt `json:"receipts,omitempty"`
 }
 
 // localQueue holds tasks between the model and an execution endpoint.
@@ -99,6 +119,7 @@ type localQueue struct {
 	order      []string
 	devices    map[string]localDeviceState
 	operations map[string]localOperationView
+	tasks      map[string]localagent.Task
 	canceled   map[string]bool
 	statePath  string
 }
@@ -110,19 +131,56 @@ func newLocalQueue(paths ...string) *localQueue {
 		receipts:   map[string]localagent.Receipt{},
 		devices:    map[string]localDeviceState{},
 		operations: map[string]localOperationView{},
+		tasks:      map[string]localagent.Task{},
 		canceled:   map[string]bool{},
 	}
 	if len(paths) > 0 && paths[0] != "" {
 		q.statePath = paths[0]
 		_ = os.MkdirAll(filepath.Dir(q.statePath), 0700)
 		var saved []localOperationView
-		if raw, err := os.ReadFile(q.statePath); err == nil && json.Unmarshal(raw, &saved) == nil {
+		var tasks []localagent.Task
+		var receipts []localagent.Receipt
+		if raw, err := os.ReadFile(q.statePath); err == nil {
+			var state localQueueState
+			if json.Unmarshal(raw, &state) == nil && (state.Version == 2 || state.Version == 3) {
+				saved, receipts = state.Operations, state.Receipts
+				if state.Version == 3 {
+					tasks = state.Tasks
+				}
+			} else {
+				_ = json.Unmarshal(raw, &saved)
+			}
+		}
+		if len(saved) > 0 || len(receipts) > 0 {
 			now := time.Now().UTC()
 			for _, view := range saved {
 				if view.Status == "queued" || view.Status == "running" {
 					view.Status, view.Error, view.CompletedAt = "interrupted", "服务重启中断；任务不会自动重放", &now
 				}
 				q.operations[view.OperationID] = view
+			}
+			for _, task := range tasks {
+				view, ok := q.operations[task.OperationID]
+				if !ok || task.Protocol != localagent.Protocol || localTaskDigest(task) != view.RequestSHA {
+					continue
+				}
+				q.tasks[task.OperationID] = task
+			}
+			sort.Slice(receipts, func(i, j int) bool { return receipts[i].CompletedAt.Before(receipts[j].CompletedAt) })
+			if len(receipts) > localReceiptKeep {
+				receipts = receipts[len(receipts)-localReceiptKeep:]
+			}
+			for _, receipt := range receipts {
+				if receipt.OperationID == "" {
+					continue
+				}
+				q.receipts[receipt.OperationID] = receipt
+				q.order = append(q.order, receipt.OperationID)
+				if view, ok := q.operations[receipt.OperationID]; ok {
+					view.Files = localOperationFiles(receipt)
+					view.Artifacts = len(view.Files)
+					q.operations[receipt.OperationID] = view
+				}
 			}
 			q.saveLocked()
 		}
@@ -139,15 +197,32 @@ func (q *localQueue) saveLocked() {
 		items = append(items, item)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.After(items[j].CreatedAt) })
-	if len(items) > 200 {
-		items = items[:200]
+	if len(items) > localOperationKeep {
+		items = items[:localOperationKeep]
 	}
-	if raw, err := json.Marshal(items); err == nil {
-		_ = storage.Replace(q.statePath, raw)
+	tasks := make([]localagent.Task, 0, len(items))
+	for _, item := range items {
+		if task, ok := q.tasks[item.OperationID]; ok {
+			tasks = append(tasks, task)
+		}
+	}
+	receipts := make([]localagent.Receipt, 0, len(q.order))
+	for _, id := range q.order {
+		if receipt, ok := q.receipts[id]; ok {
+			receipts = append(receipts, receipt)
+		}
+	}
+	if raw, err := json.Marshal(localQueueState{Version: 3, Operations: items, Tasks: tasks, Receipts: receipts}); err == nil {
+		if err := storage.Replace(q.statePath, raw); err != nil {
+			log.Printf("local agent operation state could not be saved")
+		}
 	}
 }
 
-const localReceiptKeep = 32
+const (
+	localOperationKeep = 64
+	localReceiptKeep   = 32
+)
 
 func (q *localQueue) enqueue(task localagent.Task, device string, ttl time.Duration) *localPending {
 	item := &localPending{task: task, device: device, waiting: make(chan localagent.Receipt, 1), expiresAt: time.Now().Add(ttl)}
@@ -157,7 +232,8 @@ func (q *localQueue) enqueue(task localagent.Task, device string, ttl time.Durat
 	if target == "" {
 		target = task.Action
 	}
-	q.operations[task.OperationID] = localOperationView{OperationID: task.OperationID, DeviceID: device, Kind: task.Kind, Target: target, Status: "queued", CreatedAt: time.Now().UTC()}
+	q.operations[task.OperationID] = localOperationView{OperationID: task.OperationID, DeviceID: device, RequestSHA: localTaskDigest(task), Kind: task.Kind, Target: target, Status: "queued", CreatedAt: time.Now().UTC()}
+	q.tasks[task.OperationID] = task
 	q.saveLocked()
 	q.mu.Unlock()
 	return item
@@ -197,16 +273,97 @@ func (q *localQueue) claim(device string, capabilities []string) *localagent.Tas
 	return nil
 }
 
-func (q *localQueue) complete(receipt localagent.Receipt) (*localPending, bool) {
+func localTaskDigest(task localagent.Task) string {
+	raw, _ := json.Marshal(task)
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
+
+func localOperationFiles(receipt localagent.Receipt) []localOperationFile {
+	files := make([]localOperationFile, 0, len(receipt.Artifacts))
+	for _, item := range receipt.Artifacts {
+		if !validLocalArtifact(item) {
+			continue
+		}
+		files = append(files, localOperationFile{
+			Name: item.Name, MediaType: item.MediaType, Bytes: item.Bytes, SHA256: item.SHA256,
+			DownloadURL: "/api/local-agent/artifacts/" + receipt.OperationID + "/" + item.SHA256,
+		})
+	}
+	return files
+}
+
+func validLocalArtifact(item localagent.Artifact) bool {
+	if item.Name == "" || len(item.Name) > 512 || strings.ContainsAny(item.Name, "\r\n\x00") || item.Bytes < 0 || item.Bytes > localArtifactLimit || len(item.SHA256) != 64 || len(item.MediaType) > 128 || strings.ContainsAny(item.MediaType, "\r\n\x00") {
+		return false
+	}
+	_, err := hex.DecodeString(item.SHA256)
+	return err == nil && strings.ToLower(item.SHA256) == item.SHA256
+}
+
+func (q *localQueue) complete(device string, receipt localagent.Receipt) (*localPending, bool, error) {
+	if len(receipt.Artifacts) > 16 {
+		return nil, false, errors.New("receipt contains too many artifacts")
+	}
+	for _, artifact := range receipt.Artifacts {
+		if !validLocalArtifact(artifact) {
+			return nil, false, errors.New("receipt contains invalid artifact metadata")
+		}
+	}
 	q.mu.Lock()
 	item, ok := q.inflight[receipt.OperationID]
-	if ok {
-		delete(q.inflight, receipt.OperationID)
+	if !ok {
+		if prior, found := q.receipts[receipt.OperationID]; found && reflect.DeepEqual(prior, receipt) {
+			q.mu.Unlock()
+			return nil, false, nil
+		}
+		view, found := q.operations[receipt.OperationID]
+		storedTask, taskStored := q.tasks[receipt.OperationID]
+		if found && view.DeviceID == device && view.ClaimedAt != nil && view.Status == "interrupted" && receipt.Protocol == localagent.Protocol && receipt.RequestSHA256 == view.RequestSHA && (!taskStored || localTaskDigest(storedTask) == view.RequestSHA) {
+			switch receipt.Status {
+			case "completed", "failed", "rejected", "canceled":
+				q.receipts[receipt.OperationID] = receipt
+				q.order = append(q.order, receipt.OperationID)
+				for len(q.order) > localReceiptKeep {
+					delete(q.receipts, q.order[0])
+					q.order = q.order[1:]
+				}
+				view.Files = localOperationFiles(receipt)
+				view.Status, view.Error, view.Artifacts = receipt.Status, receipt.Error, len(view.Files)
+				completed := receipt.CompletedAt
+				if completed.IsZero() {
+					completed = time.Now().UTC()
+				}
+				view.CompletedAt = &completed
+				q.operations[receipt.OperationID] = view
+				q.saveLocked()
+				q.mu.Unlock()
+				return nil, false, nil
+			}
+		}
+		q.mu.Unlock()
+		return nil, false, errors.New("operation is not running")
 	}
+	if item.device != device {
+		q.mu.Unlock()
+		return nil, false, errors.New("operation belongs to another device")
+	}
+	if receipt.Protocol != localagent.Protocol || receipt.OperationID != item.task.OperationID || receipt.RequestSHA256 != localTaskDigest(item.task) {
+		q.mu.Unlock()
+		return nil, false, errors.New("receipt does not match the claimed task")
+	}
+	switch receipt.Status {
+	case "completed", "failed", "rejected", "canceled":
+	default:
+		q.mu.Unlock()
+		return nil, false, errors.New("receipt status is invalid")
+	}
+	delete(q.inflight, receipt.OperationID)
 	view := q.operations[receipt.OperationID]
 	if view.Status != "canceled" {
 		q.receipts[receipt.OperationID] = receipt
-		view.Status, view.Error = receipt.Status, receipt.Error
+		view.Files = localOperationFiles(receipt)
+		view.Status, view.Error, view.Artifacts = receipt.Status, receipt.Error, len(view.Files)
 		completed := receipt.CompletedAt
 		if completed.IsZero() {
 			completed = time.Now().UTC()
@@ -224,7 +381,7 @@ func (q *localQueue) complete(receipt localagent.Receipt) (*localPending, bool) 
 	if ok {
 		item.waiting <- receipt
 	}
-	return item, ok
+	return item, true, nil
 }
 
 // cancel fails a queued task whose caller stopped waiting.
@@ -269,6 +426,13 @@ func (q *localQueue) cancelRequested(operationID string) bool {
 	return q.canceled[operationID]
 }
 
+func (q *localQueue) deviceOwns(operationID, device string) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	view, ok := q.operations[operationID]
+	return ok && view.DeviceID == device
+}
+
 func (q *localQueue) snapshot(configured map[string]string) ([]localDeviceState, []localOperationView) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -302,20 +466,37 @@ func (q *localQueue) artifactUploadAllowed(operationID, device string) bool {
 func (q *localQueue) artifact(operationID, digest string) (localagent.Artifact, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	receipt, ok := q.receipts[operationID]
-	if !ok {
-		return localagent.Artifact{}, false
+	if receipt, ok := q.receipts[operationID]; ok {
+		for _, item := range receipt.Artifacts {
+			if item.SHA256 == digest && validLocalArtifact(item) {
+				return item, true
+			}
+		}
 	}
-	for _, item := range receipt.Artifacts {
-		if item.SHA256 == digest {
-			return item, true
+	if view, found := q.operations[operationID]; found {
+		for _, file := range view.Files {
+			item := localagent.Artifact{Name: file.Name, MediaType: file.MediaType, Bytes: file.Bytes, SHA256: file.SHA256}
+			if item.SHA256 == digest && validLocalArtifact(item) {
+				return item, true
+			}
 		}
 	}
 	return localagent.Artifact{}, false
 }
 
+type localTaskScope struct {
+	SessionID string
+	RoleID    string
+	RequestID string
+}
+
+func (scope localTaskScope) bind(task localagent.Task) localagent.Task {
+	task.SessionID, task.RoleID, task.RequestID = scope.SessionID, scope.RoleID, scope.RequestID
+	return task
+}
+
 // localAgentTools exposes the configured execution endpoint to the model.
-func (s *Server) localAgentTools() []probe.Tool {
+func (s *Server) localAgentTools(scope localTaskScope) []probe.Tool {
 	devices := s.config.LocalAgent.Devices
 	if len(devices) == 0 {
 		return nil
@@ -346,7 +527,9 @@ func (s *Server) localAgentTools() []probe.Tool {
 			}
 			return "搜索本机", v.Query
 		},
-		Execute: s.runLocalTask,
+		Execute: func(ctx context.Context, raw json.RawMessage) (probe.ToolResult, error) {
+			return s.runLocalTask(ctx, raw, scope)
+		},
 	}
 	write := probe.Tool{Name: "local_workspace_write", Kind: "edit", Order: 781, Timeout: s.localAgentWait() + 5*time.Second,
 		Description: "Create or replace one bounded UTF-8 file in the paired computer workspace. The expected hash makes the write fail if the file changed; use missing only for a new file.",
@@ -358,7 +541,9 @@ func (s *Server) localAgentTools() []probe.Tool {
 			_ = json.Unmarshal(raw, &v)
 			return "写入本机", v.Path
 		},
-		Execute: s.runLocalWrite,
+		Execute: func(ctx context.Context, raw json.RawMessage) (probe.ToolResult, error) {
+			return s.runLocalWrite(ctx, raw, scope)
+		},
 	}
 	action := probe.Tool{Name: "local_action", Kind: "execute", Order: 782, Timeout: s.localAgentWait() + 5*time.Second,
 		Description: "Run one fixed action configured by the owner on the paired computer. This never accepts a shell command or arguments.",
@@ -370,7 +555,9 @@ func (s *Server) localAgentTools() []probe.Tool {
 			_ = json.Unmarshal(raw, &v)
 			return "本机动作", v.Action
 		},
-		Execute: s.runLocalAction,
+		Execute: func(ctx context.Context, raw json.RawMessage) (probe.ToolResult, error) {
+			return s.runLocalAction(ctx, raw, scope)
+		},
 	}
 	share := probe.Tool{Name: "local_file_share", Kind: "read", Order: 783, Timeout: s.localAgentWait() + 5*time.Second,
 		Description: "Upload one existing file from the paired workspace to the server and offer it to the user as an authenticated download.", Usage: "use only when the user asks to receive that exact local file. This always requires explicit approval because file contents leave the computer.",
@@ -381,7 +568,9 @@ func (s *Server) localAgentTools() []probe.Tool {
 			}
 			_ = json.Unmarshal(raw, &v)
 			return "发送本机文件", v.Path
-		}, Execute: s.runLocalShare}
+		}, Execute: func(ctx context.Context, raw json.RawMessage) (probe.ToolResult, error) {
+			return s.runLocalShare(ctx, raw, scope)
+		}}
 	return []probe.Tool{read, write, action, share}
 }
 
@@ -392,7 +581,7 @@ func (s *Server) localAgentWait() time.Duration {
 	return 60 * time.Second
 }
 
-func (s *Server) runLocalTask(ctx context.Context, raw json.RawMessage) (probe.ToolResult, error) {
+func (s *Server) runLocalTask(ctx context.Context, raw json.RawMessage, scope localTaskScope) (probe.ToolResult, error) {
 	var input struct {
 		Kind  string `json:"kind"`
 		Path  string `json:"path"`
@@ -401,10 +590,10 @@ func (s *Server) runLocalTask(ctx context.Context, raw json.RawMessage) (probe.T
 	if json.Unmarshal(raw, &input) != nil {
 		return probe.ToolResult{}, errors.New("invalid request")
 	}
-	return s.dispatchLocalTask(ctx, localagent.Task{Kind: input.Kind, Path: input.Path, Query: input.Query})
+	return s.dispatchLocalTask(ctx, scope.bind(localagent.Task{Kind: input.Kind, Path: input.Path, Query: input.Query}))
 }
 
-func (s *Server) runLocalWrite(ctx context.Context, raw json.RawMessage) (probe.ToolResult, error) {
+func (s *Server) runLocalWrite(ctx context.Context, raw json.RawMessage, scope localTaskScope) (probe.ToolResult, error) {
 	var input struct {
 		Path           string `json:"path"`
 		Content        string `json:"content"`
@@ -413,27 +602,27 @@ func (s *Server) runLocalWrite(ctx context.Context, raw json.RawMessage) (probe.
 	if json.Unmarshal(raw, &input) != nil {
 		return probe.ToolResult{}, errors.New("invalid request")
 	}
-	return s.dispatchLocalTask(ctx, localagent.Task{Kind: "write", Path: input.Path, Content: input.Content, ExpectedSHA256: input.ExpectedSHA256})
+	return s.dispatchLocalTask(ctx, scope.bind(localagent.Task{Kind: "write", Path: input.Path, Content: input.Content, ExpectedSHA256: input.ExpectedSHA256}))
 }
 
-func (s *Server) runLocalAction(ctx context.Context, raw json.RawMessage) (probe.ToolResult, error) {
+func (s *Server) runLocalAction(ctx context.Context, raw json.RawMessage, scope localTaskScope) (probe.ToolResult, error) {
 	var input struct {
 		Action string `json:"action"`
 	}
 	if json.Unmarshal(raw, &input) != nil {
 		return probe.ToolResult{}, errors.New("invalid request")
 	}
-	return s.dispatchLocalTask(ctx, localagent.Task{Kind: "exec", Action: input.Action})
+	return s.dispatchLocalTask(ctx, scope.bind(localagent.Task{Kind: "exec", Action: input.Action}))
 }
 
-func (s *Server) runLocalShare(ctx context.Context, raw json.RawMessage) (probe.ToolResult, error) {
+func (s *Server) runLocalShare(ctx context.Context, raw json.RawMessage, scope localTaskScope) (probe.ToolResult, error) {
 	var input struct {
 		Path string `json:"path"`
 	}
 	if json.Unmarshal(raw, &input) != nil {
 		return probe.ToolResult{}, errors.New("invalid request")
 	}
-	return s.dispatchLocalTask(ctx, localagent.Task{Kind: "share", Artifacts: []string{input.Path}})
+	return s.dispatchLocalTask(ctx, scope.bind(localagent.Task{Kind: "share", Artifacts: []string{input.Path}}))
 }
 
 func (s *Server) dispatchLocalTask(ctx context.Context, task localagent.Task) (probe.ToolResult, error) {
@@ -528,6 +717,10 @@ func (s *Server) localAgentClaim(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "device id mismatch"})
 		return
 	}
+	if input.Protocol != localagent.Protocol {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "unsupported local agent protocol"})
+		return
+	}
 	task := s.localQueue.claim(device, input.Capabilities)
 	if task == nil {
 		w.WriteHeader(http.StatusNoContent)
@@ -537,8 +730,13 @@ func (s *Server) localAgentClaim(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) localAgentCancelState(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.localAgentAuthorized(r); !ok {
+	device, ok := s.localAgentAuthorized(r)
+	if !ok {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unknown device or bad token"})
+		return
+	}
+	if !s.localQueue.deviceOwns(r.PathValue("operation"), device) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "operation belongs to another device"})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"cancel_requested": s.localQueue.cancelRequested(r.PathValue("operation"))})
@@ -583,10 +781,9 @@ func (s *Server) localAgentComplete(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "receipt operation id does not match the path"})
 		return
 	}
-	if _, found := s.localQueue.complete(receipt); !found {
-		// A retry after the caller gave up is expected; accept it quietly so the
-		// endpoint can drain its outbox.
-		log.Printf("local agent receipt for unknown operation %s", operationID)
+	if _, _, err := s.localQueue.complete(device, receipt); err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

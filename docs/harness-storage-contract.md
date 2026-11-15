@@ -1,6 +1,6 @@
 # Harness 3A：持久运行与删除契约
 
-更新：2026-11-08，设计基线 `harness-storage/1`。0.24 已实现 3C：停机显式迁移 transcript v1/v2 与 turns v1/v2/v3、manifest 选代、API 接线、删除登记、新代重写及兼容导出；0.23 的事件 writer、snapshot/payload 和 task create 回执同时接入聊天运行。0.26 在同一代内增加受限 host followup 与两阶段业务投递，见[发布记录](release-0.26.md)。总体依据见[项目现状与架构路线](architecture-roadmap-2026-11.md)。
+更新：2026-11-15，设计基线 `harness-storage/1`。0.24 已实现 3C：停机显式迁移 transcript v1/v2 与 turns v1/v2/v3、manifest 选代、API 接线、删除登记、新代重写及兼容导出；随后 turns v4 增加工具呈现状态，turns v5 为外部消息增加不可变来源/发送者/受众，防止应用、不同渠道或不同会话受众合并与串发。0.23 的事件 writer、snapshot/payload 和 task create 回执同时接入聊天运行。0.26 在同一代内增加受限 host followup 与两阶段业务投递，见[发布记录](release-0.26.md)。总体依据见[项目现状与架构路线](architecture-roadmap-2026-11.md)。
 
 设计借鉴 DeepSeek Harness（MIT，固定参考 `8bd073392eef6f54e921a093b95076248eb08cbb`）对 turn/step、请求快照和持久事件的区分，Go 侧独立实现；许可见 [THIRD_PARTY_NOTICES](../THIRD_PARTY_NOTICES.md)。本契约不引入 Cordis、数据库依赖或新的模型调用。
 
