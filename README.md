@@ -1,6 +1,6 @@
 # chat-agent
 
-当前源码基线为 **0.7.0**；Android 默认构建为 **0.7.0-debug（versionCode 38）**，包名保持 `dev.chatagent.ai.debug`。已有主动陪伴反馈、Linux/本机执行、课件提取与学习对话入口、消息身份和持久界面等基础。完整状态与边界见[2026-11-15 项目评估](docs/project-assessment-2026-11-15.md)，接下来的大方向与具体能力见[产品方向与能力设计](docs/product-direction.md)，历史线上证据见[能力实测清单](docs/capability-check.md)。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
+当前源码基线为 **0.7.16**；Android 默认构建为 **0.7.16-debug（versionCode 54）**，包名保持 `dev.chatagent.ai.debug`。已有主动陪伴反馈、Linux/本机执行、课件提取与学习对话入口、消息身份和持久界面等基础；本版进一步加入可收束的连发等待、Aurabot 式多气泡表达，以及默认关闭的 AstrBot transport-only 网关。完整状态与边界见[当前规划](docs/feature-plan.md)、[产品方向与能力设计](docs/product-direction.md)和[AstrBot 接入说明](docs/astrbot-im-bridge.md)。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
 
 0.24.0 以 format index + manifest 选择唯一 runtime 代，聊天/队列规范状态与 attempt/model/tool 运行事实处于同一代。旧 transcript v1/v2、turns v1/v2/v3 只由停机维护命令显式迁移；当前 turns v5 还保存外部消息的来源、发送者与受众，用于合并和回复路由。最新轮/整会话删除先登记再重写或清理，旧代和模型快照不会被读取器自动复活。生产配置仍使用 `ecnu-max`，本地搜索、设备白名单和加密 9992 入口保持不变。
 
@@ -10,7 +10,7 @@
 
 0.21 已合并交付原拟 0.20.1 参数记忆和 0.21 渲染/UI：按模型记住思考档位，Markdown 表格/嵌套列表、LaTeX/MathML、JSON 树、数据表/柱状图/流程图，以及同实例工作台和工具状态排版。普通网页与 Android 共享渲染，Android 新包通过原生存储解决随机代理端口导致的偏好丢失。[实施与边界](docs/rendering-and-ui-plan.md)。
 
-Channel 已有独立身份校验、Inbox/Outbox、session mapping 与共享 Harness，并新增 QQ 官方入口、账号绑定和图片处理。工作区已补来源/受众路由、跨源合并隔离和独立持久群作用域；真实 QQ/OneBot 仍关闭，不能仅配置凭据就视为完成接入。见[Channel 架构](docs/channel-integration-architecture.md)及[当前规划](docs/feature-plan.md)。
+Channel 已有独立身份校验、Inbox/Outbox、session mapping 与共享 Harness，并具有 QQ 官方、OneBot 和[AstrBot 外部 IM 网关](docs/astrbot-im-bridge.md)三条入口。AstrBot 只负责平台收发，CA 独占模型、记忆与结算；来源/受众、跨源合并隔离和持久群作用域沿用同一协议。所有真实 IM 仍需显式配置和验收，不能仅凭代码存在视为已经上线。见[Channel 架构](docs/channel-integration-architecture.md)及[当前规划](docs/feature-plan.md)。
 
 **共同活动（历史版本已交付）**：睡前闲聊、一天复盘、共同兴趣和小目标陪伴，支持保存进展、跨会话继续、暂停与结束。[历史使用说明](docs/activities-0.7.md)中的 0.7 属于版本号重置前的记录，不是本次 0.7.0 发布。原有[连续聊天、事件与关怀](docs/companion-0.6.md)、[陪伴偏好](docs/companion.md)继续保留。
 

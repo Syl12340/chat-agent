@@ -12,3 +12,13 @@ func TestRenderTextHidesChatUIDeclaration(t *testing.T) {
 		t.Fatalf("rendered text = %q", got)
 	}
 }
+
+func TestRenderBubbles(t *testing.T) {
+	got := RenderBubbles("我在。\n\n慢慢说。\n\n不用急。")
+	if len(got) != 3 || got[1] != "慢慢说。" {
+		t.Fatalf("short conversational reply was not split: %#v", got)
+	}
+	if got = RenderBubbles("- 第一项\n\n- 第二项"); len(got) != 1 {
+		t.Fatalf("structured reply was split: %#v", got)
+	}
+}

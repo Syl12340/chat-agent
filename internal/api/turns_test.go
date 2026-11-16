@@ -183,3 +183,23 @@ func TestDurableTurnQueue(t *testing.T) {
 		t.Fatal("restart lost request ledger")
 	}
 }
+
+func TestTurnMergeWindowDebouncesButHasMaxWait(t *testing.T) {
+	arrival := make(chan struct{}, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	start := time.Now()
+	go func() {
+		for _, delay := range []time.Duration{10, 20, 30, 40} {
+			time.Sleep(delay*time.Millisecond - time.Since(start))
+			arrival <- struct{}{}
+		}
+	}()
+	if !waitTurnMergeWindow(ctx, arrival, 18*time.Millisecond, 50*time.Millisecond) {
+		t.Fatal("merge window was canceled")
+	}
+	elapsed := time.Since(start)
+	if elapsed < 45*time.Millisecond || elapsed > 150*time.Millisecond {
+		t.Fatalf("merge window ignored debounce or max wait: %v", elapsed)
+	}
+}

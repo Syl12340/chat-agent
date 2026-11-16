@@ -45,3 +45,57 @@ func RenderText(input string) string {
 	}
 	return text
 }
+
+// RenderBubbles projects a short conversational reply into at most three IM
+// messages. It mirrors the web projection: explicit legacy separators and
+// short blank-line paragraphs may split, while Markdown structures remain one
+// atomic message. Sending remains one delivery intent, so a partial platform
+// send is settled as unknown rather than retried piecemeal.
+func RenderBubbles(input string) []string {
+	text := RenderText(input)
+	if text == "" {
+		return nil
+	}
+	explicit := strings.Contains(text, "|||")
+	visible := strings.ReplaceAll(text, "|||", "\n\n")
+	if utf8.RuneCountInString(text) > 1200 || structuredReply(visible) {
+		return []string{strings.TrimSpace(visible)}
+	}
+	separator := "\n\n"
+	if explicit {
+		separator = "|||"
+	}
+	raw := strings.Split(text, separator)
+	parts := make([]string, 0, len(raw))
+	for _, item := range raw {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			parts = append(parts, item)
+		}
+	}
+	if len(parts) < 2 || len(parts) > 3 {
+		return []string{strings.TrimSpace(visible)}
+	}
+	for _, part := range parts {
+		if utf8.RuneCountInString(part) > 600 {
+			return []string{strings.TrimSpace(visible)}
+		}
+	}
+	return parts
+}
+
+func structuredReply(text string) bool {
+	if strings.ContainsAny(text, "`$\\[]<>|~") {
+		return true
+	}
+	for _, line := range strings.Split(text, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(line, "\t") || strings.HasPrefix(line, "    ") || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") || strings.HasPrefix(trimmed, "+ ") {
+			return true
+		}
+		if len(trimmed) >= 2 && trimmed[0] >= '0' && trimmed[0] <= '9' && (trimmed[1] == '.' || trimmed[1] == ')') {
+			return true
+		}
+	}
+	return false
+}

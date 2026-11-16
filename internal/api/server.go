@@ -77,6 +77,7 @@ type Config struct {
 	TurnCompletionObserver TurnCompletionObserver
 	OneBot                 OneBotConfig
 	QQOfficial             QQOfficialConfig
+	AstrBot                AstrBotConfig
 	HostTools              HostToolsConfig
 	// LocalAgent registers the Windows execution endpoints this host will accept.
 	LocalAgent LocalAgentConfig
@@ -90,6 +91,9 @@ type runState struct {
 	cancel context.CancelFunc
 	done   chan struct{}
 	queued bool
+	// arrival is present only on ordinary queued turns. A later message nudges
+	// the short debounce window without ever extending it past its max wait.
+	arrival chan struct{}
 }
 type Server struct {
 	config     Config
@@ -150,6 +154,7 @@ type Server struct {
 	activeImageJob    imageWork // protected by mediaMu
 	onebot            *oneBotIntegration
 	qqofficial        *qqOfficialIntegration
+	astrbot           *astrBotIntegration
 	identities        *channelstore.IdentityStore
 	channelAudienceMu sync.Mutex
 	turnObserver      TurnCompletionObserver
@@ -439,7 +444,8 @@ func New(c Config) (*Server, error) {
 		}(), identities.Close(), coursewareStore.Close(), images.Close(), push.close(), topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
 	}
 	s.qqofficial = qqofficial
-	if err := s.backfillChannelAudiences(); err != nil {
+	astrbot, err := newAstrBotIntegration(s, c.AstrBot, filepath.Join(path, "channels", "astrbot"))
+	if err != nil {
 		workCancel()
 		pluginCatalog.StopAll(context.Background())
 		webClient.Close()
@@ -451,12 +457,31 @@ func New(c Config) (*Server, error) {
 		}
 		return nil, errors.Join(err, identities.Close(), coursewareStore.Close(), images.Close(), push.close(), topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
 	}
+	s.astrbot = astrbot
+	if err := s.backfillChannelAudiences(); err != nil {
+		workCancel()
+		pluginCatalog.StopAll(context.Background())
+		webClient.Close()
+		if qqofficial != nil {
+			_ = qqofficial.Close(context.Background())
+		}
+		if onebot != nil {
+			_ = onebot.Close(context.Background())
+		}
+		if astrbot != nil {
+			_ = astrbot.Close()
+		}
+		return nil, errors.Join(err, identities.Close(), coursewareStore.Close(), images.Close(), push.close(), topicStore.Close(), deviceStore.Close(), activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
+	}
 	var channelObservers []TurnCompletionObserver
 	if onebot != nil {
 		channelObservers = append(channelObservers, onebot)
 	}
 	if qqofficial != nil {
 		channelObservers = append(channelObservers, qqofficial)
+	}
+	if astrbot != nil {
+		channelObservers = append(channelObservers, astrbot)
 	}
 	s.turnObserver = combineCompletionObservers(c.TurnCompletionObserver, channelObservers...)
 	s.startScheduler()
@@ -470,6 +495,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
 	if s.onebot != nil {
 		mux.HandleFunc("POST /hooks/onebot/v1/events", s.oneBotWebhook)
+	}
+	if s.astrbot != nil {
+		mux.HandleFunc("POST /hooks/astrbot/v1/events", s.astrBotWebhook)
+		mux.HandleFunc("GET /hooks/astrbot/v1/deliveries/next", s.astrBotNextDelivery)
+		mux.HandleFunc("POST /hooks/astrbot/v1/deliveries/{delivery}/ack", s.astrBotAckDelivery)
 	}
 	mux.HandleFunc("/hooks/", func(w http.ResponseWriter, r *http.Request) { fail(w, http.StatusNotFound, "接口不存在") })
 	mux.HandleFunc("GET /api/status", s.status)
@@ -608,7 +638,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // version is the service version reported by /api/status.
-const version = "0.7.15"
+const version = "0.7.16"
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model
@@ -616,7 +646,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		model = "chat-agent Demo"
 	}
 	identity := currentAuth(r)
-	writeJSON(w, 200, map[string]any{"name": "chat-agent", "version": version, "auth_method": identity.Method, "device_id": identity.Device.ID, "device_admin": identity.Method == "owner" || identity.Device.Admin, "speech_enabled": s.speechEnabled(), "speech_max_chars": 1200, "model": model, "demo": s.config.Agent.Demo, "max_output": s.config.Agent.MaxOutputTokens, "thinking_max_output": s.config.ThinkingMaxOutput, "max_turns": s.config.Agent.MaxTurns, "max_tools": s.config.Agent.MaxToolCalls, "continuous_loop": s.config.Agent.MaxTurns == 0 && s.config.Agent.MaxToolCalls == 0, "timeout_seconds": s.config.Agent.Timeout.Seconds(), "time_zone": s.location.String(), "web_fetch": s.web.FetchEnabled(), "web_search": s.web.SearchEnabled(), "image_generation": s.imageAvailable(), "image_reason": s.imageUnavailableReason(), "reminder_delivery": "inbox", "scheduler_ok": s.schedulerOK.Load(), "onebot_enabled": s.onebot != nil, "qq_official_enabled": s.qqofficial != nil, "transport": s.transportInfo(r)})
+	writeJSON(w, 200, map[string]any{"name": "chat-agent", "version": version, "auth_method": identity.Method, "device_id": identity.Device.ID, "device_admin": identity.Method == "owner" || identity.Device.Admin, "speech_enabled": s.speechEnabled(), "speech_max_chars": 1200, "model": model, "demo": s.config.Agent.Demo, "max_output": s.config.Agent.MaxOutputTokens, "thinking_max_output": s.config.ThinkingMaxOutput, "max_turns": s.config.Agent.MaxTurns, "max_tools": s.config.Agent.MaxToolCalls, "continuous_loop": s.config.Agent.MaxTurns == 0 && s.config.Agent.MaxToolCalls == 0, "timeout_seconds": s.config.Agent.Timeout.Seconds(), "time_zone": s.location.String(), "web_fetch": s.web.FetchEnabled(), "web_search": s.web.SearchEnabled(), "image_generation": s.imageAvailable(), "image_reason": s.imageUnavailableReason(), "reminder_delivery": "inbox", "scheduler_ok": s.schedulerOK.Load(), "onebot_enabled": s.onebot != nil, "qq_official_enabled": s.qqofficial != nil, "astrbot_enabled": s.astrbot != nil, "transport": s.transportInfo(r)})
 }
 
 func validID(id string) bool {
@@ -1056,6 +1086,9 @@ func (s *Server) Close(ctx context.Context) error {
 	}
 	if s.qqofficial != nil {
 		err = errors.Join(err, s.qqofficial.Close(ctx))
+	}
+	if s.astrbot != nil {
+		err = errors.Join(err, s.astrbot.Close())
 	}
 	for _, sess := range sessions {
 		err = errors.Join(err, sess.Close())

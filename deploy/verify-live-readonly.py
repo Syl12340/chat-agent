@@ -88,15 +88,20 @@ assert summary["running"] == 0
 assert summary["queued"] == 0
 assert summary["unavailable"] == 0
 
-if not status.get("onebot_enabled"):
+for enabled, path, label in (
+    (status.get("onebot_enabled"), "/hooks/onebot/v1/events", "OneBot"),
+    (status.get("astrbot_enabled"), "/hooks/astrbot/v1/events", "AstrBot"),
+):
+    if enabled:
+        continue
     request = urllib.request.Request(
-        BASE + "/hooks/onebot/v1/events",
+        BASE + path,
         data=b"{}",
         headers={"Content-Type": "application/json"},
     )
     try:
         CLIENT.open(request, timeout=10)
-        raise AssertionError("disabled OneBot webhook was accepted")
+        raise AssertionError("disabled " + label + " webhook was accepted")
     except urllib.error.HTTPError as error:
         assert error.code == 404
 
@@ -107,8 +112,10 @@ print(json.dumps({
     "scheduler_ok": status["scheduler_ok"],
     "web_search": status["web_search"],
     "web_fetch": status["web_fetch"],
+    "continuous_loop": status.get("continuous_loop", False),
     "onebot_enabled": status.get("onebot_enabled", False),
     "qq_official_enabled": status.get("qq_official_enabled", False),
+    "astrbot_enabled": status.get("astrbot_enabled", False),
     "android_version_code": release["version_code"],
     **summary,
 }, ensure_ascii=False, sort_keys=True))

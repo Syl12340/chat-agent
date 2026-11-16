@@ -167,6 +167,33 @@ func qqOfficialConfigFromEnv() (api.QQOfficialConfig, error) {
 	return api.QQOfficialConfig{Enabled: enabled, AppID: strings.TrimSpace(os.Getenv("QQ_OFFICIAL_APP_ID")), Secret: os.Getenv("QQ_OFFICIAL_SECRET"), RoleID: strings.TrimSpace(os.Getenv("QQ_OFFICIAL_ROLE_ID")), AllowGroups: allowGroups, AllowGroupAll: allowGroupAll}, nil
 }
 
+func astrBotConfigFromEnv() (api.AstrBotConfig, error) {
+	enabled, err := envBool("ASTRBOT_BRIDGE_ENABLED")
+	if err != nil {
+		return api.AstrBotConfig{}, err
+	}
+	allowGroups, err := envBool("ASTRBOT_BRIDGE_ALLOW_GROUPS")
+	if err != nil {
+		return api.AstrBotConfig{}, err
+	}
+	config := api.AstrBotConfig{Enabled: enabled, Secret: os.Getenv("ASTRBOT_BRIDGE_SECRET"), RoleID: strings.TrimSpace(os.Getenv("ASTRBOT_BRIDGE_ROLE_ID")), AllowGroups: allowGroups}
+	if value := strings.TrimSpace(os.Getenv("ASTRBOT_BRIDGE_MAX_BODY_BYTES")); value != "" {
+		limit, parseErr := strconv.ParseInt(value, 10, 64)
+		if parseErr != nil || limit <= 0 {
+			return api.AstrBotConfig{}, errors.New("invalid ASTRBOT_BRIDGE_MAX_BODY_BYTES")
+		}
+		config.MaxBodyBytes = limit
+	}
+	if value := strings.TrimSpace(os.Getenv("ASTRBOT_BRIDGE_CLAIM_TIMEOUT")); value != "" {
+		timeout, parseErr := time.ParseDuration(value)
+		if parseErr != nil || timeout <= 0 {
+			return api.AstrBotConfig{}, errors.New("invalid ASTRBOT_BRIDGE_CLAIM_TIMEOUT")
+		}
+		config.ClaimTimeout = timeout
+	}
+	return config, nil
+}
+
 func run() error {
 	c := probe.DefaultConfig()
 	listen := flag.String("listen", "127.0.0.1:8080", "HTTP listen address")
@@ -246,6 +273,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	astrBotConfig, err := astrBotConfigFromEnv()
+	if err != nil {
+		return err
+	}
 	// Installed plugins are compiled in, but loading and permissions stay a host
 	// decision: CHAT_PLUGINS_DISABLED switches a plugin off entirely, and
 	// CHAT_PLUGIN_GRANTS grants the declared permissions one by one.
@@ -256,7 +287,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	app, err := api.New(api.Config{Agent: c, ChatModels: chatModels, ThinkingMaxOutput: thinkingMax, Speech: api.SpeechConfig{Model: os.Getenv("CHAT_TTS_MODEL"), Voice: os.Getenv("CHAT_TTS_VOICE")}, DataDir: *data, RolesDir: *rolesDir, TimeZone: *timeZone, Web: webtools.Config{Enabled: *webEnabled, AllowedHosts: strings.Split(os.Getenv("CHAT_WEB_HOSTS"), ","), SearchURL: searchEngine(*webEnabled)}, AccessToken: os.Getenv("CHAT_ACCESS_TOKEN"), AndroidReleaseDir: os.Getenv("CHAT_ANDROID_RELEASE_DIR"), Semantic: semantic.Config{BaseURL: os.Getenv("CHAT_BASE_URL"), APIKey: os.Getenv("CHAT_API_KEY"), Model: os.Getenv("CHAT_RERANK_MODEL")}, Decision: decision.Config{BaseURL: os.Getenv("CHAT_BASE_URL"), APIKey: os.Getenv("CHAT_API_KEY"), Model: decisionModel()}, ImageRemote: imagegen.RemoteConfig{BaseURL: os.Getenv("CHAT_IMAGE_REMOTE"), Token: os.Getenv("CHAT_IMAGE_TOKEN")}, Images: imagegen.Config{Python: os.Getenv("CHAT_IMAGE_PYTHON"), Script: os.Getenv("CHAT_IMAGE_BRIDGE"), Profiles: splitList(os.Getenv("CHAT_IMAGE_PROFILES")), DefaultProfile: os.Getenv("CHAT_IMAGE_PROFILE")}, OneBot: onebotConfig, QQOfficial: qqOfficialConfig, Plugins: pluginPolicy, HostTools: api.HostToolsConfig{Sessions: splitList(os.Getenv("CHAT_HOST_TOOL_SESSIONS")), WorkspaceRoot: os.Getenv("CHAT_WORKSPACE_ROOT"), WorkspaceActions: os.Getenv("CHAT_WORKSPACE_ACTIONS"), ServiceUnits: splitList(os.Getenv("CHAT_SERVICE_UNITS")), ServiceActions: os.Getenv("CHAT_SERVICE_ACTIONS")}, LocalAgent: api.LocalAgentConfig{Devices: api.ParseLocalAgentDevices(os.Getenv("CHAT_LOCAL_AGENT_DEVICES")), DefaultDevice: os.Getenv("CHAT_LOCAL_AGENT_DEVICE")}})
+	app, err := api.New(api.Config{Agent: c, ChatModels: chatModels, ThinkingMaxOutput: thinkingMax, Speech: api.SpeechConfig{Model: os.Getenv("CHAT_TTS_MODEL"), Voice: os.Getenv("CHAT_TTS_VOICE")}, DataDir: *data, RolesDir: *rolesDir, TimeZone: *timeZone, Web: webtools.Config{Enabled: *webEnabled, AllowedHosts: strings.Split(os.Getenv("CHAT_WEB_HOSTS"), ","), SearchURL: searchEngine(*webEnabled)}, AccessToken: os.Getenv("CHAT_ACCESS_TOKEN"), AndroidReleaseDir: os.Getenv("CHAT_ANDROID_RELEASE_DIR"), Semantic: semantic.Config{BaseURL: os.Getenv("CHAT_BASE_URL"), APIKey: os.Getenv("CHAT_API_KEY"), Model: os.Getenv("CHAT_RERANK_MODEL")}, Decision: decision.Config{BaseURL: os.Getenv("CHAT_BASE_URL"), APIKey: os.Getenv("CHAT_API_KEY"), Model: decisionModel()}, ImageRemote: imagegen.RemoteConfig{BaseURL: os.Getenv("CHAT_IMAGE_REMOTE"), Token: os.Getenv("CHAT_IMAGE_TOKEN")}, Images: imagegen.Config{Python: os.Getenv("CHAT_IMAGE_PYTHON"), Script: os.Getenv("CHAT_IMAGE_BRIDGE"), Profiles: splitList(os.Getenv("CHAT_IMAGE_PROFILES")), DefaultProfile: os.Getenv("CHAT_IMAGE_PROFILE")}, OneBot: onebotConfig, QQOfficial: qqOfficialConfig, AstrBot: astrBotConfig, Plugins: pluginPolicy, HostTools: api.HostToolsConfig{Sessions: splitList(os.Getenv("CHAT_HOST_TOOL_SESSIONS")), WorkspaceRoot: os.Getenv("CHAT_WORKSPACE_ROOT"), WorkspaceActions: os.Getenv("CHAT_WORKSPACE_ACTIONS"), ServiceUnits: splitList(os.Getenv("CHAT_SERVICE_UNITS")), ServiceActions: os.Getenv("CHAT_SERVICE_ACTIONS")}, LocalAgent: api.LocalAgentConfig{Devices: api.ParseLocalAgentDevices(os.Getenv("CHAT_LOCAL_AGENT_DEVICES")), DefaultDevice: os.Getenv("CHAT_LOCAL_AGENT_DEVICE")}})
 	if err != nil {
 		return err
 	}

@@ -116,6 +116,13 @@ func (s *Server) backfillChannelAudiences() error {
 			}
 		}
 	}
+	if s.astrbot != nil {
+		for _, mapping := range s.astrbot.store.Mappings() {
+			if err := s.markChannelAudience(mapping.Key, mapping.SessionID); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 

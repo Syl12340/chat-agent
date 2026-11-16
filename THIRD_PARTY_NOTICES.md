@@ -117,6 +117,12 @@ reply pipeline in `src/chat/hub.js`. chat-agent keeps Markdown-heavy answers
 atomic, caps a reply at three bubbles, adds no artificial delivery delay, and
 does not embed the DSH/Cordis or QQ runtimes.
 
+The current short debounce plus absolute max-wait aggregation window and the
+single settled delivery projected into at most three text bubbles are Go
+adaptations of the same `src/chat/hub.js` / `src/chat/reply.js` mechanisms at
+revision `0a0ccb1cc401dee00ce0faac2cffbf57d0efecda`; no JavaScript runtime is
+embedded.
+
 Additional source review revision:
 `5eb5b9463f5f0ce14964a2c7d5dcba44ad67fabe` (2026-11-10, MIT). The message
 coalescing, steer-or-queue boundary, delivery settlement, approval queue and
@@ -131,8 +137,16 @@ Source: https://github.com/AstrBotDevs/AstrBot
 Reference revision: `6b10af75e118714335aff3aab047bf7689fa1388`.
 
 AstrBot is licensed under AGPL-3.0. Its provider-management, durable task and
-typed media designs were inspected as architectural references only. No
-AstrBot source code or assets are copied into chat-agent.
+typed media designs were inspected as architectural references. No AstrBot
+source code or assets are copied into chat-agent's Go runtime.
+
+`integrations/astrbot-chat-agent` is independently written against AstrBot's
+documented public plugin API (`AstrMessageEvent`, filters, `MessageChain` and
+`Context.send_message`). Because that plugin imports and runs with AstrBot, it
+is distributed under AGPL-3.0-or-later; the complete license is retained in
+[licenses/AstrBot-AGPL-3.0.txt](licenses/AstrBot-AGPL-3.0.txt). The plugin only
+transports signed messages and suppresses AstrBot's model pipeline for admitted
+events; the CA Go runtime remains the sole Agent.
 
 Additional source review revision:
 `68acac91b1ab92c2ac4cfd811c0898913a1391c8` (2026-11-10, AGPL-3.0). Its typed

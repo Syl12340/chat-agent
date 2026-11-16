@@ -1,0 +1,5 @@
+name: chat_agent_gateway
+description: 将 AstrBot 的 IM 消息安全转交给 chat-agent；不运行 AstrBot 自带 LLM
+version: 0.1.0
+author: chat-agent contributors
+repo: https://github.com/Syl12340/chat-agent

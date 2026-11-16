@@ -60,7 +60,7 @@ func (s *Server) listChannelIdentities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	items := s.identities.List()
-	writeJSON(w, http.StatusOK, map[string]any{"principal_id": ownerPrincipalID, "identities": items, "qq_official_enabled": s.qqofficial != nil, "onebot_enabled": s.onebot != nil})
+	writeJSON(w, http.StatusOK, map[string]any{"principal_id": ownerPrincipalID, "identities": items, "qq_official_enabled": s.qqofficial != nil, "onebot_enabled": s.onebot != nil, "astrbot_enabled": s.astrbot != nil})
 }
 
 func (s *Server) sessionChannel(sessionID string) (channelSessionInfo, bool) {
@@ -76,6 +76,15 @@ func (s *Server) sessionChannel(sessionID string) (channelSessionInfo, bool) {
 	if s.onebot != nil {
 		if mapping, ok := s.onebot.store.MappingForSession(sessionID); ok {
 			return channelSessionInfo{Platform: mapping.Key.Platform, AccountID: mapping.Key.AccountID, ConversationKind: mapping.Key.ConversationKind, ConversationID: mapping.Key.ConversationID, MemoryScope: "owner"}, true
+		}
+	}
+	if s.astrbot != nil {
+		if mapping, ok := s.astrbot.store.MappingForSession(sessionID); ok {
+			scope := "owner"
+			if mapping.Key.ConversationKind == "group" {
+				scope = "group-isolated"
+			}
+			return channelSessionInfo{Platform: mapping.Key.Platform, AccountID: mapping.Key.AccountID, ConversationKind: mapping.Key.ConversationKind, ConversationID: mapping.Key.ConversationID, MemoryScope: scope}, true
 		}
 	}
 	return channelSessionInfo{}, false
@@ -114,6 +123,15 @@ func (s *Server) queueProactiveChannel(sessionID, requestID, text string) error 
 			if err == nil {
 				s.onebot.signal()
 			}
+			return err
+		}
+	}
+	if s.astrbot != nil {
+		if mapping, ok := s.astrbot.store.MappingForSession(sessionID); ok {
+			if mapping.Key.ConversationKind == "group" {
+				return nil
+			}
+			_, _, err := s.astrbot.store.CreateDelivery(channelstore.DeliveryIntent{Platform: mapping.Key.Platform, AccountID: mapping.Key.AccountID, ConversationKind: mapping.Key.ConversationKind, SessionID: sessionID, RequestID: requestID, TargetID: mapping.Key.ConversationID, Text: text, Proactive: true})
 			return err
 		}
 	}
@@ -164,6 +182,12 @@ func (s *Server) linkChannelSession(w http.ResponseWriter, r *http.Request) {
 		mapping, ok = s.onebot.store.MappingForSession(input.ChannelSessionID)
 		if ok {
 			store = s.onebot.store
+		}
+	}
+	if !ok && s.astrbot != nil {
+		mapping, ok = s.astrbot.store.MappingForSession(input.ChannelSessionID)
+		if ok {
+			store = s.astrbot.store
 		}
 	}
 	if !ok || store == nil {

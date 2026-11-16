@@ -2,7 +2,7 @@
 
 更新：2026-11-15。详细方向以[产品方向与能力设计](product-direction.md)为准；下文保留原协议设计及实施记录。
 
-状态：OneBot P0–P2 已随服务端 0.25 部署；2026-11-15 合批加入 QQ 官方/OneBot 双轨、一次性身份绑定、会话联动及群路径过滤。所有 IM 入口默认关闭。当前来源路由、跨源聚合、群历史/主动目标和绑定撤销仍有缺口，填写凭据不是唯一开放条件，详见[源码评估](project-assessment-2026-11-15.md)。
+状态：OneBot P0–P2 已随服务端 0.25 部署；2026-11-15 合批加入 QQ 官方/OneBot 双轨、一次性身份绑定、会话联动及群路径过滤。2026-11-16 工作区新增 AstrBot transport-only 网关，尚未部署或连接真实平台。所有 IM 入口默认关闭，填写凭据不是唯一开放条件，详见[源码评估](project-assessment-2026-11-15.md)与[AstrBot 纵切](astrbot-im-bridge.md)。
 
 ## 0. 2026-11-15 合批实现边界
 
@@ -340,7 +340,7 @@ DSH 定位为受限客户端，不嵌入 chat-agent runtime。首批只读状态
 
 ### AstrBot
 
-借鉴 EventBus、Pipeline、Platform Adapter 和停止/排空语义。未来作为外部多平台网关；转发给 chat-agent 后必须阻止 AstrBot 自己的 LLM Pipeline 再回复。不复制 AGPL 核心代码。
+已按外部多平台网关实现首版插件：被 allowlist 接管的事件先停止 AstrBot 自己的 LLM Pipeline，再经签名 Inbox 进入 CA；回复从 CA Outbox 拉取并按 `unified_msg_origin` 发送。插件独立编写并以 AGPL-3.0-or-later 分发，未复制 AstrBot 核心代码。首版只默认启用 `aiocqhttp` 文本私聊，其他平台和群聊仍逐项验收。
 
 ### SnowLuma
 

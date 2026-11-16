@@ -12,6 +12,8 @@
 *.apk
 *.aab
 *.log
+__pycache__/
+*.pyc
 .idea/
 .vscode/
 *.exe

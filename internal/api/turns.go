@@ -16,6 +16,38 @@ import (
 	"chat-agent/internal/turns"
 )
 
+const (
+	turnMergeDebounce = 650 * time.Millisecond
+	turnMergeMaxWait  = 1800 * time.Millisecond
+)
+
+func waitTurnMergeWindow(ctx context.Context, arrival <-chan struct{}, debounce, maxWait time.Duration) bool {
+	deadline := time.Now().Add(maxWait)
+	timer := time.NewTimer(debounce)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-timer.C:
+			return true
+		case <-arrival:
+			remaining := time.Until(deadline)
+			if remaining <= 0 {
+				return true
+			}
+			next := min(debounce, remaining)
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			timer.Reset(next)
+		}
+	}
+}
+
 func turnFailure(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, turns.ErrConflict):
@@ -139,7 +171,7 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 		return
 	}
 	ctx, cancel := context.WithCancel(s.workCtx)
-	state := &runState{cancel: cancel, done: make(chan struct{}), queued: true}
+	state := &runState{cancel: cancel, done: make(chan struct{}), queued: true, arrival: make(chan struct{}, 1)}
 	s.runs[id] = state
 	s.workWG.Add(1)
 	go func() {
@@ -157,12 +189,8 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 			}
 		}()
 		for {
-			timer := time.NewTimer(450 * time.Millisecond)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
+			if !waitTurnMergeWindow(ctx, state.arrival, turnMergeDebounce, turnMergeMaxWait) {
 				return
-			case <-timer.C:
 			}
 			// Close the aggregation window and select its durable batch while holding
 			// the admission mutex. A sender arriving after this point cannot race into

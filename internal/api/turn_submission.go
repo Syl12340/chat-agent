@@ -121,7 +121,9 @@ func (s *Server) SubmitTurn(ctx context.Context, input TurnSubmission) (turns.Tu
 		}
 	}
 	disposition := "start"
+	var active *runState
 	if current := s.runs[input.SessionID]; current != nil {
+		active = current
 		// The runtime cannot safely inject into an in-flight provider request.
 		// Messages inside the short admission window may join its batch; later
 		// messages are durably queued for the next turn instead of pretending to
@@ -158,6 +160,12 @@ func (s *Server) SubmitTurn(ctx context.Context, input TurnSubmission) (turns.Tu
 		turn.QueueDisposition = "duplicate"
 	} else {
 		turn.QueueDisposition = disposition
+	}
+	if !duplicate && disposition == "merge_window" && active != nil && active.arrival != nil {
+		select {
+		case active.arrival <- struct{}{}:
+		default:
+		}
 	}
 	if !duplicate && !paused && !input.DeferStart {
 		s.startTurnWorkerLocked(input.SessionID, sess)
