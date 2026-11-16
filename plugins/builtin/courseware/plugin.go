@@ -60,10 +60,10 @@ func (p *Plugin) read(ctx context.Context, raw json.RawMessage) (pluginapi.Resul
 	if json.Unmarshal(raw, &a) != nil || strings.TrimSpace(a.DocumentID) == "" {
 		return pluginapi.Result{}, errors.New("invalid courseware read request")
 	}
-	doc, text, err := p.store.Read(probe.ToolRole(ctx), a.DocumentID, a.Query, a.Offset, a.Limit)
+	doc, text, source, err := p.store.Read(probe.ToolRole(ctx), a.DocumentID, a.Query, a.Offset, a.Limit)
 	if err != nil {
 		return pluginapi.Result{}, err
 	}
-	out, _ := json.Marshal(map[string]any{"document": doc.Name, "document_id": doc.ID, "query": a.Query, "offset": a.Offset, "excerpt": text, "untrusted": true})
+	out, _ := json.Marshal(map[string]any{"document": doc.Name, "document_id": doc.ID, "query": a.Query, "source_ref": source, "excerpt": text, "untrusted": true})
 	return pluginapi.Result{Output: string(out)}, nil
 }

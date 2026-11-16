@@ -258,14 +258,29 @@ func (s *Server) astrBotNextDelivery(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusUnauthorized, "AstrBot 网关认证失败")
 		return
 	}
-	record, ok, err := s.astrbot.store.ClaimPending()
-	if err != nil {
-		fail(w, http.StatusServiceUnavailable, "AstrBot Outbox 暂时不可用")
-		return
-	}
-	if !ok {
-		w.WriteHeader(http.StatusNoContent)
-		return
+	var record channelstore.OutboxRecord
+	var err error
+	for {
+		var ok bool
+		record, ok, err = s.astrbot.store.ClaimPending()
+		if err != nil {
+			fail(w, http.StatusServiceUnavailable, "AstrBot Outbox 暂时不可用")
+			return
+		}
+		if !ok {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if record.Conversation != "private" || s.identities.HasAccount(record.Platform, record.AccountID) {
+			break
+		}
+		// An identity may be revoked after the model settled a reply but before
+		// the transport claimed it. Drop that reply instead of sending after
+		// revocation, then continue to the next pending record.
+		if err = s.astrbot.store.SetOutboxState(record.DeliveryID, "failed"); err != nil {
+			fail(w, http.StatusServiceUnavailable, "AstrBot Outbox 暂时不可用")
+			return
+		}
 	}
 	s.astrbot.mu.Lock()
 	s.astrbot.timers[record.DeliveryID] = time.AfterFunc(s.astrbot.config.ClaimTimeout, func() {
@@ -275,7 +290,13 @@ func (s *Server) astrBotNextDelivery(w http.ResponseWriter, r *http.Request) {
 		s.astrbot.mu.Unlock()
 	})
 	s.astrbot.mu.Unlock()
-	writeJSON(w, http.StatusOK, map[string]any{"delivery_id": record.DeliveryID, "target": record.TargetID, "conversation_kind": record.Conversation, "messages": channelstore.RenderBubbles(record.Text), "proactive": record.Proactive})
+	messages := channelstore.RenderBubbles(record.Text)
+	if sess, sessionErr := s.session(record.SessionID); sessionErr == nil {
+		if preferences, preferenceErr := s.companion.Get(sess.RoleID()); preferenceErr == nil && preferences.Preferences.ReplyRhythm == "single" {
+			messages = []string{channelstore.RenderText(record.Text)}
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"delivery_id": record.DeliveryID, "target": record.TargetID, "conversation_kind": record.Conversation, "messages": messages, "proactive": record.Proactive})
 }
 
 func (s *Server) astrBotAckDelivery(w http.ResponseWriter, r *http.Request) {

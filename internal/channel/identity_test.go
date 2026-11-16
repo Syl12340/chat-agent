@@ -31,4 +31,17 @@ func TestIdentityLinkCodeIsSingleUse(t *testing.T) {
 	if !ok || resolved.ID != identity.ID {
 		t.Fatal("bound identity was not persisted")
 	}
+	revoked, err := store.Revoke(identity.ID)
+	if err != nil || revoked.ID != identity.ID {
+		t.Fatalf("revoke = %+v, %v", revoked, err)
+	}
+	if _, ok := store.Resolve("qq-official", "app-1", "user-1"); ok {
+		t.Fatal("revoked identity still resolved")
+	}
+	if store.HasAccount("qq-official", "app-1") {
+		t.Fatal("revoked account still authorized deliveries")
+	}
+	if _, err := store.Revoke(identity.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("second revoke error = %v", err)
+	}
 }

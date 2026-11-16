@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -21,6 +22,35 @@ func localAgentServer() *Server {
 			Wait:          2 * time.Second,
 		}},
 		localQueue: newLocalQueue(),
+	}
+}
+
+func TestDetachedLocalJobCanBeObservedWithoutCrossSessionLeak(t *testing.T) {
+	server := localAgentServer()
+	scope := localTaskScope{SessionID: "chat_one", RoleID: "companion", RequestID: "request_one"}
+	started, err := server.runLocalJobStart(context.Background(), json.RawMessage(`{"action":"render"}`), scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var start map[string]any
+	if json.Unmarshal([]byte(started.Output), &start) != nil || start["status"] != "queued" {
+		t.Fatalf("start = %q", started.Output)
+	}
+	operation, _ := start["operation_id"].(string)
+	claimed := server.localQueue.claim("dev-box", []string{"exec"})
+	if claimed == nil || claimed.OperationID != operation || claimed.Action != "render" {
+		t.Fatalf("claimed = %+v", claimed)
+	}
+	receipt := localagent.Receipt{Protocol: localagent.Protocol, OperationID: operation, RequestSHA256: localTaskDigest(*claimed), Status: "completed", Output: "rendered", CompletedAt: time.Now().UTC()}
+	if _, _, err := server.localQueue.complete("dev-box", receipt); err != nil {
+		t.Fatal(err)
+	}
+	status, err := server.runLocalJobStatus(json.RawMessage(`{"operation_id":"`+operation+`"}`), scope)
+	if err != nil || !strings.Contains(status.Output, `"status":"completed"`) || !strings.Contains(status.Output, `"output":"rendered"`) {
+		t.Fatalf("status = %q, %v", status.Output, err)
+	}
+	if _, err := server.runLocalJobStatus(json.RawMessage(`{"operation_id":"`+operation+`"}`), localTaskScope{SessionID: "other", RoleID: "companion"}); err == nil {
+		t.Fatal("another conversation could inspect the job")
 	}
 }
 

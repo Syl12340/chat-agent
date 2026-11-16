@@ -24,6 +24,7 @@ var ErrInvalid = errors.New("invalid companion preferences")
 type Preferences struct {
 	PreferredName string `json:"preferred_name"`
 	ReplyLength   string `json:"reply_length"`
+	ReplyRhythm   string `json:"reply_rhythm"`
 	Tone          string `json:"tone"`
 	Advice        string `json:"advice"`
 	Questions     string `json:"questions"`
@@ -39,6 +40,7 @@ type Patch struct {
 	Revision      int     `json:"revision"`
 	PreferredName *string `json:"preferred_name,omitempty"`
 	ReplyLength   *string `json:"reply_length,omitempty"`
+	ReplyRhythm   *string `json:"reply_rhythm,omitempty"`
 	Tone          *string `json:"tone,omitempty"`
 	Advice        *string `json:"advice,omitempty"`
 	Questions     *string `json:"questions,omitempty"`
@@ -67,7 +69,7 @@ func Open(dir string) (*Store, error) {
 	return &Store{dir: dir, lock: lock}, nil
 }
 func defaults(role string) Snapshot {
-	return Snapshot{Version: 1, RoleID: role, Preferences: Preferences{ReplyLength: "default", Tone: "default", Advice: "default", Questions: "default"}}
+	return Snapshot{Version: 1, RoleID: role, Preferences: Preferences{ReplyLength: "default", ReplyRhythm: "default", Tone: "default", Advice: "default", Questions: "default"}}
 }
 func valid(p Preferences) bool {
 	name := p.PreferredName
@@ -87,7 +89,7 @@ func valid(p Preferences) bool {
 		}
 		return false
 	}
-	return in(p.ReplyLength, "default", "short", "detailed") && in(p.Tone, "default", "natural", "warm", "playful") && in(p.Advice, "default", "ask_first", "on_request") && in(p.Questions, "default", "light", "normal")
+	return in(p.ReplyLength, "default", "short", "detailed") && in(p.ReplyRhythm, "", "default", "single", "bubbles") && in(p.Tone, "default", "natural", "warm", "playful") && in(p.Advice, "default", "ask_first", "on_request") && in(p.Questions, "default", "light", "normal")
 }
 func (s *Store) load(role string) (Snapshot, error) {
 	if s.closed {
@@ -121,6 +123,9 @@ func (s *Store) load(role string) (Snapshot, error) {
 	if d.Decode(&extra) != io.EOF || snap.Version != 1 || snap.RoleID != role || snap.Revision < 1 || !valid(snap.Preferences) {
 		return Snapshot{}, errors.New("damaged companion preferences")
 	}
+	if snap.Preferences.ReplyRhythm == "" {
+		snap.Preferences.ReplyRhythm = "default"
+	}
 	return snap, nil
 }
 func (s *Store) Get(role string) (Snapshot, error) {
@@ -138,7 +143,7 @@ func (s *Store) Update(role string, patch Patch) (Snapshot, error) {
 	if patch.Revision != snap.Revision {
 		return Snapshot{}, ErrConflict
 	}
-	if patch.PreferredName == nil && patch.ReplyLength == nil && patch.Tone == nil && patch.Advice == nil && patch.Questions == nil {
+	if patch.PreferredName == nil && patch.ReplyLength == nil && patch.ReplyRhythm == nil && patch.Tone == nil && patch.Advice == nil && patch.Questions == nil {
 		return Snapshot{}, ErrInvalid
 	}
 	p := snap.Preferences
@@ -147,6 +152,9 @@ func (s *Store) Update(role string, patch Patch) (Snapshot, error) {
 	}
 	if patch.ReplyLength != nil {
 		p.ReplyLength = *patch.ReplyLength
+	}
+	if patch.ReplyRhythm != nil {
+		p.ReplyRhythm = *patch.ReplyRhythm
 	}
 	if patch.Tone != nil {
 		p.Tone = *patch.Tone

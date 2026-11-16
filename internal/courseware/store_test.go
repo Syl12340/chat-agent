@@ -14,11 +14,11 @@ func TestStoreKeepsCoursewareRoleScopedAndReadable(t *testing.T) {
 	if docs, err := store.List("planner"); err != nil || len(docs) != 0 {
 		t.Fatalf("courseware crossed roles: %+v %v", docs, err)
 	}
-	read, text, err := store.Read("companion", doc.ID, "邻域", 0, 500)
+	read, text, source, err := store.Read("companion", doc.ID, "邻域", 0, 500)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if read.Name != "limits.md" || text == "" {
-		t.Fatalf("unexpected read: %+v %q", read, text)
+	if read.Name != "limits.md" || text == "" || source.DocumentID != doc.ID || source.StartLine < 1 || source.End <= source.Start {
+		t.Fatalf("unexpected read: %+v %q %+v", read, text, source)
 	}
 }

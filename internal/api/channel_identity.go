@@ -60,7 +60,64 @@ func (s *Server) listChannelIdentities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	items := s.identities.List()
-	writeJSON(w, http.StatusOK, map[string]any{"principal_id": ownerPrincipalID, "identities": items, "qq_official_enabled": s.qqofficial != nil, "onebot_enabled": s.onebot != nil, "astrbot_enabled": s.astrbot != nil})
+	type gateway struct {
+		ID      string                  `json:"id"`
+		Enabled bool                    `json:"enabled"`
+		Stats   channelstore.StoreStats `json:"stats"`
+	}
+	gateways := []gateway{{ID: "qq-official", Enabled: s.qqofficial != nil}, {ID: "onebot-v11", Enabled: s.onebot != nil}, {ID: "astrbot", Enabled: s.astrbot != nil}}
+	if s.qqofficial != nil {
+		gateways[0].Stats = s.qqofficial.store.Stats()
+	}
+	if s.onebot != nil {
+		gateways[1].Stats = s.onebot.store.Stats()
+	}
+	if s.astrbot != nil {
+		gateways[2].Stats = s.astrbot.store.Stats()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"principal_id": ownerPrincipalID, "identities": items, "gateways": gateways, "qq_official_enabled": s.qqofficial != nil, "onebot_enabled": s.onebot != nil, "astrbot_enabled": s.astrbot != nil})
+}
+
+func (s *Server) revokeChannelIdentity(w http.ResponseWriter, r *http.Request) {
+	if !requireDeviceAdmin(w, r) {
+		return
+	}
+	identity, err := s.identities.Revoke(r.PathValue("identity"))
+	if errors.Is(err, channelstore.ErrNotFound) {
+		fail(w, http.StatusNotFound, "IM 身份不存在或已解绑")
+		return
+	}
+	if err != nil {
+		fail(w, http.StatusServiceUnavailable, "暂时无法解绑 IM 身份")
+		return
+	}
+	// Stop every unsettled private delivery for this bot account. New inbound
+	// messages already fail closed because Resolve no longer finds the identity.
+	for _, store := range []*channelstore.Store{
+		func() *channelstore.Store {
+			if s.qqofficial != nil {
+				return s.qqofficial.store
+			}
+			return nil
+		}(),
+		func() *channelstore.Store {
+			if s.onebot != nil {
+				return s.onebot.store
+			}
+			return nil
+		}(),
+		func() *channelstore.Store {
+			if s.astrbot != nil {
+				return s.astrbot.store
+			}
+			return nil
+		}(),
+	} {
+		if store != nil {
+			_ = store.FailPrivateDeliveries(identity.Platform, identity.AccountID)
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) sessionChannel(sessionID string) (channelSessionInfo, bool) {

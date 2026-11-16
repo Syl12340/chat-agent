@@ -184,6 +184,20 @@ func (s *IdentityStore) Resolve(platform, accountID, remoteUserID string) (Chann
 	return value, ok && !s.closed
 }
 
+func (s *IdentityStore) HasAccount(platform, accountID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return false
+	}
+	for _, value := range s.state.Identities {
+		if value.Platform == platform && value.AccountID == accountID {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *IdentityStore) Issue(principalID string, ttl time.Duration) (string, LinkCode, error) {
 	if !storage.ValidID(principalID) || ttl < time.Minute || ttl > time.Hour {
 		return "", LinkCode{}, ErrInvalidEnvelope
@@ -261,4 +275,24 @@ func (s *IdentityStore) List() []ChannelIdentity {
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].VerifiedAt.After(items[j].VerifiedAt) })
 	return items
+}
+
+// Revoke removes one verified external identity. Existing transcripts remain,
+// but subsequent private messages must bind again before entering the model.
+func (s *IdentityStore) Revoke(id string) (ChannelIdentity, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return ChannelIdentity{}, ErrClosed
+	}
+	value, ok := s.state.Identities[id]
+	if !ok {
+		return ChannelIdentity{}, ErrNotFound
+	}
+	delete(s.state.Identities, id)
+	if err := s.saveLocked(); err != nil {
+		s.state.Identities[id] = value
+		return ChannelIdentity{}, err
+	}
+	return value, nil
 }

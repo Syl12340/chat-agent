@@ -41,6 +41,16 @@ type Document struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type SourceRef struct {
+	DocumentID string `json:"document_id"`
+	Revision   int    `json:"revision"`
+	SHA256     string `json:"sha256"`
+	Start      int    `json:"start"`
+	End        int    `json:"end"`
+	StartLine  int    `json:"start_line"`
+	EndLine    int    `json:"end_line"`
+}
+
 type snapshot struct {
 	Version   int        `json:"version"`
 	Documents []Document `json:"documents"`
@@ -164,7 +174,7 @@ func (s *Store) Delete(role, id string, revision int) error {
 	return os.Remove(filepath.Join(s.dir, "text", id+".txt"))
 }
 
-func (s *Store) Read(role, id, query string, offset, limit int) (Document, string, error) {
+func (s *Store) Read(role, id, query string, offset, limit int) (Document, string, SourceRef, error) {
 	if limit <= 0 || limit > 12000 {
 		limit = 6000
 	}
@@ -183,22 +193,22 @@ func (s *Store) Read(role, id, query string, offset, limit int) (Document, strin
 	}
 	s.mu.Unlock()
 	if !found {
-		return Document{}, "", os.ErrNotExist
+		return Document{}, "", SourceRef{}, os.ErrNotExist
 	}
 	raw, err := os.ReadFile(filepath.Join(s.dir, "text", id+".txt"))
 	if err != nil {
-		return Document{}, "", err
+		return Document{}, "", SourceRef{}, err
 	}
 	text := string(raw)
 	if query = strings.TrimSpace(query); query != "" {
 		if at := strings.Index(strings.ToLower(text), strings.ToLower(query)); at >= 0 {
 			offset = max(0, at-limit/3)
 		} else {
-			return doc, "", errors.New("课件中没有匹配内容")
+			return doc, "", SourceRef{}, errors.New("课件中没有匹配内容")
 		}
 	}
 	if offset >= len(text) {
-		return doc, "", errors.New("读取位置超出课件范围")
+		return doc, "", SourceRef{}, errors.New("读取位置超出课件范围")
 	}
 	end := min(len(text), offset+limit)
 	for offset > 0 && !utf8.RuneStart(text[offset]) {
@@ -207,7 +217,8 @@ func (s *Store) Read(role, id, query string, offset, limit int) (Document, strin
 	for end < len(text) && !utf8.RuneStart(text[end]) {
 		end--
 	}
-	return doc, text[offset:end], nil
+	ref := SourceRef{DocumentID: doc.ID, Revision: doc.Revision, SHA256: doc.SHA256, Start: offset, End: end, StartLine: 1 + strings.Count(text[:offset], "\n"), EndLine: 1 + strings.Count(text[:end], "\n")}
+	return doc, text[offset:end], ref, nil
 }
 
 func (s *Store) save(next snapshot) error {

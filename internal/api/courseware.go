@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 )
 
 func (s *Server) listCourseware(w http.ResponseWriter, r *http.Request) {
@@ -19,6 +20,36 @@ func (s *Server) listCourseware(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, docs)
+}
+
+func (s *Server) readCoursewareSource(w http.ResponseWriter, r *http.Request) {
+	role, ok := s.memoryRole(w, r)
+	if !ok {
+		return
+	}
+	offset, err := strconv.Atoi(r.URL.Query().Get("offset"))
+	if r.URL.Query().Get("offset") == "" {
+		offset, err = 0, nil
+	}
+	limit, limitErr := strconv.Atoi(r.URL.Query().Get("limit"))
+	if r.URL.Query().Get("limit") == "" {
+		limit, limitErr = 6000, nil
+	}
+	query := strings.TrimSpace(r.URL.Query().Get("query"))
+	if err != nil || limitErr != nil || offset < 0 || limit < 500 || limit > 12000 || len(query) > 256 {
+		fail(w, http.StatusBadRequest, "课件原文位置无效")
+		return
+	}
+	doc, text, source, readErr := s.courseware.Read(role, r.PathValue("document"), query, offset, limit)
+	if errors.Is(readErr, os.ErrNotExist) {
+		fail(w, http.StatusNotFound, "课件不存在")
+		return
+	}
+	if readErr != nil {
+		fail(w, http.StatusBadRequest, readErr.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"document": doc, "source_ref": source, "excerpt": text})
 }
 
 func (s *Server) uploadCourseware(w http.ResponseWriter, r *http.Request) {

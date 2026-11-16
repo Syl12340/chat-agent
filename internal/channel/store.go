@@ -57,6 +57,12 @@ type DeliveryIntent struct {
 	Proactive        bool
 }
 
+type StoreStats struct {
+	Mappings int            `json:"mappings"`
+	Inbox    map[string]int `json:"inbox"`
+	Outbox   map[string]int `json:"outbox"`
+}
+
 func deliveryIdentity(intent DeliveryIntent, platform, kind string) string {
 	// Preserve the deployed OneBot P0-P2 identity exactly. Reconciliation after
 	// an upgrade must find the old settled record rather than sending it again.
@@ -620,6 +626,65 @@ func (s *Store) SetOutboxState(deliveryID, state string) error {
 	s.state.Outbox[deliveryID] = record
 	if err := s.saveLocked(); err != nil {
 		s.state.Outbox[deliveryID] = previous
+		return err
+	}
+	return nil
+}
+
+// Stats exposes bounded operational counts without message contents or remote
+// identifiers. It is used by the owner-facing channel status panel.
+func (s *Store) Stats() StoreStats {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	stats := StoreStats{Inbox: map[string]int{}, Outbox: map[string]int{}}
+	if s.closed {
+		return stats
+	}
+	for _, mapping := range s.state.Mappings {
+		if mapping.State == "active" {
+			stats.Mappings++
+		}
+	}
+	for _, record := range s.state.Inbox {
+		stats.Inbox[record.State]++
+	}
+	for _, record := range s.state.Outbox {
+		stats.Outbox[record.State]++
+	}
+	return stats
+}
+
+// FailPrivateDeliveries closes every unsettled private delivery for one bot
+// account when an owner identity is revoked. This is deliberately conservative:
+// a single-user CA must prefer dropping a pending message over sending after
+// access was withdrawn. A delivery already accepted by the platform cannot be
+// recalled and remains represented by its prior/unknown terminal evidence.
+func (s *Store) FailPrivateDeliveries(platform, accountID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return ErrClosed
+	}
+	previous := map[string]OutboxRecord{}
+	now := time.Now().UTC()
+	for key, record := range s.state.Outbox {
+		if record.Platform != platform || record.AccountID != accountID || record.Conversation != "private" {
+			continue
+		}
+		switch record.State {
+		case "pending", "sending", "unknown":
+			previous[key] = record
+			record.State, record.Text, record.UpdatedAt = "failed", "", now
+			s.state.Outbox[key] = record
+		}
+	}
+	if len(previous) == 0 {
+		return nil
+	}
+	if err := s.saveLocked(); err != nil {
+		for key, record := range previous {
+			s.state.Outbox[key] = record
+		}
 		return err
 	}
 	return nil

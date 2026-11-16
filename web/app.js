@@ -84,7 +84,7 @@ const workspace = createDesktopWorkspace();
 const richText = createMarkdownRenderer({copyText,notice});
 const richMessages = new Map();
 const reasoningViews = new Map();
-Object.assign(state, { roles: [], roleID: 'companion', memories: [], memoryFilter: 'pending', memoryEditing: null, roleDocument: null, summary: null, compacting: false });
+Object.assign(state, { roles: [], roleID: 'companion', memories: [], memoryFilter: 'pending', memoryEditing: null, roleDocument: null, summary: null, compacting: false, replyRhythm: 'default' });
 const deviceAuth = createDeviceAuth({state,onToken:token=>connect(token,'device'),onError:handleError,adminRequest:json});
 const modelConfigs = createModelConfigs({state,json,onChanged:()=>chatInput.refreshOptions(),onError:handleError});
 const channelUI = createChannelSettings({json,getSessions:()=>state.sessions,getCurrent:()=>state.current,onLinked:refreshSessions,onError:handleError});
@@ -501,7 +501,7 @@ function card(role, text = '', key = '', images = [], context = null) {
         if(cached)cached.pieces[slot]={node,count:budget.count-before.count,bytes:budget.bytes-before.bytes};
         return node;
       };
-      const pieces = source.segmented ? splitReply(value) : [value];
+      const pieces = source.segmented && state.replyRhythm !== 'single' ? splitReply(value) : [value];
       for (const piece of pieces) {
         const bubble = document.createElement('div'); bubble.className = pieces.length > 1 ? 'reply-bubble reply-conversational' : 'reply-bubble';
         bubble.append(interactiveUI.renderMessage(piece,source,renderPart)); body.append(bubble);
@@ -934,7 +934,7 @@ async function applyTurnHistory(history) {
   if (!state.token || history.id !== state.current) return;
   const revision=++historyRevision, epoch=authEpoch, session=state.current;
   if (state.roleID !== (history.role_id || 'companion')) { roleProposalsUI.clear(); topicsUI.clear(); state.memories = []; ui['memory-count'].hidden = true; }
-  state.roleID = history.role_id || 'companion'; state.summary = history.summary; showSummary();
+  state.roleID = history.role_id || 'companion'; state.replyRhythm = history.reply_rhythm || 'default'; state.summary = history.summary; showSummary();
   chatInput.syncScope();
   interactiveUI.syncScope(state.roleID,state.current);
   uiFloor=history.ui_context_floor || 0;

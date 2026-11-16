@@ -91,6 +91,7 @@ type localOperationView struct {
 	Kind        string               `json:"kind"`
 	Target      string               `json:"target,omitempty"`
 	Status      string               `json:"status"`
+	Output      string               `json:"output,omitempty"`
 	Error       string               `json:"error,omitempty"`
 	Artifacts   int                  `json:"artifacts,omitempty"`
 	Files       []localOperationFile `json:"files,omitempty"`
@@ -293,6 +294,14 @@ func localOperationFiles(receipt localagent.Receipt) []localOperationFile {
 	return files
 }
 
+func boundedLocalOutput(value string) string {
+	const limit = 32 << 10
+	if len(value) <= limit {
+		return value
+	}
+	return value[:limit] + "\n[输出已截断；完整结果应作为文件产物返回]"
+}
+
 func validLocalArtifact(item localagent.Artifact) bool {
 	if item.Name == "" || len(item.Name) > 512 || strings.ContainsAny(item.Name, "\r\n\x00") || item.Bytes < 0 || item.Bytes > localArtifactLimit || len(item.SHA256) != 64 || len(item.MediaType) > 128 || strings.ContainsAny(item.MediaType, "\r\n\x00") {
 		return false
@@ -329,7 +338,7 @@ func (q *localQueue) complete(device string, receipt localagent.Receipt) (*local
 					q.order = q.order[1:]
 				}
 				view.Files = localOperationFiles(receipt)
-				view.Status, view.Error, view.Artifacts = receipt.Status, receipt.Error, len(view.Files)
+				view.Status, view.Output, view.Error, view.Artifacts = receipt.Status, boundedLocalOutput(receipt.Output), receipt.Error, len(view.Files)
 				completed := receipt.CompletedAt
 				if completed.IsZero() {
 					completed = time.Now().UTC()
@@ -363,7 +372,7 @@ func (q *localQueue) complete(device string, receipt localagent.Receipt) (*local
 	if view.Status != "canceled" {
 		q.receipts[receipt.OperationID] = receipt
 		view.Files = localOperationFiles(receipt)
-		view.Status, view.Error, view.Artifacts = receipt.Status, receipt.Error, len(view.Files)
+		view.Status, view.Output, view.Error, view.Artifacts = receipt.Status, boundedLocalOutput(receipt.Output), receipt.Error, len(view.Files)
 		completed := receipt.CompletedAt
 		if completed.IsZero() {
 			completed = time.Now().UTC()
@@ -484,6 +493,17 @@ func (q *localQueue) artifact(operationID, digest string) (localagent.Artifact, 
 	return localagent.Artifact{}, false
 }
 
+func (q *localQueue) scopedOperation(operationID, sessionID, roleID string) (localOperationView, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	view, ok := q.operations[operationID]
+	task, taskOK := q.tasks[operationID]
+	if !ok || !taskOK || task.SessionID != sessionID || task.RoleID != roleID {
+		return localOperationView{}, false
+	}
+	return view, true
+}
+
 type localTaskScope struct {
 	SessionID string
 	RoleID    string
@@ -571,7 +591,36 @@ func (s *Server) localAgentTools(scope localTaskScope) []probe.Tool {
 		}, Execute: func(ctx context.Context, raw json.RawMessage) (probe.ToolResult, error) {
 			return s.runLocalShare(ctx, raw, scope)
 		}}
-	return []probe.Tool{read, write, action, share}
+	jobStart := probe.Tool{Name: "local_job_start", Kind: "execute", Order: 784, Timeout: 5 * time.Second,
+		Description: "Start one fixed owner-configured action on the paired computer without waiting for it to finish. Returns an operation_id; use local_job_status before claiming success or retrying.",
+		Usage:       "use for an explicitly requested action that may take longer than one model step. Starting always requires approval. Never start the same job again merely because its result is still queued or running.",
+		Parameters:  json.RawMessage(`{"type":"object","properties":{"action":{"type":"string"}},"required":["action"],"additionalProperties":false}`),
+		Decision:    probe.DecisionRequired, Risk: probe.RiskHigh, ApprovalRequired: true,
+		Present: func(raw json.RawMessage) (string, string) {
+			var v struct {
+				Action string `json:"action"`
+			}
+			_ = json.Unmarshal(raw, &v)
+			return "启动本机任务", v.Action
+		},
+		Execute: func(ctx context.Context, raw json.RawMessage) (probe.ToolResult, error) {
+			return s.runLocalJobStart(ctx, raw, scope)
+		}}
+	jobStatus := probe.Tool{Name: "local_job_status", Kind: "read", Order: 785, Timeout: 3 * time.Second,
+		Description: "Query a previously started local job by operation_id. Only jobs from the current conversation and role are visible.",
+		Usage:       "query before retrying an uncertain or long-running local job; queued and running are not success.",
+		Parameters:  json.RawMessage(`{"type":"object","properties":{"operation_id":{"type":"string"}},"required":["operation_id"],"additionalProperties":false}`),
+		Present: func(raw json.RawMessage) (string, string) {
+			var v struct {
+				OperationID string `json:"operation_id"`
+			}
+			_ = json.Unmarshal(raw, &v)
+			return "查看本机任务", v.OperationID
+		},
+		Execute: func(_ context.Context, raw json.RawMessage) (probe.ToolResult, error) {
+			return s.runLocalJobStatus(raw, scope)
+		}}
+	return []probe.Tool{read, write, action, share, jobStart, jobStatus}
 }
 
 func (s *Server) localAgentWait() time.Duration {
@@ -623,6 +672,43 @@ func (s *Server) runLocalShare(ctx context.Context, raw json.RawMessage, scope l
 		return probe.ToolResult{}, errors.New("invalid request")
 	}
 	return s.dispatchLocalTask(ctx, scope.bind(localagent.Task{Kind: "share", Artifacts: []string{input.Path}}))
+}
+
+func (s *Server) runLocalJobStart(_ context.Context, raw json.RawMessage, scope localTaskScope) (probe.ToolResult, error) {
+	var input struct {
+		Action string `json:"action"`
+	}
+	if json.Unmarshal(raw, &input) != nil || strings.TrimSpace(input.Action) == "" {
+		return probe.ToolResult{}, errors.New("invalid local job request")
+	}
+	device := s.config.LocalAgent.DefaultDevice
+	if device == "" {
+		for id := range s.config.LocalAgent.Devices {
+			device = id
+			break
+		}
+	}
+	operationID, err := newOperationID()
+	if err != nil {
+		return probe.ToolResult{}, err
+	}
+	task := scope.bind(localagent.Task{Protocol: localagent.Protocol, OperationID: operationID, Kind: "exec", Action: input.Action})
+	s.localQueue.enqueue(task, device, 10*time.Minute)
+	return encoded(map[string]any{"operation_id": operationID, "status": "queued", "device_id": device, "instruction": "use local_job_status to observe the terminal result; do not resubmit while queued or running"})
+}
+
+func (s *Server) runLocalJobStatus(raw json.RawMessage, scope localTaskScope) (probe.ToolResult, error) {
+	var input struct {
+		OperationID string `json:"operation_id"`
+	}
+	if json.Unmarshal(raw, &input) != nil || !strings.HasPrefix(input.OperationID, "op_") {
+		return probe.ToolResult{}, errors.New("invalid local operation id")
+	}
+	view, ok := s.localQueue.scopedOperation(input.OperationID, scope.SessionID, scope.RoleID)
+	if !ok {
+		return probe.ToolResult{}, errors.New("local operation is unavailable in this conversation")
+	}
+	return encoded(view)
 }
 
 func (s *Server) dispatchLocalTask(ctx context.Context, task localagent.Task) (probe.ToolResult, error) {

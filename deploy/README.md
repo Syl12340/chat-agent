@@ -1,5 +1,7 @@
 # 单机部署（SSH 隧道）
 
+当前发布（2026-11-16）为服务端 **0.7.17**（`20261116-four-slices-01`）与 Android **0.7.17-debug / versionCode 55**（`android-20261116-16`）。同批上线仿生回复节奏偏好、IM 网关状态与安全解绑、异步本机任务查询、课件稳定 SourceRef/原文翻页；三个外部 IM 网关仍默认关闭。两端 SHA-256、备份、零模型验收及回退边界见[0.7.17 发布记录](../docs/release-0.7.17.md)。
+
 当前发布（2026-11-16）为服务端 **0.7.16**（`20261116-bionic-astrbot-01`）与 Android **0.7.16-debug / versionCode 54**（`android-20261116-15`）。仿生连发等待、多气泡表达和默认关闭的 AstrBot transport-only 网关已同批上线；生产没有配置 AstrBot/QQ 凭据。两端 SHA-256、备份、零模型验收及回退命令见[0.7.16 发布记录](../docs/release-0.7.16.md)。
 
 当前发布（2026-11-15）为服务端 **0.7.0**（`20261115-im-unified-01`）与 Android **0.7.0-debug / versionCode 38**（`android-20261115-01`）。合批包含主动陪伴/双端 Agent/课件纵切和 QQ 官方/OneBot 的统一身份、会话联动与群聊隔离；两个 QQ 入口生产均保持关闭。两端 SHA-256、备份、零模型验收及回退命令见[0.7 发布记录](../docs/release-0.7.md)。

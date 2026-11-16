@@ -1,8 +1,8 @@
 // Small settings UI; durable preferences live on the server, per role.
 export function createCompanionUI({ state, json, onError, drawer }) {
   const $ = id => document.getElementById(id);
-  const fields = ['preferred_name', 'reply_length', 'tone', 'advice', 'questions'];
-  const defaults = { preferred_name: '', reply_length: 'default', tone: 'default', advice: 'default', questions: 'default' };
+  const fields = ['preferred_name', 'reply_length', 'reply_rhythm', 'tone', 'advice', 'questions'];
+  const defaults = { preferred_name: '', reply_length: 'default', reply_rhythm: 'default', tone: 'default', advice: 'default', questions: 'default' };
   const dialog = $('companion-dialog'), form = $('companion-form'), save = $('companion-save'), message = $('companion-message');
   let snapshot = null, activeRole = null, generation = 0;
   const display = prefs => fields.forEach(key => { $(`companion-${key}`).value = prefs[key]; });
@@ -19,7 +19,7 @@ export function createCompanionUI({ state, json, onError, drawer }) {
     try {
       const result = await json(url(role));
       if (generation !== current || role !== state.roleID || !dialog.open) return;
-      snapshot = result; display(result.preferences); save.disabled = false;
+      snapshot = result; display({...defaults,...result.preferences}); save.disabled = false;
     } catch (error) { if (generation === current) { say(error.message); if (error.status === 401) onError(error); } }
   });
   form.addEventListener('submit', async event => {
@@ -32,7 +32,7 @@ export function createCompanionUI({ state, json, onError, drawer }) {
     try {
       const result = await json(url(role), { method: 'PATCH', body: JSON.stringify(patch) });
       if (current !== generation || state.roleID !== role) return;
-      snapshot = result; display(result.preferences); say('已保存。之后的对话和这个角色的新会话都会沿用。');
+      snapshot = result; display({...defaults,...result.preferences}); say('已保存。之后的对话和这个角色的新会话都会沿用。');
     } catch (error) {
       if (current !== generation) return;
       say(error.message);

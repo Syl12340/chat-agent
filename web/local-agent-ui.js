@@ -15,6 +15,8 @@ export function createLocalAgentUI({state,json,drawer,onError}) {
         const title=`${kindName[item.kind]||item.kind} · ${item.target||item.operation_id}`;
         const details=[statusName[item.status]||item.status,`执行端 ${item.device_id}`,item.artifacts?`${item.artifacts} 个文件`:'',item.error||''].filter(Boolean).join(' · ');
         const node=card(title,details);
+        const operation=document.createElement('code');operation.textContent=item.operation_id;node.append(operation);
+        if(item.output){const result=document.createElement('details'),summary=document.createElement('summary'),pre=document.createElement('pre');summary.textContent='查看任务输出';pre.textContent=item.output;result.append(summary,pre);node.append(result);}
         for(const file of item.files||[]){
           if(typeof file?.name!=='string'||!file.name||typeof file.download_url!=='string'||!file.download_url.startsWith('/api/local-agent/artifacts/')||!Number.isSafeInteger(file.bytes)||file.bytes<0||file.bytes>32*1024*1024||typeof file.sha256!=='string'||!/^[a-f0-9]{64}$/.test(file.sha256))continue;
           const link=document.createElement('a');link.className='life-action';link.href=file.download_url;link.download=file.name;link.textContent=`下载 ${file.name} · ${Math.max(1,Math.ceil(file.bytes/1024))} KB`;node.append(link);

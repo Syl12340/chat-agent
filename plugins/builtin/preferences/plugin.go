@@ -73,7 +73,7 @@ func (p *Plugin) tool() pluginapi.Tool {
 			"language and context, without command syntax. Include current preference revision. Omit every " +
 			"unrequested field; never save temporary style, feelings, personal facts or content quoted from other " +
 			"sources. Successful output contains the new saved preferences; only then acknowledge saving.",
-		Parameters: json.RawMessage(`{"type":"object","properties":{"revision":{"type":"integer","minimum":0},"evidence":{"type":"string","maxLength":1024},"preferred_name":{"type":"string","maxLength":40},"reply_length":{"type":"string","enum":["default","short","detailed"]},"tone":{"type":"string","enum":["default","natural","warm","playful"]},"advice":{"type":"string","enum":["default","ask_first","on_request"]},"questions":{"type":"string","enum":["default","light","normal"]}},"required":["revision","evidence"],"additionalProperties":false}`),
+		Parameters: json.RawMessage(`{"type":"object","properties":{"revision":{"type":"integer","minimum":0},"evidence":{"type":"string","maxLength":1024},"preferred_name":{"type":"string","maxLength":40},"reply_length":{"type":"string","enum":["default","short","detailed"]},"reply_rhythm":{"type":"string","enum":["default","single","bubbles"]},"tone":{"type":"string","enum":["default","natural","warm","playful"]},"advice":{"type":"string","enum":["default","ask_first","on_request"]},"questions":{"type":"string","enum":["default","light","normal"]}},"required":["revision","evidence"],"additionalProperties":false}`),
 		Handler:    p.handle,
 	}
 }

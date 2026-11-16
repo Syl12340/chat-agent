@@ -508,6 +508,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/plugins", s.listPlugins)
 	mux.HandleFunc("GET /api/channels", s.listChannelIdentities)
 	mux.HandleFunc("POST /api/channels/link-codes", s.issueChannelLink)
+	mux.HandleFunc("DELETE /api/channels/identities/{identity}", s.revokeChannelIdentity)
 	mux.HandleFunc("GET /api/host-tools", s.hostToolState)
 	mux.HandleFunc("POST /api/host-tools/sessions", s.updateHostGrants)
 	mux.HandleFunc("GET /api/chat/options", s.chatOptions)
@@ -577,6 +578,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PATCH /api/care/{id}", s.updateCare)
 	mux.HandleFunc("GET /api/courseware", s.listCourseware)
 	mux.HandleFunc("POST /api/courseware", s.uploadCourseware)
+	mux.HandleFunc("GET /api/courseware/{document}/source", s.readCoursewareSource)
 	mux.HandleFunc("DELETE /api/courseware/{document}", s.deleteCourseware)
 	mux.HandleFunc("GET /api/activities", s.listActivities)
 	mux.HandleFunc("POST /api/activities", s.createActivity)
@@ -638,7 +640,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // version is the service version reported by /api/status.
-const version = "0.7.16"
+const version = "0.7.17"
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model
@@ -842,7 +844,11 @@ func (s *Server) history(w http.ResponseWriter, r *http.Request) {
 	if info, ok := s.sessionChannel(r.PathValue("id")); ok {
 		channelValue = &info
 	}
-	writeJSON(w, 200, map[string]any{"id": r.PathValue("id"), "messages": visibleMessages(sess.Messages()), "active": active, "role_id": sess.RoleID(), "summary": sess.Summary(), "turns": items, "queue_paused": paused, "activity": activity, "channel": channelValue, "ui_context_floor": floor, "protocol_version": remoteProtocolVersion, "generation": s.transportGeneration, "resync": s.transportResync(r)})
+	replyRhythm := "default"
+	if preferences, preferenceErr := s.companion.Get(sess.RoleID()); preferenceErr == nil && preferences.Preferences.ReplyRhythm != "" {
+		replyRhythm = preferences.Preferences.ReplyRhythm
+	}
+	writeJSON(w, 200, map[string]any{"id": r.PathValue("id"), "messages": visibleMessages(sess.Messages()), "active": active, "role_id": sess.RoleID(), "summary": sess.Summary(), "turns": items, "queue_paused": paused, "activity": activity, "channel": channelValue, "reply_rhythm": replyRhythm, "ui_context_floor": floor, "protocol_version": remoteProtocolVersion, "generation": s.transportGeneration, "resync": s.transportResync(r)})
 }
 
 func (s *Server) message(w http.ResponseWriter, r *http.Request) {

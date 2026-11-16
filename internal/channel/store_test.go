@@ -71,3 +71,29 @@ func TestStoreDedupesAndDoesNotReplayUncertainDelivery(t *testing.T) {
 		t.Fatalf("restart state outbox=%s inbox=%s accepted=%s", state, inboxState, attentionState)
 	}
 }
+
+func TestStoreStatusAndRevocationStopPendingPrivateDelivery(t *testing.T) {
+	store, err := OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	intent := DeliveryIntent{Platform: "aiocqhttp", AccountID: "bot-1", ConversationKind: "private", SessionID: "session-one", RequestID: "request-one", TargetID: "friend-one", Text: "reply"}
+	record, _, err := store.CreateDelivery(intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stats := store.Stats()
+	if stats.Outbox["pending"] != 1 {
+		t.Fatalf("stats = %+v", stats)
+	}
+	if err := store.FailPrivateDeliveries("aiocqhttp", "bot-1"); err != nil {
+		t.Fatal(err)
+	}
+	store.mu.Lock()
+	failed := store.state.Outbox[record.DeliveryID]
+	store.mu.Unlock()
+	if failed.State != "failed" || failed.Text != "" || store.Stats().Outbox["failed"] != 1 {
+		t.Fatalf("delivery after revoke = %+v", failed)
+	}
+}
