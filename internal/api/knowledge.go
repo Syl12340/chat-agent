@@ -16,6 +16,7 @@ import (
 	"chat-agent/internal/interactive"
 	"chat-agent/internal/memory"
 	"chat-agent/internal/probe"
+	coursewareplugin "chat-agent/plugins/builtin/courseware"
 )
 
 func decodeInput(w http.ResponseWriter, r *http.Request, value any) bool {
@@ -403,10 +404,14 @@ func (s *Server) agentForTurn(sess *probe.Session, inputs []string, sessionID st
 
 	c.DisableBuiltinClock = true
 	if !publicChannel {
-		c.Tools = append(c.Tools, s.pluginTools(s.toolCapabilities(), sessionID, role.ID)...)
+		capabilities := s.toolCapabilities()
+		c.Tools = append(c.Tools, s.pluginTools(capabilities, sessionID, role.ID)...)
 		c.Tools = append(c.Tools, s.decisionTool()...)
 		c.Tools = append(c.Tools, s.imageTools(role.ID, sessionID, c.RequestID)...)
 		c.Tools = append(c.Tools, s.localAgentTools(localTaskScope{SessionID: sessionID, RoleID: role.ID, RequestID: c.RequestID})...)
+		if capabilities.Enabled(coursewareplugin.Capability) {
+			c.Tools = append(c.Tools, s.studySurfaceTools(localTaskScope{SessionID: sessionID, RoleID: role.ID, RequestID: c.RequestID})...)
+		}
 	}
 	if strings.TrimSpace(strings.Join(inputs, "\n")) == "" || len(uiResponses) > 0 {
 		// Embedded image text is reference, never the user's authorization.

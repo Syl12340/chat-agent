@@ -105,6 +105,10 @@ func TestAstrBotTransportOnlyClosedLoop(t *testing.T) {
 		t.Fatalf("ack status=%v err=%v", response.StatusCode, err)
 	}
 	response.Body.Close()
+	bridge := app.astrbot.status()
+	if !bridge.Ready || bridge.LastPlatform != "aiocqhttp" || bridge.LastEventAt == nil || bridge.LastPollAt == nil || bridge.LastAckAt == nil || len(bridge.Issues) != 0 {
+		t.Fatalf("bridge readiness = %+v", bridge)
+	}
 
 	if status, _, _ := post(normal); status != http.StatusAccepted {
 		t.Fatalf("duplicate status=%d", status)

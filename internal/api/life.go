@@ -484,8 +484,11 @@ strong instruction to avoid a similar topic, opening, question or tone. Do not
 infer any broader personality trait or silently change the user's settings. If there
 is no natural, truthful reason to speak now, return exactly [沉默]. Otherwise
 return only the check-in text, without JSON, headings or a chat-ui block.
-The motivation object is reference data about this opportunity, not a reason to
-speak by itself. motivation.check_ins_for_this_episode counts what was already
+The motivation object is reference data about this opportunity, not permission
+to speak by itself. motivation.source_kind says whether the user explicitly
+allowed an event follow-up or enabled an optional daily greeting. The recent
+feedback counts are bounded, explicit reactions, not personality evidence.
+motivation.check_ins_for_this_episode counts what was already
 sent about this same event: when it is one or more, do not repeat the same
 concern, opening, question or advice unless something concrete has changed, and
 prefer [沉默] when only the wording would be new. motivation.hours_since_due is
@@ -515,12 +518,29 @@ func checkInsForEpisode(history []companion.CareItem, episodeID string) int {
 // careMotivation describes why this opportunity exists now, in numbers the model
 // can act on instead of an adjective it has to guess at.
 func careMotivation(history []companion.CareItem, claimed companion.CareItem, now time.Time) map[string]any {
+	helpful, less := 0, 0
+	cutoff := now.Add(-30 * 24 * time.Hour)
+	for _, item := range history {
+		if item.CreatedAt.Before(cutoff) {
+			continue
+		}
+		switch item.Feedback {
+		case "helpful":
+			helpful++
+		case "less":
+			less++
+		}
+	}
 	motivation := map[string]any{
 		"check_ins_for_this_episode": checkInsForEpisode(history, claimed.EpisodeID),
 		"hours_since_due":            int(now.Sub(claimed.DueAt).Hours()),
+		"recent_helpful_feedback":    helpful,
+		"recent_less_feedback":       less,
+		"source_kind":                "optional_daily_greeting",
 	}
 	if claimed.EpisodeID != "" {
 		motivation["has_event"] = true
+		motivation["source_kind"] = "approved_event_followup"
 	}
 	return motivation
 }

@@ -37,7 +37,7 @@ func TestDetachedLocalJobCanBeObservedWithoutCrossSessionLeak(t *testing.T) {
 		t.Fatalf("start = %q", started.Output)
 	}
 	operation, _ := start["operation_id"].(string)
-	claimed := server.localQueue.claim("dev-box", []string{"exec"})
+	claimed := server.localQueue.claim("dev-box", []string{"exec"}, []string{"render"})
 	if claimed == nil || claimed.OperationID != operation || claimed.Action != "render" {
 		t.Fatalf("claimed = %+v", claimed)
 	}
@@ -139,7 +139,7 @@ func TestLocalAgentRejectsForeignOrMismatchedReceipt(t *testing.T) {
 	server.config.LocalAgent.Devices["other-box"] = "other-token"
 	task := localagent.Task{Protocol: localagent.Protocol, OperationID: "op_bound", Kind: "read", Path: "hello.txt"}
 	server.localQueue.enqueue(task, "dev-box", time.Minute)
-	if claimed := server.localQueue.claim("dev-box", []string{"read"}); claimed == nil {
+	if claimed := server.localQueue.claim("dev-box", []string{"read"}, nil); claimed == nil {
 		t.Fatal("task was not claimed")
 	}
 	receipt := localagent.Receipt{Protocol: localagent.Protocol, OperationID: task.OperationID, RequestSHA256: localTaskDigest(task), Status: "completed"}
@@ -167,7 +167,7 @@ func TestLocalAgentReceiptSurvivesServerRestart(t *testing.T) {
 	queue := newLocalQueue(statePath)
 	task := localagent.Task{Protocol: localagent.Protocol, OperationID: "op_durable", SessionID: "chat_1", RoleID: "companion", RequestID: "request_1", Kind: "share", Artifacts: []string{"result.txt"}}
 	queue.enqueue(task, "dev-box", time.Minute)
-	if claimed := queue.claim("dev-box", []string{"artifact-metadata"}); claimed == nil {
+	if claimed := queue.claim("dev-box", []string{"artifact-metadata"}, nil); claimed == nil {
 		t.Fatal("task was not claimed")
 	}
 	artifact := localagent.Artifact{Name: "result.txt", MediaType: "text/plain", Bytes: 6, SHA256: strings.Repeat("a", 64)}
@@ -216,7 +216,7 @@ func TestLocalAgentRefusesForeignDevice(t *testing.T) {
 func TestLocalAgentExpiredTaskFailsCaller(t *testing.T) {
 	server := localAgentServer()
 	item := server.localQueue.enqueue(localagent.Task{Protocol: localagent.Protocol, OperationID: "op_stale", Kind: "read"}, "dev-box", -time.Second)
-	if task := server.localQueue.claim("dev-box", nil); task != nil {
+	if task := server.localQueue.claim("dev-box", nil, nil); task != nil {
 		t.Fatalf("an expired task was handed out: %+v", task)
 	}
 	select {
@@ -226,5 +226,45 @@ func TestLocalAgentExpiredTaskFailsCaller(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("expiry never notified the waiting caller")
+	}
+}
+
+func TestRunningLocalCancellationWaitsForEndpointTerminalReceipt(t *testing.T) {
+	server := localAgentServer()
+	task := localagent.Task{Protocol: localagent.Protocol, OperationID: "op_cancel_wait", SessionID: "chat_one", RoleID: "companion", Kind: "exec", Action: "render"}
+	item := server.localQueue.enqueue(task, "dev-box", time.Minute)
+	if claimed := server.localQueue.claim("dev-box", []string{"exec", "cancel-poll"}, []string{"render"}); claimed == nil {
+		t.Fatal("task was not claimed")
+	}
+	if !server.localQueue.cancel(task.OperationID, "user requested cancellation") {
+		t.Fatal("running task did not accept a cancellation request")
+	}
+	if !server.localQueue.cancelRequested(task.OperationID) {
+		t.Fatal("endpoint cannot observe the cancellation request")
+	}
+	view, ok := server.localQueue.scopedOperation(task.OperationID, task.SessionID, task.RoleID)
+	if !ok || view.Status != "cancel_requested" || view.CompletedAt != nil {
+		t.Fatalf("request was presented as terminal: %+v", view)
+	}
+	select {
+	case receipt := <-item.waiting:
+		t.Fatalf("caller was released before endpoint confirmation: %+v", receipt)
+	default:
+	}
+	receipt := localagent.Receipt{Protocol: localagent.Protocol, OperationID: task.OperationID, RequestSHA256: localTaskDigest(task), Status: "canceled", Error: "endpoint stopped the process", CompletedAt: time.Now().UTC()}
+	if _, active, err := server.localQueue.complete("dev-box", receipt); err != nil || !active {
+		t.Fatalf("terminal cancellation was rejected: active=%v err=%v", active, err)
+	}
+	select {
+	case settled := <-item.waiting:
+		if settled.Status != "canceled" {
+			t.Fatalf("terminal receipt = %+v", settled)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("terminal endpoint receipt did not release the caller")
+	}
+	view, ok = server.localQueue.scopedOperation(task.OperationID, task.SessionID, task.RoleID)
+	if !ok || view.Status != "canceled" || view.CompletedAt == nil || view.RetainUntil.Before(view.CompletedAt.Add(6*24*time.Hour)) {
+		t.Fatalf("terminal operation was not retained: %+v", view)
 	}
 }

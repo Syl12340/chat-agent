@@ -49,6 +49,52 @@ type surfaceDocument struct {
 
 type surfaceStore struct{ dir string }
 
+func (s surfaceStore) put(sessionID, roleID string, view presentation.View, expectedRevision int) (persistentSurface, error) {
+	if !validID(sessionID) || !validID(roleID) || !validID(view.ID) || expectedRevision < 0 {
+		return persistentSurface{}, errSurfaceInvalid
+	}
+	doc, err := s.load(sessionID, roleID)
+	if err != nil {
+		return persistentSurface{}, err
+	}
+	now := time.Now().UTC()
+	for index := range doc.Items {
+		if doc.Items[index].ID != view.ID {
+			continue
+		}
+		if expectedRevision == 0 || doc.Items[index].Revision != expectedRevision {
+			return persistentSurface{}, errSurfaceConflict
+		}
+		view.Revision = expectedRevision + 1
+		if !persistentViewValid(&view) {
+			return persistentSurface{}, errSurfaceInvalid
+		}
+		updated := doc.Items[index]
+		updated.Revision, updated.View, updated.UpdatedAt = view.Revision, view, now
+		doc.Items[index] = updated
+		if err = s.save(doc); err != nil {
+			return persistentSurface{}, err
+		}
+		return updated, nil
+	}
+	if expectedRevision != 0 {
+		return persistentSurface{}, errSurfaceMissing
+	}
+	if len(doc.Items) >= maxSessionSurfaces {
+		return persistentSurface{}, errSurfaceLimit
+	}
+	view.Revision = 1
+	if !persistentViewValid(&view) {
+		return persistentSurface{}, errSurfaceInvalid
+	}
+	created := persistentSurface{ID: view.ID, Revision: 1, View: view, CreatedAt: now, UpdatedAt: now}
+	doc.Items = append(doc.Items, created)
+	if err = s.save(doc); err != nil {
+		return persistentSurface{}, err
+	}
+	return created, nil
+}
+
 func (s *Server) surfaceStore() surfaceStore {
 	return surfaceStore{dir: filepath.Join(s.config.DataDir, "surfaces")}
 }

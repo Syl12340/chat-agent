@@ -19,6 +19,7 @@ type Carrier struct {
 	Device  string
 	Token   string
 	Client  *http.Client
+	Actions []string
 }
 
 func (c *Carrier) Validate() error {
@@ -50,7 +51,7 @@ func isLoopbackHost(host string) bool {
 }
 
 func (c *Carrier) Claim(ctx context.Context) (*Task, error) {
-	request := map[string]any{"protocol": Protocol, "device_id": c.Device, "capabilities": []string{"list", "read", "search", "write", "exec", "artifact-metadata"}}
+	request := map[string]any{"protocol": Protocol, "device_id": c.Device, "capabilities": []string{"list", "read", "search", "share", "write", "exec", "artifact-metadata", "cancel-poll"}, "actions": c.Actions}
 	var task Task
 	status, err := c.call(ctx, http.MethodPost, "/api/local-agent/v1/tasks/claim", request, &task)
 	if status == http.StatusNoContent {

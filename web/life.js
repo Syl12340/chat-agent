@@ -131,6 +131,7 @@ export function createLifeUI({ state, json, onError, drawer, onOpenSession, onCa
     for (const item of items.slice(0,100)) {
       const article = element('article',`life-card care-${item.status}`); article.dataset.careId = item.id;
       article.append(element('h3','life-card-title',item.title),element('p','life-meta',`${labels[item.status] || item.status}${item.due_at ? ` · ${format(item.due_at)}` : ''}`));
+      article.append(element('p','life-meta',item.episode_id ? '来源：你明确允许跟进的事件' : '来源：你开启的可选日常问候'));
       if (item.status === 'skipped') {
         const probability = Number.isInteger(item.probability) ? `（本次主动概率 ${item.probability}%）` : '';
         article.append(element('p','life-meta',`这次自动闲聊未被随机选中${probability}。明确的事件跟进仍按设置进行。`));
@@ -147,6 +148,7 @@ export function createLifeUI({ state, json, onError, drawer, onOpenSession, onCa
       if (['ready','seen'].includes(item.status) && item.content) {
         action(actions,item.feedback === 'helpful' ? '✓ 这条刚好' : '这条刚好',() => mutate('care',target => json(endpoint(`/api/care/${encodeURIComponent(item.id)}`,target),{method:'PATCH',body:JSON.stringify({revision:item.revision,feedback:'helpful'})})));
         action(actions,item.feedback === 'less' ? '✓ 少一点这种' : '少一点这种',() => mutate('care',target => json(endpoint(`/api/care/${encodeURIComponent(item.id)}`,target),{method:'PATCH',body:JSON.stringify({revision:item.revision,feedback:'less'})})));
+        if (item.feedback === 'less') article.append(element('p','life-meta','已降低近期同类问候频率；不会把这次反馈写成人格或情绪判断。'));
       }
       if (['due','ready'].includes(item.status)) action(actions,'取消',() => mutate('care',target => json(endpoint(`/api/care/${encodeURIComponent(item.id)}`,target),{method:'PATCH',body:JSON.stringify({revision:item.revision,status:'canceled'})})));
       if (item.status === 'failed' || item.status === 'interrupted') article.append(element('p','life-meta','这次不会自动重试或再次调用模型。'));

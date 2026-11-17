@@ -29,11 +29,59 @@ type AstrBotConfig struct {
 }
 
 type astrBotIntegration struct {
-	server *Server
-	config AstrBotConfig
-	store  *channelstore.Store
-	mu     sync.Mutex
-	timers map[string]*time.Timer
+	server       *Server
+	config       AstrBotConfig
+	store        *channelstore.Store
+	mu           sync.Mutex
+	timers       map[string]*time.Timer
+	lastEventAt  *time.Time
+	lastPollAt   *time.Time
+	lastAckAt    *time.Time
+	lastPlatform string
+}
+
+type astrBotStatus struct {
+	RoleID       string     `json:"role_id"`
+	AllowGroups  bool       `json:"allow_groups"`
+	LastEventAt  *time.Time `json:"last_event_at,omitempty"`
+	LastPollAt   *time.Time `json:"last_poll_at,omitempty"`
+	LastAckAt    *time.Time `json:"last_ack_at,omitempty"`
+	LastPlatform string     `json:"last_platform,omitempty"`
+	Ready        bool       `json:"ready"`
+	Issues       []string   `json:"issues"`
+}
+
+func (a *astrBotIntegration) status() astrBotStatus {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	issues := []string{}
+	if a.lastPollAt == nil {
+		issues = append(issues, "AstrBot 插件尚未轮询投递接口")
+	}
+	if a.lastEventAt == nil {
+		issues = append(issues, "尚未收到已验签的 AstrBot 消息")
+	}
+	if a.lastAckAt == nil {
+		issues = append(issues, "尚未收到 AstrBot 发送结果回执")
+	}
+	if a.lastPlatform != "" && a.lastPlatform != "aiocqhttp" {
+		issues = append(issues, "首版只验收 aiocqhttp 私聊文本")
+	}
+	return astrBotStatus{RoleID: a.config.RoleID, AllowGroups: a.config.AllowGroups, LastEventAt: a.lastEventAt, LastPollAt: a.lastPollAt, LastAckAt: a.lastAckAt, LastPlatform: a.lastPlatform, Ready: len(issues) == 0, Issues: issues}
+}
+
+func (a *astrBotIntegration) observe(kind, platform string) {
+	now := time.Now().UTC()
+	a.mu.Lock()
+	switch kind {
+	case "event":
+		a.lastEventAt, a.lastPlatform = &now, platform
+	case "poll":
+		a.lastPollAt = &now
+	case "ack":
+		a.lastAckAt = &now
+	}
+	a.mu.Unlock()
 }
 
 func newAstrBotIntegration(server *Server, cfg AstrBotConfig, dir string) (_ *astrBotIntegration, err error) {
@@ -164,6 +212,7 @@ func (s *Server) astrBotWebhook(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "AstrBot 事件无效")
 		return
 	}
+	s.astrbot.observe("event", envelope.Platform)
 	if envelope.Conversation.Kind == "group" && !s.astrbot.config.AllowGroups {
 		w.WriteHeader(http.StatusNoContent)
 		return
@@ -258,6 +307,7 @@ func (s *Server) astrBotNextDelivery(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusUnauthorized, "AstrBot 网关认证失败")
 		return
 	}
+	s.astrbot.observe("poll", "")
 	var record channelstore.OutboxRecord
 	var err error
 	for {
@@ -326,6 +376,7 @@ func (s *Server) astrBotAckDelivery(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	s.astrbot.observe("ack", "")
 	s.astrbot.mu.Lock()
 	if timer := s.astrbot.timers[id]; timer != nil {
 		timer.Stop()

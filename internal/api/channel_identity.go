@@ -64,6 +64,7 @@ func (s *Server) listChannelIdentities(w http.ResponseWriter, r *http.Request) {
 		ID      string                  `json:"id"`
 		Enabled bool                    `json:"enabled"`
 		Stats   channelstore.StoreStats `json:"stats"`
+		Status  any                     `json:"status,omitempty"`
 	}
 	gateways := []gateway{{ID: "qq-official", Enabled: s.qqofficial != nil}, {ID: "onebot-v11", Enabled: s.onebot != nil}, {ID: "astrbot", Enabled: s.astrbot != nil}}
 	if s.qqofficial != nil {
@@ -74,6 +75,21 @@ func (s *Server) listChannelIdentities(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.astrbot != nil {
 		gateways[2].Stats = s.astrbot.store.Stats()
+		status := s.astrbot.status()
+		bound := false
+		for _, identity := range items {
+			if identity.Platform == "aiocqhttp" && identity.PrincipalID == ownerPrincipalID {
+				bound = true
+				break
+			}
+		}
+		if !bound {
+			status.Ready = false
+			status.Issues = append(status.Issues, "尚未绑定 aiocqhttp owner 私聊账号")
+		}
+		gateways[2].Status = status
+	} else {
+		gateways[2].Status = map[string]any{"ready": false, "issues": []string{"服务器未启用 AstrBot 网关"}}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"principal_id": ownerPrincipalID, "identities": items, "gateways": gateways, "qq_official_enabled": s.qqofficial != nil, "onebot_enabled": s.onebot != nil, "astrbot_enabled": s.astrbot != nil})
 }

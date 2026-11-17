@@ -83,7 +83,9 @@ func (e *Executor) Execute(parent context.Context, task Task) Receipt {
 		}
 	}
 	receipt.CompletedAt = time.Now().UTC()
-	if err != nil {
+	if parent.Err() != nil || ctx.Err() == context.Canceled {
+		receipt.Status, receipt.Error = "canceled", "execution endpoint confirmed cancellation"
+	} else if err != nil {
 		receipt.Status, receipt.Error = "failed", err.Error()
 	} else {
 		receipt.Status = "completed"

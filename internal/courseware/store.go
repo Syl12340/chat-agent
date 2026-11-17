@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -38,6 +39,7 @@ type Document struct {
 	SHA256    string    `json:"sha256"`
 	TextBytes int       `json:"text_bytes"`
 	Revision  int       `json:"revision"`
+	Locator   string    `json:"locator,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -49,6 +51,9 @@ type SourceRef struct {
 	End        int    `json:"end"`
 	StartLine  int    `json:"start_line"`
 	EndLine    int    `json:"end_line"`
+	Locator    string `json:"locator,omitempty"`
+	StartPage  int    `json:"start_page,omitempty"`
+	EndPage    int    `json:"end_page,omitempty"`
 }
 
 type snapshot struct {
@@ -127,7 +132,11 @@ func (s *Store) Add(role, name, mediaType string, raw []byte) (Document, error) 
 	}
 	id := hex.EncodeToString(idRaw[:])
 	digest := sha256.Sum256(raw)
-	doc := Document{ID: id, RoleID: role, Name: name, MediaType: mediaType, Bytes: len(raw), SHA256: fmt.Sprintf("%x", digest[:]), TextBytes: len(text), Revision: 1, CreatedAt: time.Now().UTC()}
+	locator := ""
+	if strings.EqualFold(filepath.Ext(name), ".pptx") {
+		locator = "slide"
+	}
+	doc := Document{ID: id, RoleID: role, Name: name, MediaType: mediaType, Bytes: len(raw), SHA256: fmt.Sprintf("%x", digest[:]), TextBytes: len(text), Revision: 1, Locator: locator, CreatedAt: time.Now().UTC()}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	count := 0
@@ -217,7 +226,16 @@ func (s *Store) Read(role, id, query string, offset, limit int) (Document, strin
 	for end < len(text) && !utf8.RuneStart(text[end]) {
 		end--
 	}
-	ref := SourceRef{DocumentID: doc.ID, Revision: doc.Revision, SHA256: doc.SHA256, Start: offset, End: end, StartLine: 1 + strings.Count(text[:offset], "\n"), EndLine: 1 + strings.Count(text[:end], "\n")}
+	locator := doc.Locator
+	if locator == "" && strings.EqualFold(filepath.Ext(doc.Name), ".pptx") && strings.Contains(text, "[幻灯片 ") {
+		// Slide-aware text created before Locator was persisted remains locatable.
+		locator, doc.Locator = "slide", "slide"
+	}
+	ref := SourceRef{DocumentID: doc.ID, Revision: doc.Revision, SHA256: doc.SHA256, Start: offset, End: end, StartLine: 1 + strings.Count(text[:offset], "\n"), EndLine: 1 + strings.Count(text[:end], "\n"), Locator: locator}
+	if locator == "slide" {
+		ref.StartPage = slideAt(text, offset)
+		ref.EndPage = slideAt(text, max(offset, end-1))
+	}
 	return doc, text[offset:end], ref, nil
 }
 
@@ -249,12 +267,114 @@ func extract(name, mediaType string, raw []byte) (string, error) {
 	case ".docx":
 		return extractZIPXML(raw, "word/")
 	case ".pptx":
-		return extractZIPXML(raw, "ppt/slides/")
+		return extractPPTX(raw)
 	case ".pdf":
 		return "", errors.New("当前部署未配置 PDF 文本提取器；请先上传 Markdown、文本、DOCX 或 PPTX")
 	default:
 		return "", fmt.Errorf("不支持的课件格式 %q", ext)
 	}
+}
+
+type pptxSlide struct {
+	number int
+	file   *zip.File
+}
+
+func extractPPTX(raw []byte) (string, error) {
+	r, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
+	if err != nil {
+		return "", errors.New("课件压缩包损坏")
+	}
+	slides := make([]pptxSlide, 0)
+	var expanded uint64
+	for _, file := range r.File {
+		name := strings.TrimSuffix(strings.TrimPrefix(file.Name, "ppt/slides/slide"), ".xml")
+		number, numberErr := strconv.Atoi(name)
+		if numberErr != nil || number < 1 {
+			continue
+		}
+		if file.UncompressedSize64 > 4<<20 {
+			return "", errors.New("课件单张幻灯片过大")
+		}
+		expanded += file.UncompressedSize64
+		if expanded > 32<<20 || len(slides) >= 500 {
+			return "", errors.New("课件包含过多幻灯片")
+		}
+		slides = append(slides, pptxSlide{number: number, file: file})
+	}
+	if len(slides) == 0 {
+		return "", errors.New("PPTX 中没有可读取的幻灯片")
+	}
+	sort.Slice(slides, func(i, j int) bool { return slides[i].number < slides[j].number })
+	var out strings.Builder
+	for _, slide := range slides {
+		out.WriteString("\n\n[幻灯片 ")
+		out.WriteString(strconv.Itoa(slide.number))
+		out.WriteString("]\n")
+		text, readErr := extractXMLFile(slide.file)
+		if readErr != nil {
+			return "", readErr
+		}
+		out.WriteString(text)
+		if out.Len() > textLimit {
+			return out.String()[:textLimit], nil
+		}
+	}
+	return out.String(), nil
+}
+
+func extractXMLFile(file *zip.File) (string, error) {
+	rc, err := file.Open()
+	if err != nil {
+		return "", errors.New("课件 XML 无法读取")
+	}
+	defer rc.Close()
+	var out strings.Builder
+	dec := xml.NewDecoder(io.LimitReader(rc, textLimit+1))
+	for {
+		token, tokenErr := dec.Token()
+		if tokenErr == io.EOF {
+			break
+		}
+		if tokenErr != nil {
+			return "", errors.New("课件 XML 损坏")
+		}
+		if chars, ok := token.(xml.CharData); ok {
+			value := strings.TrimSpace(string(chars))
+			if value != "" {
+				out.WriteString(value)
+				out.WriteByte('\n')
+			}
+		}
+	}
+	return out.String(), nil
+}
+
+func slideAt(text string, offset int) int {
+	if offset < 0 {
+		return 0
+	}
+	if offset > len(text) {
+		offset = len(text)
+	}
+	page := 0
+	prefix := text[:offset]
+	if offset == 0 || text[offset-1] == '\n' {
+		if end := strings.IndexByte(text[offset:], '\n'); end >= 0 {
+			prefix += text[offset : offset+end+1]
+		}
+	}
+	for _, line := range strings.Split(prefix, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "[幻灯片 ") || !strings.HasSuffix(line, "]") {
+			continue
+		}
+		value := strings.TrimSuffix(strings.TrimPrefix(line, "[幻灯片 "), "]")
+		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
+			page = parsed
+		}
+	}
+	return page
 }
 
 func extractZIPXML(raw []byte, prefix string) (string, error) {

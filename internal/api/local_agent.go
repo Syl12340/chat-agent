@@ -74,6 +74,7 @@ type localDeviceState struct {
 	Online       bool      `json:"online"`
 	LastSeen     time.Time `json:"last_seen,omitempty"`
 	Capabilities []string  `json:"capabilities,omitempty"`
+	Actions      []string  `json:"actions,omitempty"`
 }
 
 type localOperationFile struct {
@@ -98,6 +99,7 @@ type localOperationView struct {
 	CreatedAt   time.Time            `json:"created_at"`
 	ClaimedAt   *time.Time           `json:"claimed_at,omitempty"`
 	CompletedAt *time.Time           `json:"completed_at,omitempty"`
+	RetainUntil time.Time            `json:"retain_until"`
 }
 
 type localQueueState struct {
@@ -155,8 +157,16 @@ func newLocalQueue(paths ...string) *localQueue {
 		if len(saved) > 0 || len(receipts) > 0 {
 			now := time.Now().UTC()
 			for _, view := range saved {
-				if view.Status == "queued" || view.Status == "running" {
+				if view.RetainUntil.IsZero() {
+					view.RetainUntil = view.CreatedAt.Add(localOperationRetention)
+				}
+				if view.Status != "queued" && view.Status != "running" && view.Status != "cancel_requested" && now.After(view.RetainUntil) {
+					q.removeArtifactDir(view.OperationID)
+					continue
+				}
+				if view.Status == "queued" || view.Status == "running" || view.Status == "cancel_requested" {
 					view.Status, view.Error, view.CompletedAt = "interrupted", "服务重启中断；任务不会自动重放", &now
+					view.RetainUntil = now.Add(localOperationRetention)
 				}
 				q.operations[view.OperationID] = view
 			}
@@ -221,9 +231,42 @@ func (q *localQueue) saveLocked() {
 }
 
 const (
-	localOperationKeep = 64
-	localReceiptKeep   = 32
+	localOperationKeep      = 512
+	localReceiptKeep        = 128
+	localOperationRetention = 7 * 24 * time.Hour
 )
+
+func (q *localQueue) removeArtifactDir(operationID string) {
+	if q.statePath == "" || !storage.ValidID(operationID) || !strings.HasPrefix(operationID, "op_") {
+		return
+	}
+	_ = os.RemoveAll(filepath.Join(filepath.Dir(q.statePath), "artifacts", operationID))
+}
+
+func (q *localQueue) pruneExpiredLocked(now time.Time) {
+	changed := false
+	for id, view := range q.operations {
+		if view.Status == "queued" || view.Status == "running" || view.Status == "cancel_requested" || view.RetainUntil.IsZero() || !now.After(view.RetainUntil) {
+			continue
+		}
+		delete(q.operations, id)
+		delete(q.tasks, id)
+		delete(q.receipts, id)
+		delete(q.canceled, id)
+		q.removeArtifactDir(id)
+		changed = true
+	}
+	if changed {
+		kept := q.order[:0]
+		for _, id := range q.order {
+			if _, ok := q.receipts[id]; ok {
+				kept = append(kept, id)
+			}
+		}
+		q.order = kept
+		q.saveLocked()
+	}
+}
 
 func (q *localQueue) enqueue(task localagent.Task, device string, ttl time.Duration) *localPending {
 	item := &localPending{task: task, device: device, waiting: make(chan localagent.Receipt, 1), expiresAt: time.Now().Add(ttl)}
@@ -233,18 +276,19 @@ func (q *localQueue) enqueue(task localagent.Task, device string, ttl time.Durat
 	if target == "" {
 		target = task.Action
 	}
-	q.operations[task.OperationID] = localOperationView{OperationID: task.OperationID, DeviceID: device, RequestSHA: localTaskDigest(task), Kind: task.Kind, Target: target, Status: "queued", CreatedAt: time.Now().UTC()}
+	now := time.Now().UTC()
+	q.operations[task.OperationID] = localOperationView{OperationID: task.OperationID, DeviceID: device, RequestSHA: localTaskDigest(task), Kind: task.Kind, Target: target, Status: "queued", CreatedAt: now, RetainUntil: now.Add(localOperationRetention)}
 	q.tasks[task.OperationID] = task
 	q.saveLocked()
 	q.mu.Unlock()
 	return item
 }
 
-func (q *localQueue) claim(device string, capabilities []string) *localagent.Task {
+func (q *localQueue) claim(device string, capabilities, actions []string) *localagent.Task {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	now := time.Now()
-	q.devices[device] = localDeviceState{DeviceID: device, Configured: true, Online: true, LastSeen: now.UTC(), Capabilities: append([]string(nil), capabilities...)}
+	q.devices[device] = localDeviceState{DeviceID: device, Configured: true, Online: true, LastSeen: now.UTC(), Capabilities: append([]string(nil), capabilities...), Actions: append([]string(nil), actions...)}
 	queued := q.pending[device]
 	for len(queued) > 0 {
 		item := queued[0]
@@ -368,6 +412,7 @@ func (q *localQueue) complete(device string, receipt localagent.Receipt) (*local
 		return nil, false, errors.New("receipt status is invalid")
 	}
 	delete(q.inflight, receipt.OperationID)
+	delete(q.canceled, receipt.OperationID)
 	view := q.operations[receipt.OperationID]
 	if view.Status != "canceled" {
 		q.receipts[receipt.OperationID] = receipt
@@ -378,6 +423,7 @@ func (q *localQueue) complete(device string, receipt localagent.Receipt) (*local
 			completed = time.Now().UTC()
 		}
 		view.CompletedAt = &completed
+		view.RetainUntil = completed.Add(localOperationRetention)
 		q.operations[receipt.OperationID] = view
 	}
 	q.order = append(q.order, receipt.OperationID)
@@ -393,15 +439,20 @@ func (q *localQueue) complete(device string, receipt localagent.Receipt) (*local
 	return item, true, nil
 }
 
-// cancel fails a queued task whose caller stopped waiting.
+// cancel removes a queued task immediately, but a running task only enters
+// cancel_requested. The endpoint owns the terminal fact: it may report canceled,
+// completed or failed after observing the request, and the host records that
+// receipt instead of pretending a request rolled work back.
 func (q *localQueue) cancel(operationID string, reason string) bool {
 	q.mu.Lock()
 	var found *localPending
+	queuedCancellation := false
 	for device, queued := range q.pending {
 		for index, item := range queued {
 			if item.task.OperationID == operationID {
 				q.pending[device] = append(append([]*localPending(nil), queued[:index]...), queued[index+1:]...)
 				found = item
+				queuedCancellation = true
 				break
 			}
 		}
@@ -409,18 +460,23 @@ func (q *localQueue) cancel(operationID string, reason string) bool {
 	if item := q.inflight[operationID]; item != nil {
 		found = item
 		item.canceled, item.cancelReason = true, reason
-		delete(q.inflight, operationID)
 	}
 	if found != nil {
 		q.canceled[operationID] = true
-		now := time.Now().UTC()
 		view := q.operations[operationID]
-		view.Status, view.Error, view.CompletedAt = "canceled", reason, &now
+		view.Error = reason
+		if queuedCancellation {
+			now := time.Now().UTC()
+			view.Status, view.CompletedAt = "canceled", &now
+			view.RetainUntil = now.Add(localOperationRetention)
+		} else {
+			view.Status, view.CompletedAt = "cancel_requested", nil
+		}
 		q.operations[operationID] = view
 		q.saveLocked()
 	}
 	q.mu.Unlock()
-	if found != nil {
+	if found != nil && queuedCancellation {
 		select {
 		case found.waiting <- localagent.Receipt{Protocol: localagent.Protocol, OperationID: operationID, Status: "canceled", Error: reason, CompletedAt: time.Now().UTC()}:
 		default:
@@ -446,6 +502,7 @@ func (q *localQueue) snapshot(configured map[string]string) ([]localDeviceState,
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	now := time.Now()
+	q.pruneExpiredLocked(now)
 	devices := make([]localDeviceState, 0, len(configured))
 	for id := range configured {
 		state := q.devices[id]
@@ -475,6 +532,9 @@ func (q *localQueue) artifactUploadAllowed(operationID, device string) bool {
 func (q *localQueue) artifact(operationID, digest string) (localagent.Artifact, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	if view, ok := q.operations[operationID]; !ok || view.RetainUntil.IsZero() || time.Now().After(view.RetainUntil) {
+		return localagent.Artifact{}, false
+	}
 	if receipt, ok := q.receipts[operationID]; ok {
 		for _, item := range receipt.Artifacts {
 			if item.SHA256 == digest && validLocalArtifact(item) {
@@ -620,7 +680,18 @@ func (s *Server) localAgentTools(scope localTaskScope) []probe.Tool {
 		Execute: func(_ context.Context, raw json.RawMessage) (probe.ToolResult, error) {
 			return s.runLocalJobStatus(raw, scope)
 		}}
-	return []probe.Tool{read, write, action, share, jobStart, jobStatus}
+	endpointStatus := probe.Tool{Name: "local_endpoint_status", Kind: "read", Order: 786, Timeout: 3 * time.Second,
+		Description: "List paired execution endpoints, whether each is online, its declared capabilities and owner-configured fixed action names. This does not run anything.",
+		Usage:       "use before proposing a local action when the available endpoint or fixed action name is unknown.",
+		Parameters:  json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
+		Present: func(json.RawMessage) (string, string) {
+			return "查看本机执行端", "能力与在线状态"
+		},
+		Execute: func(_ context.Context, _ json.RawMessage) (probe.ToolResult, error) {
+			devices, _ := s.localQueue.snapshot(s.config.LocalAgent.Devices)
+			return encoded(map[string]any{"devices": devices, "default_device": s.config.LocalAgent.DefaultDevice, "os_sandbox": false, "free_shell": false})
+		}}
+	return []probe.Tool{read, write, action, share, jobStart, jobStatus, endpointStatus}
 }
 
 func (s *Server) localAgentWait() time.Duration {
@@ -795,6 +866,7 @@ func (s *Server) localAgentClaim(w http.ResponseWriter, r *http.Request) {
 		Protocol     string   `json:"protocol"`
 		DeviceID     string   `json:"device_id"`
 		Capabilities []string `json:"capabilities"`
+		Actions      []string `json:"actions"`
 	}
 	if !decodeInput(w, r, &input) {
 		return
@@ -807,7 +879,9 @@ func (s *Server) localAgentClaim(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "unsupported local agent protocol"})
 		return
 	}
-	task := s.localQueue.claim(device, input.Capabilities)
+	input.Capabilities = validLocalDeclarations(input.Capabilities, 32)
+	input.Actions = validLocalDeclarations(input.Actions, 32)
+	task := s.localQueue.claim(device, input.Capabilities, input.Actions)
 	if task == nil {
 		w.WriteHeader(http.StatusNoContent)
 		return
@@ -838,7 +912,32 @@ func (s *Server) cancelLocalOperation(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "任务已结束或不存在"})
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	_, operations := s.localQueue.snapshot(s.config.LocalAgent.Devices)
+	for _, item := range operations {
+		if item.OperationID == r.PathValue("operation") {
+			writeJSON(w, http.StatusAccepted, item)
+			return
+		}
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func validLocalDeclarations(values []string, limit int) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, min(len(values), limit))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || len(value) > 64 || strings.ContainsAny(value, "\r\n\x00") || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+		if len(out) == limit {
+			break
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (s *Server) localAgentComplete(w http.ResponseWriter, r *http.Request) {

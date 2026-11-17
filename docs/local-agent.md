@@ -26,7 +26,9 @@ local-agent -workspace C:\work -actions actions.json -state C:\state.json \
 ```
 
 轮询 `/api/local-agent/v1/tasks/claim`，执行，再 `POST .../complete`。
-**服务器当前还没有这两个路由**，这条路径暂时跑不通。
+执行端在领取时公布能力和动作名；模型可通过 `local_endpoint_status` 查询在线状态、
+能力和固定动作清单，再用 `local_job_start` 创建异步任务，并用 `local_job_status`
+查询同一个 operation。动作参数与 token 不会进入能力公告。
 
 ## 动作清单
 
@@ -54,6 +56,10 @@ local-agent -workspace C:\work -actions actions.json -state C:\state.json \
 - `exec` 用 `action` 字段指清单里的名字，**不接受参数**。
 - 操作 ID 是幂等的：同样的 ID 加同样的请求体再来一次，直接返回上次的回执；
   同样的 ID 换个请求体会被拒（`operation identity was already used for a different task`）。
+- 已进入执行端的任务取消后先变为 `cancel_requested`；只有执行端回传终态后才显示
+  `canceled`、`completed` 或 `failed`。这是取消请求，不承诺回滚已经完成的写入。
+- 已结束任务和产物默认保留七天。服务重启后仍能按 operation ID 查询；过期后服务端
+  会清理记录和对应产物目录。
 
 ## 回执里的 guard
 

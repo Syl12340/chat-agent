@@ -1,6 +1,6 @@
 export function createLocalAgentUI({state,json,drawer,onError}) {
   const $=id=>document.getElementById(id), dialog=$('local-agent-dialog'), devices=$('local-agent-devices'), operations=$('local-agent-operations'), message=$('local-agent-message');
-  const statusName={queued:'等待电脑领取',running:'正在电脑上执行',completed:'已完成',failed:'失败',rejected:'已拒绝',canceled:'已取消',interrupted:'因服务重启中断'};
+  const statusName={queued:'等待电脑领取',running:'正在电脑上执行',cancel_requested:'已请求取消，等待电脑确认',completed:'已完成',failed:'失败',rejected:'已拒绝',canceled:'已取消',interrupted:'因服务重启中断'};
   const kindName={list:'查看目录',read:'读取文件',search:'搜索文件',share:'发送文件',write:'写入文件',exec:'运行固定动作'};
   const text=(node,value)=>{node.textContent=value;};
   const card=(title,meta)=>{const article=document.createElement('article');article.className='workbench-card';const h=document.createElement('h3');h.textContent=title;const p=document.createElement('p');p.className='life-meta';p.textContent=meta;article.append(h,p);return article;};
@@ -9,11 +9,11 @@ export function createLocalAgentUI({state,json,drawer,onError}) {
     try{
       const data=await json('/api/local-agent/status');devices.replaceChildren();operations.replaceChildren();
       if(!data.devices?.length)devices.append(card('尚未配置执行端','在服务器配置设备 ID 与专用令牌后，本机端会在这里出现。'));
-      for(const item of data.devices||[]){devices.append(card(item.device_id,item.online?`在线 · ${item.capabilities?.join(' / ')||'能力未上报'}`:`离线${item.last_seen?` · 上次 ${new Date(item.last_seen).toLocaleString()}`:''}`));}
+      for(const item of data.devices||[]){const capability=item.capabilities?.join(' / ')||'能力未上报';const actions=item.actions?.length?` · 固定动作：${item.actions.join(' / ')}`:'';devices.append(card(item.device_id,item.online?`在线 · ${capability}${actions}`:`离线${item.last_seen?` · 上次 ${new Date(item.last_seen).toLocaleString()}`:''}${actions}`));}
       if(!data.operations?.length)operations.append(card('暂无任务','模型调用本机工具后，操作标识与状态会显示在这里。'));
       for(const item of data.operations||[]){
         const title=`${kindName[item.kind]||item.kind} · ${item.target||item.operation_id}`;
-        const details=[statusName[item.status]||item.status,`执行端 ${item.device_id}`,item.artifacts?`${item.artifacts} 个文件`:'',item.error||''].filter(Boolean).join(' · ');
+        const details=[statusName[item.status]||item.status,`执行端 ${item.device_id}`,item.artifacts?`${item.artifacts} 个文件`:'',item.retain_until?`保留至 ${new Date(item.retain_until).toLocaleString()}`:'',item.error||''].filter(Boolean).join(' · ');
         const node=card(title,details);
         const operation=document.createElement('code');operation.textContent=item.operation_id;node.append(operation);
         if(item.output){const result=document.createElement('details'),summary=document.createElement('summary'),pre=document.createElement('pre');summary.textContent='查看任务输出';pre.textContent=item.output;result.append(summary,pre);node.append(result);}
@@ -21,7 +21,7 @@ export function createLocalAgentUI({state,json,drawer,onError}) {
           if(typeof file?.name!=='string'||!file.name||typeof file.download_url!=='string'||!file.download_url.startsWith('/api/local-agent/artifacts/')||!Number.isSafeInteger(file.bytes)||file.bytes<0||file.bytes>32*1024*1024||typeof file.sha256!=='string'||!/^[a-f0-9]{64}$/.test(file.sha256))continue;
           const link=document.createElement('a');link.className='life-action';link.href=file.download_url;link.download=file.name;link.textContent=`下载 ${file.name} · ${Math.max(1,Math.ceil(file.bytes/1024))} KB`;node.append(link);
         }
-        if(['queued','running'].includes(item.status)){const button=document.createElement('button');button.type='button';button.className='life-action';button.textContent='取消';button.addEventListener('click',async()=>{try{await json(`/api/local-agent/operations/${encodeURIComponent(item.operation_id)}/cancel`,{method:'POST'});await refresh();}catch(error){report(error);}});node.append(button);}
+        if(['queued','running'].includes(item.status)){const button=document.createElement('button');button.type='button';button.className='life-action';button.textContent='请求取消';button.addEventListener('click',async()=>{try{await json(`/api/local-agent/operations/${encodeURIComponent(item.operation_id)}/cancel`,{method:'POST'});await refresh();}catch(error){report(error);}});node.append(button);}
         operations.append(node);
       }
     }catch(error){report(error);}

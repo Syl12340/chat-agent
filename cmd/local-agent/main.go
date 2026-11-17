@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -59,7 +60,12 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("read device token: %w", err)
 	}
-	carrier := &localagent.Carrier{BaseURL: *server, Device: *device, Token: strings.TrimSpace(string(token))}
+	actionNames := make([]string, 0, len(actions))
+	for name := range actions {
+		actionNames = append(actionNames, name)
+	}
+	sort.Strings(actionNames)
+	carrier := &localagent.Carrier{BaseURL: *server, Device: *device, Token: strings.TrimSpace(string(token)), Actions: actionNames}
 	if err := carrier.Validate(); err != nil {
 		return err
 	}

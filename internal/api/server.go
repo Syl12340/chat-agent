@@ -579,6 +579,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/courseware", s.listCourseware)
 	mux.HandleFunc("POST /api/courseware", s.uploadCourseware)
 	mux.HandleFunc("GET /api/courseware/{document}/source", s.readCoursewareSource)
+	mux.HandleFunc("GET /api/courseware/{document}/export", s.exportCoursewareSource)
 	mux.HandleFunc("DELETE /api/courseware/{document}", s.deleteCourseware)
 	mux.HandleFunc("GET /api/activities", s.listActivities)
 	mux.HandleFunc("POST /api/activities", s.createActivity)
@@ -640,7 +641,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // version is the service version reported by /api/status.
-const version = "0.7.17"
+const version = "0.7.18"
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model

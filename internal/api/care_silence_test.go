@@ -76,7 +76,7 @@ func TestCheckInsForEpisodeCountsOnlyWhatWasDelivered(t *testing.T) {
 func TestCareMotivationReportsStaleness(t *testing.T) {
 	now := time.Date(2026, 11, 12, 23, 0, 0, 0, time.UTC)
 	claimed := companion.CareItem{EpisodeID: "event-a", DueAt: now.Add(-3 * time.Hour)}
-	history := []companion.CareItem{{Status: "seen", EpisodeID: "event-a", Content: "该睡了"}}
+	history := []companion.CareItem{{Status: "seen", EpisodeID: "event-a", Content: "该睡了", Feedback: "less", CreatedAt: now.Add(-time.Hour)}}
 	motivation := careMotivation(history, claimed, now)
 	if motivation["hours_since_due"] != 3 {
 		t.Fatalf("hours_since_due = %v", motivation["hours_since_due"])
@@ -87,9 +87,16 @@ func TestCareMotivationReportsStaleness(t *testing.T) {
 	if motivation["has_event"] != true {
 		t.Fatalf("has_event = %v", motivation["has_event"])
 	}
+	if motivation["source_kind"] != "approved_event_followup" || motivation["recent_less_feedback"] != 1 || motivation["recent_helpful_feedback"] != 0 {
+		t.Fatalf("motivation feedback/source = %+v", motivation)
+	}
 	// A daily greeting carries no event, and must not claim one.
-	if _, ok := careMotivation(nil, companion.CareItem{DueAt: now}, now)["has_event"]; ok {
+	daily := careMotivation(nil, companion.CareItem{DueAt: now}, now)
+	if _, ok := daily["has_event"]; ok {
 		t.Fatal("event-less opportunity reported has_event")
+	}
+	if daily["source_kind"] != "optional_daily_greeting" {
+		t.Fatalf("daily source = %v", daily["source_kind"])
 	}
 }
 
