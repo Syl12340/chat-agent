@@ -3,7 +3,9 @@ package workspace
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -76,7 +78,7 @@ func under(base, path string) bool {
 }
 
 func (p *Plugin) Manifest() pluginapi.Manifest {
-	tools := []string{"workspace_list", "workspace_read", "workspace_search", "workspace_share"}
+	tools := []string{"workspace_list", "workspace_read", "workspace_search", "workspace_write", "workspace_share"}
 	if len(p.actions) > 0 && canExecute() {
 		tools = append(tools, "workspace_exec")
 	}
@@ -85,7 +87,7 @@ func (p *Plugin) Manifest() pluginapi.Manifest {
 	}
 	return pluginapi.Manifest{
 		APIVersion: pluginapi.APIVersion, Kind: pluginapi.Kind,
-		Metadata: pluginapi.Metadata{ID: ID, Name: "服务器工作区", Version: "0.2.0"},
+		Metadata: pluginapi.Metadata{ID: ID, Name: "工作区", Version: "0.3.0"},
 		Spec: pluginapi.Spec{Runtime: pluginapi.RuntimeBuiltin, Capabilities: []string{"workspace.server"},
 			Permissions: pluginapi.Permissions{Filesystem: []string{"workspace://server"}}, Tools: tools},
 	}
@@ -113,6 +115,7 @@ func (p *Plugin) Register(registry *pluginapi.Registry) error {
 		{Name: "workspace_list", Description: "List the approved server workspace. Use path . for its root.", Parameters: json.RawMessage(path), Handler: p.list},
 		{Name: "workspace_read", Description: "Read a small UTF-8 text file in the approved server workspace.", Parameters: json.RawMessage(path), Handler: p.read},
 		{Name: "workspace_search", Description: "Find literal text in small files in the approved server workspace.", Parameters: json.RawMessage(search), Handler: p.search},
+		{Name: "workspace_write", Kind: "edit", Description: "Create or replace one bounded UTF-8 file in the approved workspace. The expected SHA-256 prevents overwriting a file that changed since it was read.", Usage: "read an existing file first and pass its exact SHA-256; use expected_sha256=missing only for a new path. Write only what the user requested and verify important changes by reading them back.", Parameters: json.RawMessage(`{"type":"object","properties":{"workspace":{"type":"string","enum":["server"]},"path":{"type":"string","maxLength":256},"content":{"type":"string","maxLength":262144},"expected_sha256":{"type":"string","maxLength":64}},"required":["workspace","path","content","expected_sha256"],"additionalProperties":false}`), Decision: string(probe.DecisionRequired), Risk: string(probe.RiskHigh), ApprovalRequired: true, Handler: p.write},
 		{Name: "workspace_share", Kind: "read", Description: "Offer one regular file from the approved workspace to the user as an authenticated, same-session download. The receipt includes the exact size and SHA-256; never expose an absolute host path.", Usage: "use after creating or locating the exact file the user asked to receive; share the file itself instead of pasting binary data or a host path.", Parameters: json.RawMessage(path), Handler: p.share},
 	}
 	if len(p.actions) > 0 && canExecute() {
@@ -237,6 +240,73 @@ func (p *Plugin) read(ctx context.Context, raw json.RawMessage) (pluginapi.Resul
 	}
 	content, err := p.text(path)
 	return pluginapi.Result{Output: content}, err
+}
+
+func (p *Plugin) write(ctx context.Context, raw json.RawMessage) (pluginapi.Result, error) {
+	var args struct {
+		Workspace      string `json:"workspace"`
+		Path           string `json:"path"`
+		Content        string `json:"content"`
+		ExpectedSHA256 string `json:"expected_sha256"`
+	}
+	if json.Unmarshal(raw, &args) != nil || args.Workspace != "server" || args.Path == "." || !allowedPath(args.Path) || len(args.Content) > 256<<10 || !utf8.ValidString(args.Content) {
+		return pluginapi.Result{}, errors.New("invalid workspace write")
+	}
+	if err := ctx.Err(); err != nil {
+		return pluginapi.Result{}, err
+	}
+	info, statErr := p.root.Stat(args.Path)
+	if args.ExpectedSHA256 == "missing" {
+		if statErr == nil || !errors.Is(statErr, os.ErrNotExist) {
+			return pluginapi.Result{}, errors.New("workspace path already exists or cannot be verified")
+		}
+	} else {
+		if len(args.ExpectedSHA256) != 64 || strings.ToLower(args.ExpectedSHA256) != args.ExpectedSHA256 || statErr != nil || !info.Mode().IsRegular() || info.Size() > 256<<10 {
+			return pluginapi.Result{}, errors.New("workspace file is missing or expected hash is invalid")
+		}
+		if _, err := hex.DecodeString(args.ExpectedSHA256); err != nil {
+			return pluginapi.Result{}, errors.New("workspace expected hash is invalid")
+		}
+		current, readErr := p.root.ReadFile(args.Path)
+		if readErr != nil {
+			return pluginapi.Result{}, errors.New("workspace file cannot be verified")
+		}
+		digest := sha256.Sum256(current)
+		if fmt.Sprintf("%x", digest[:]) != args.ExpectedSHA256 {
+			return pluginapi.Result{}, errors.New("workspace file changed; read it again before writing")
+		}
+	}
+	parent := filepath.ToSlash(filepath.Dir(args.Path))
+	if parent != "." {
+		if err := p.root.MkdirAll(parent, 0700); err != nil {
+			return pluginapi.Result{}, errors.New("workspace parent directory is unavailable")
+		}
+	}
+	var random [8]byte
+	if _, err := io.ReadFull(rand.Reader, random[:]); err != nil {
+		return pluginapi.Result{}, err
+	}
+	temporary := filepath.ToSlash(filepath.Join(parent, ".ca-write-"+hex.EncodeToString(random[:])))
+	file, err := p.root.OpenFile(temporary, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return pluginapi.Result{}, errors.New("workspace temporary file is unavailable")
+	}
+	defer p.root.Remove(temporary)
+	if _, err = io.WriteString(file, args.Content); err == nil {
+		err = file.Sync()
+	}
+	closeErr := file.Close()
+	if err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return pluginapi.Result{}, errors.New("workspace write failed")
+	}
+	if err = p.root.Rename(temporary, args.Path); err != nil {
+		return pluginapi.Result{}, errors.New("workspace atomic replace failed")
+	}
+	digest := sha256.Sum256([]byte(args.Content))
+	return encoded(map[string]any{"path": args.Path, "bytes": len(args.Content), "sha256": fmt.Sprintf("%x", digest[:]), "status": "written"})
 }
 
 func (p *Plugin) search(ctx context.Context, raw json.RawMessage) (pluginapi.Result, error) {

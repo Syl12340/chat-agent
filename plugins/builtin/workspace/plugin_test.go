@@ -2,7 +2,9 @@ package workspace
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -129,6 +131,41 @@ func TestReadEnforcesTextLimits(t *testing.T) {
 	}
 	if _, err := call(t, plugin.read, `{"workspace":"server","path":"bin.txt"}`); err == nil {
 		t.Fatal("non-UTF-8 content must be refused")
+	}
+}
+
+func TestWriteRequiresCurrentHashAndReplacesAtomically(t *testing.T) {
+	plugin, root := open(t)
+	path := filepath.Join(root, "notes.txt")
+	if err := os.WriteFile(path, []byte("before"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256([]byte("before"))
+	args := fmt.Sprintf(`{"workspace":"server","path":"notes.txt","content":"after","expected_sha256":"%x"}`, digest)
+	result, err := call(t, plugin.write, args)
+	if err != nil || !strings.Contains(result.Output, `"status":"written"`) {
+		t.Fatalf("write result=%q err=%v", result.Output, err)
+	}
+	if raw, err := os.ReadFile(path); err != nil || string(raw) != "after" {
+		t.Fatalf("written file=%q err=%v", raw, err)
+	}
+	if _, err := call(t, plugin.write, args); err == nil || !strings.Contains(err.Error(), "changed") {
+		t.Fatalf("stale hash was accepted: %v", err)
+	}
+	if _, err := call(t, plugin.write, `{"workspace":"server","path":"new/fresh.txt","content":"created","expected_sha256":"missing"}`); err != nil {
+		t.Fatalf("new file: %v", err)
+	}
+	if raw, err := os.ReadFile(filepath.Join(root, "new", "fresh.txt")); err != nil || string(raw) != "created" {
+		t.Fatalf("new file=%q err=%v", raw, err)
+	}
+	large := strings.Repeat("x", (256<<10)+1)
+	if err := os.WriteFile(filepath.Join(root, "large.txt"), []byte(large), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	largeDigest := sha256.Sum256([]byte(large))
+	largeArgs := fmt.Sprintf(`{"workspace":"server","path":"large.txt","content":"small","expected_sha256":"%x"}`, largeDigest)
+	if _, err := call(t, plugin.write, largeArgs); err == nil {
+		t.Fatal("oversized existing file was read for replacement")
 	}
 }
 

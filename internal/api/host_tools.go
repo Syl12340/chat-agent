@@ -14,6 +14,10 @@ type HostToolsConfig struct {
 	Sessions         []string
 	WorkspaceRoot    string
 	WorkspaceActions string
+	// AutoGrant is restricted to loopback desktop mode. It removes the redundant
+	// per-conversation machine switch; individual edit/execute calls keep their
+	// normal approval and sandbox requirements.
+	AutoGrant bool
 	// ServiceUnits is the allow-list of systemd units the diagnostics plugin may
 	// inspect. Empty leaves the per-unit tool unregistered.
 	ServiceUnits []string
@@ -73,6 +77,9 @@ func (s *Server) hostPluginAllowed(id, session string) bool {
 func (s *Server) hostToolsAllowed(session string) bool {
 	if session == "" {
 		return false
+	}
+	if s.config.HostTools.AutoGrant {
+		return true
 	}
 	if slices.Contains(s.config.HostTools.Sessions, session) {
 		return true

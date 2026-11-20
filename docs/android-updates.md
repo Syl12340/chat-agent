@@ -1,6 +1,6 @@
 # 自动登录与 Android 更新
 
-当前源码默认值（2026-11-14）为 **0.7.0-debug / versionCode 38**，包名仍为 `dev.chatagent.ai.debug`。这只说明下一份本地构建的版本，不替代服务器更新通道中的 `manifest.json`、签名、大小和 SHA-256 发布证据；正式发布时继续用环境变量注入版本并记录实际目录。上一条有完整发布凭据的重置版本为下方 **0.4.0-debug / versionCode 7**。
+当前源码默认值及更新通道（2026-11-20）为 **0.7.19-debug / versionCode 57**，包名仍为 `dev.chatagent.ai.debug`。发布目录、签名、大小和 SHA-256 见[0.7.19 发布记录](release-0.7.19.md)；正式构建继续用环境变量注入版本并记录实际目录。
 
 历史更新通道（2026-11-09，版本线重置后）：**0.4.0-debug / versionCode 7** 已发布到 `android-20261109-19`，包名为 `dev.chatagent.ai.debug`。debug 签名、公钥和设备身份保持在这条新包名版本线上；清单、签名、完整 APK 下载哈希与鉴权要求已通过发布检查，未安装真机。见[发布记录](release-0.4.md)。
 

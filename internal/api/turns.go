@@ -253,6 +253,7 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 			}
 			if err == nil {
 				agent, err = s.agentForTurn(sess, query, id, func(c *probe.Config) {
+					c.Demo = choice.Model == "demo" && choice.BaseURL == "" && choice.APIKey == ""
 					c.Model = choice.WireModel
 					c.BaseURL = choice.BaseURL
 					c.APIKey = choice.APIKey

@@ -8,7 +8,7 @@ export function createLocalAgentUI({state,json,drawer,onError}) {
     if(!state.token)return; message.hidden=true;
     try{
       const data=await json('/api/local-agent/status');devices.replaceChildren();operations.replaceChildren();
-      if(!data.devices?.length)devices.append(card('尚未配置执行端','在服务器配置设备 ID 与专用令牌后，本机端会在这里出现。'));
+      if(!data.devices?.length)devices.append(card('没有远程执行端','电脑本地版直接在本地 Harness 中使用工作区，无需绑定；这里仅显示云端额外连接的电脑。'));
       for(const item of data.devices||[]){const capability=item.capabilities?.join(' / ')||'能力未上报';const actions=item.actions?.length?` · 固定动作：${item.actions.join(' / ')}`:'';devices.append(card(item.device_id,item.online?`在线 · ${capability}${actions}`:`离线${item.last_seen?` · 上次 ${new Date(item.last_seen).toLocaleString()}`:''}${actions}`));}
       if(!data.operations?.length)operations.append(card('暂无任务','模型调用本机工具后，操作标识与状态会显示在这里。'));
       for(const item of data.operations||[]){
@@ -29,5 +29,5 @@ export function createLocalAgentUI({state,json,drawer,onError}) {
   function report(error){if(error?.status===401){onError(error);return;}text(message,error?.message||'无法读取本机工作台。');message.hidden=false;}
   $('local-agent-open').addEventListener('click',()=>{drawer(false);dialog.showModal();void refresh();});
   $('local-agent-close').addEventListener('click',()=>dialog.close());$('local-agent-refresh').addEventListener('click',refresh);
-  return {refresh,update(){ $('local-agent-open').disabled=!state.token||!state.config; }};
+  return {refresh,update(){ const button=$('local-agent-open');button.hidden=Boolean(state.config?.desktop_local);button.disabled=!state.token||!state.config; }};
 }

@@ -115,3 +115,10 @@ func hostToolNamesFor(app *Server, session string) []string {
 	}
 	return names
 }
+
+func TestDesktopHostToolsNeedNoSessionBinding(t *testing.T) {
+	app := &Server{config: Config{HostTools: HostToolsConfig{AutoGrant: true}}}
+	if !app.hostToolsAllowed("new-local-session") {
+		t.Fatal("desktop local mode should expose its workspace without a binding step")
+	}
+}

@@ -1,6 +1,6 @@
 # chat-agent
 
-当前源码基线为 **0.7.18**；Android 默认构建为 **0.7.18-debug（versionCode 56）**，包名保持 `dev.chatagent.ai.debug`。已有主动陪伴反馈、Linux/本机执行、课件提取与学习对话入口、消息身份和持久界面等基础；本版进一步加入可解释的主动动机、端侧确认取消与能力发现、PPTX 幻灯片 SourceRef/学习面板，以及 AstrBot 真实接入前检。完整状态与边界见[当前规划](docs/feature-plan.md)、[产品方向与能力设计](docs/product-direction.md)和[AstrBot 接入说明](docs/astrbot-im-bridge.md)。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
+当前源码基线为 **0.7.19**；Android 默认构建为 **0.7.19-debug（versionCode 57）**，包名保持 `dev.chatagent.ai.debug`。电脑端现在可直接启动完整的本地 Go Core、网页界面与 Harness loop：不绑定云端执行器，打开即用本机工作区，模型配置和数据留在本机。云端仍服务手机和常驻陪伴，原远程执行端作为可选扩展保留。完整状态与边界见[电脑本地 Agent](docs/desktop-local-agent.md)、[当前规划](docs/feature-plan.md)和[产品方向与能力设计](docs/product-direction.md)。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
 
 0.24.0 以 format index + manifest 选择唯一 runtime 代，聊天/队列规范状态与 attempt/model/tool 运行事实处于同一代。旧 transcript v1/v2、turns v1/v2/v3 只由停机维护命令显式迁移；当前 turns v5 还保存外部消息的来源、发送者与受众，用于合并和回复路由。最新轮/整会话删除先登记再重写或清理，旧代和模型快照不会被读取器自动复活。生产配置仍使用 `ecnu-max`，本地搜索、设备白名单和加密 9992 入口保持不变。
 

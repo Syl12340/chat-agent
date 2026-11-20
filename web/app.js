@@ -41,7 +41,7 @@ function createAdvancedAgentSettings() {
     ['role-proposals-open','角色变更审核','决定是否应用助手提出的长期风格变化'],
     ['care-open','主动陪伴','开启、暂停或调整主动消息与手机通知'],
     ['courseware-open','学习资料','上传课件并发起分析、讲解或测试'],
-    ['local-agent-open','本机 Agent','查看配对执行端与取消运行中的任务']
+    ['local-agent-open','远程执行端','查看云端可调用的电脑执行端与运行任务']
   ];
   const items=[];
   for(const [targetID,label,note] of definitions){const target=$(targetID);if(!target)continue;const button=document.createElement('button');button.type='button';button.className='agent-management-entry';const strong=document.createElement('strong'),small=document.createElement('small');strong.textContent=label;small.textContent=note;button.append(strong,small);button.addEventListener('click',()=>{ui['settings-dialog'].close();target.click();});actions.append(button);items.push([button,target]);}
@@ -1090,8 +1090,10 @@ ui['reset-chat'].addEventListener('click', async () => {
 });
 ui.settings.addEventListener('click', () => {
   if (!state.config) return;
+  const modelSection=$('model-configs');
+  if(modelSection){modelSection.querySelector('h3').textContent=state.config.desktop_local?'本机模型':'服务器模型';modelSection.querySelector(':scope > p').textContent=state.config.desktop_local?'API Key 只保存在这台电脑的本地数据目录；配置更新只影响之后发起的请求。':'按 DSH 的凭据边界管理对话路由。API Key 只保存在服务器；配置更新只影响之后发起的请求。';}
   ui['connection-info'].replaceChildren();
-  for (const [label, value, state_, hint] of [['服务', location.host], ['连接', `${state.transport.carrier === 'securewire' ? '加密直连' : 'HTTP/SSH'} · 协议 v${state.transport.protocol || '?'}`], ['模型', state.config.model], ['模式', state.config.demo ? '本地演示，无真实模型' : '自定义模型 API'], ['时区', state.config.time_zone], ['提醒', '服务端收件箱，无关闭应用推送'], ['网页抓取', state.config.web_fetch ? '限定域名，已开启' : '未开启'], ['网页搜索', state.config.web_search ? '自定义端点，已开启' : '未开启'], ['图像生成', state.config.image_generation ? '已就绪' : (state.config.image_reason || '不可用'), state.config.image_generation ? 'on' : 'off'], ['响应期限', `${state.config.timeout_seconds} 秒`]]) {
+  for (const [label, value, state_, hint] of [['服务', location.host], ['连接', state.config.desktop_local ? '电脑本地 Agent · 本地 Harness' : `${state.transport.carrier === 'securewire' ? '加密直连' : 'HTTP/SSH'} · 协议 v${state.transport.protocol || '?'}`], ['模型', state.config.model], ['模式', state.config.desktop_local ? (state.config.demo ? '本地运行 · 可添加模型 API' : '本地运行 · 自定义模型 API') : state.config.demo ? '本地演示，无真实模型' : '自定义模型 API'], ['时区', state.config.time_zone], ['提醒', '服务端收件箱，无关闭应用推送'], ['网页抓取', state.config.web_fetch ? '限定域名，已开启' : '未开启'], ['网页搜索', state.config.web_search ? '自定义端点，已开启' : '未开启'], ['图像生成', state.config.image_generation ? '已就绪' : (state.config.image_reason || '不可用'), state.config.image_generation ? 'on' : 'off'], ['响应期限', `${state.config.timeout_seconds} 秒`]]) {
     const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = label; dd.textContent = value; if (state_) dd.dataset.state = state_; if (hint) dd.title = hint; ui['connection-info'].append(dt, dd);
   }
   ui['settings-dialog'].showModal(); deviceAuth.refreshManagement();
@@ -1120,7 +1122,15 @@ window.addEventListener('chat-native-session-required',()=>{
   else deviceAuth.start();
 });
 
-restoreConnection();
+function launchAccessToken(){
+  const params=new URLSearchParams(location.hash.startsWith('#')?location.hash.slice(1):'');
+  const token=params.get('access_token')||'';
+  if(!token)return '';
+  history.replaceState(null,'',location.pathname+location.search);
+  return /^[A-Za-z0-9_-]{32,256}$/.test(token)?token:'';
+}
+const localLaunchToken=launchAccessToken();
+if(localLaunchToken)connect(localLaunchToken,'owner');else restoreConnection();
 
 function roleName(id = state.roleID) { return state.roles.find(role => role.id === id)?.name || id; }
 async function loadRoles() {

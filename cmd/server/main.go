@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -25,7 +27,9 @@ import (
 	"chat-agent/internal/sandbox"
 	"chat-agent/internal/securewire"
 	"chat-agent/internal/semantic"
+	"chat-agent/internal/storage"
 	"chat-agent/internal/webtools"
+	workspaceplugin "chat-agent/plugins/builtin/workspace"
 )
 
 func main() {
@@ -196,10 +200,18 @@ func astrBotConfigFromEnv() (api.AstrBotConfig, error) {
 
 func run() error {
 	c := probe.DefaultConfig()
-	listen := flag.String("listen", "127.0.0.1:8080", "HTTP listen address")
+	desktopDefault := strings.Contains(strings.ToLower(filepath.Base(os.Args[0])), "desktop")
+	listenDefault := "127.0.0.1:8080"
+	if desktopDefault {
+		listenDefault = "127.0.0.1:8765"
+	}
+	desktop := flag.Bool("desktop", desktopDefault, "run as a loopback desktop agent and open the local web UI")
+	openDesktopBrowser := flag.Bool("open-browser", true, "open the desktop web UI after startup")
+	listen := flag.String("listen", listenDefault, "HTTP listen address")
 	wireListen := flag.String("wire-listen", os.Getenv("CHAT_WIRE_LISTEN"), "optional encrypted TCP listen address")
 	wireKey := flag.String("wire-key", os.Getenv("CHAT_WIRE_KEY"), "P-256 server signing private key PEM file")
 	data := flag.String("data", "", "session directory (default data/sessions, or data/demo-sessions in demo mode)")
+	workspaceRoot := flag.String("workspace", "", "desktop workspace exposed to the local agent loop")
 	rolesDir := flag.String("roles", "", "role workspace directory (default <data>/roles)")
 	timeZone := flag.String("timezone", "Asia/Shanghai", "user timezone for reminder interpretation")
 	webEnabled := flag.Bool("enable-web", false, "enable explicitly configured HTTPS web tools")
@@ -214,10 +226,34 @@ func run() error {
 	flag.IntVar(&c.MaxOutputTokens, "max-output", c.MaxOutputTokens, "output tokens per generation; 0 omits the limit (provider default)")
 	flag.StringVar(&c.TokenParameter, "token-parameter", c.TokenParameter, "max_tokens or max_completion_tokens")
 	flag.Parse()
+	if *desktop {
+		if *wireListen != "" || *wireKey != "" {
+			return errors.New("desktop mode only serves loopback HTTP")
+		}
+		if !loopbackAddress(*listen) {
+			return errors.New("desktop mode must listen on loopback")
+		}
+		if *workspaceRoot == "" {
+			*workspaceRoot = defaultDesktopWorkspace()
+		}
+		root, err := filepath.Abs(*workspaceRoot)
+		if err != nil {
+			return err
+		}
+		*workspaceRoot = root
+	}
 	if *data == "" {
-		*data = "data/sessions"
-		if c.Demo {
-			*data = "data/demo-sessions"
+		if *desktop {
+			var err error
+			*data, err = defaultDesktopData()
+			if err != nil {
+				return err
+			}
+		} else {
+			*data = "data/sessions"
+			if c.Demo {
+				*data = "data/demo-sessions"
+			}
 		}
 	}
 	if *migrateRuntime && *exportRuntime != "" {
@@ -253,6 +289,12 @@ func run() error {
 		return errors.New("wire-listen and wire-key must be configured together")
 	}
 	c.BaseURL, c.APIKey, c.Model = os.Getenv("CHAT_BASE_URL"), os.Getenv("CHAT_API_KEY"), os.Getenv("CHAT_MODEL")
+	if *desktop && c.BaseURL == "" && c.APIKey == "" && c.Model == "" {
+		// The local UI starts immediately. A user can add a real provider in its
+		// existing model settings; selecting that route switches the turn out of
+		// demo without restarting the desktop core.
+		c.Demo = true
+	}
 	c.UtilityModel = utilityModel(c.Model)
 	chatModels, err := api.ParseChatModels(os.Getenv("CHAT_CHAT_MODELS"))
 	if err != nil {
@@ -280,14 +322,29 @@ func run() error {
 	// Installed plugins are compiled in, but loading and permissions stay a host
 	// decision: CHAT_PLUGINS_DISABLED switches a plugin off entirely, and
 	// CHAT_PLUGIN_GRANTS grants the declared permissions one by one.
+	grants := splitList(os.Getenv("CHAT_PLUGIN_GRANTS"))
+	if *desktop {
+		grants = append(grants, workspaceplugin.ID+":"+workspaceplugin.Permission)
+	}
 	pluginPolicy, err := pluginapi.NewPolicy(
 		splitList(os.Getenv("CHAT_PLUGINS_DISABLED")),
-		splitList(os.Getenv("CHAT_PLUGIN_GRANTS")),
+		grants,
 	)
 	if err != nil {
 		return err
 	}
-	app, err := api.New(api.Config{Agent: c, ChatModels: chatModels, ThinkingMaxOutput: thinkingMax, Speech: api.SpeechConfig{Model: os.Getenv("CHAT_TTS_MODEL"), Voice: os.Getenv("CHAT_TTS_VOICE")}, DataDir: *data, RolesDir: *rolesDir, TimeZone: *timeZone, Web: webtools.Config{Enabled: *webEnabled, AllowedHosts: strings.Split(os.Getenv("CHAT_WEB_HOSTS"), ","), SearchURL: searchEngine(*webEnabled)}, AccessToken: os.Getenv("CHAT_ACCESS_TOKEN"), AndroidReleaseDir: os.Getenv("CHAT_ANDROID_RELEASE_DIR"), Semantic: semantic.Config{BaseURL: os.Getenv("CHAT_BASE_URL"), APIKey: os.Getenv("CHAT_API_KEY"), Model: os.Getenv("CHAT_RERANK_MODEL")}, Decision: decision.Config{BaseURL: os.Getenv("CHAT_BASE_URL"), APIKey: os.Getenv("CHAT_API_KEY"), Model: decisionModel()}, ImageRemote: imagegen.RemoteConfig{BaseURL: os.Getenv("CHAT_IMAGE_REMOTE"), Token: os.Getenv("CHAT_IMAGE_TOKEN")}, Images: imagegen.Config{Python: os.Getenv("CHAT_IMAGE_PYTHON"), Script: os.Getenv("CHAT_IMAGE_BRIDGE"), Profiles: splitList(os.Getenv("CHAT_IMAGE_PROFILES")), DefaultProfile: os.Getenv("CHAT_IMAGE_PROFILE")}, OneBot: onebotConfig, QQOfficial: qqOfficialConfig, AstrBot: astrBotConfig, Plugins: pluginPolicy, HostTools: api.HostToolsConfig{Sessions: splitList(os.Getenv("CHAT_HOST_TOOL_SESSIONS")), WorkspaceRoot: os.Getenv("CHAT_WORKSPACE_ROOT"), WorkspaceActions: os.Getenv("CHAT_WORKSPACE_ACTIONS"), ServiceUnits: splitList(os.Getenv("CHAT_SERVICE_UNITS")), ServiceActions: os.Getenv("CHAT_SERVICE_ACTIONS")}, LocalAgent: api.LocalAgentConfig{Devices: api.ParseLocalAgentDevices(os.Getenv("CHAT_LOCAL_AGENT_DEVICES")), DefaultDevice: os.Getenv("CHAT_LOCAL_AGENT_DEVICE")}})
+	accessToken := os.Getenv("CHAT_ACCESS_TOKEN")
+	if *desktop && accessToken == "" {
+		accessToken, err = desktopAccessToken(*data)
+		if err != nil {
+			return err
+		}
+	}
+	hostWorkspace := os.Getenv("CHAT_WORKSPACE_ROOT")
+	if *desktop {
+		hostWorkspace = *workspaceRoot
+	}
+	app, err := api.New(api.Config{Agent: c, ChatModels: chatModels, ThinkingMaxOutput: thinkingMax, Speech: api.SpeechConfig{Model: os.Getenv("CHAT_TTS_MODEL"), Voice: os.Getenv("CHAT_TTS_VOICE")}, DataDir: *data, RolesDir: *rolesDir, TimeZone: *timeZone, Web: webtools.Config{Enabled: *webEnabled, AllowedHosts: strings.Split(os.Getenv("CHAT_WEB_HOSTS"), ","), SearchURL: searchEngine(*webEnabled)}, AccessToken: accessToken, AndroidReleaseDir: os.Getenv("CHAT_ANDROID_RELEASE_DIR"), Semantic: semantic.Config{BaseURL: os.Getenv("CHAT_BASE_URL"), APIKey: os.Getenv("CHAT_API_KEY"), Model: os.Getenv("CHAT_RERANK_MODEL")}, Decision: decision.Config{BaseURL: os.Getenv("CHAT_BASE_URL"), APIKey: os.Getenv("CHAT_API_KEY"), Model: decisionModel()}, ImageRemote: imagegen.RemoteConfig{BaseURL: os.Getenv("CHAT_IMAGE_REMOTE"), Token: os.Getenv("CHAT_IMAGE_TOKEN")}, Images: imagegen.Config{Python: os.Getenv("CHAT_IMAGE_PYTHON"), Script: os.Getenv("CHAT_IMAGE_BRIDGE"), Profiles: splitList(os.Getenv("CHAT_IMAGE_PROFILES")), DefaultProfile: os.Getenv("CHAT_IMAGE_PROFILE")}, OneBot: onebotConfig, QQOfficial: qqOfficialConfig, AstrBot: astrBotConfig, Plugins: pluginPolicy, HostTools: api.HostToolsConfig{Sessions: splitList(os.Getenv("CHAT_HOST_TOOL_SESSIONS")), WorkspaceRoot: hostWorkspace, WorkspaceActions: os.Getenv("CHAT_WORKSPACE_ACTIONS"), AutoGrant: *desktop, ServiceUnits: splitList(os.Getenv("CHAT_SERVICE_UNITS")), ServiceActions: os.Getenv("CHAT_SERVICE_ACTIONS")}, LocalAgent: api.LocalAgentConfig{Devices: api.ParseLocalAgentDevices(os.Getenv("CHAT_LOCAL_AGENT_DEVICES")), DefaultDevice: os.Getenv("CHAT_LOCAL_AGENT_DEVICE")}, DesktopLocal: *desktop})
 	if err != nil {
 		return err
 	}
@@ -342,6 +399,13 @@ func run() error {
 		}
 		fmt.Printf("chat-agent: %s://%s (%s)\n", endpoint.scheme, host, mode)
 	}
+	if *desktop && *openDesktopBrowser {
+		launch := "http://" + endpoints[0].listener.Addr().String() + "/#access_token=" + accessToken
+		if err := openBrowser(launch); err != nil {
+			log.Printf("open local UI: %v", err)
+		}
+		fmt.Printf("chat-agent: local workspace %s\n", *workspaceRoot)
+	}
 	select {
 	case err := <-done:
 		if errors.Is(err, http.ErrServerClosed) {
@@ -358,4 +422,62 @@ func run() error {
 		}
 		return errors.Join(append(serverErrors, appErr)...)
 	}
+}
+
+func loopbackAddress(address string) bool {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return false
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func defaultDesktopData() (string, error) {
+	base, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, "chat-agent", "desktop"), nil
+}
+
+func defaultDesktopWorkspace() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		path, _ := filepath.Abs(".")
+		return path
+	}
+	documents := filepath.Join(home, "Documents")
+	if info, err := os.Stat(documents); err == nil && info.IsDir() {
+		return documents
+	}
+	return home
+}
+
+func desktopAccessToken(dataDir string) (string, error) {
+	path := filepath.Join(dataDir, "desktop-access.token")
+	if raw, err := os.ReadFile(path); err == nil {
+		token := strings.TrimSpace(string(raw))
+		if len(token) >= 32 && len(token) <= 256 {
+			return token, nil
+		}
+		return "", errors.New("desktop access token is damaged")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	var random [32]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return "", err
+	}
+	token := hex.EncodeToString(random[:])
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return "", err
+	}
+	if err := storage.Replace(path, []byte(token+"\n")); err != nil {
+		return "", err
+	}
+	return token, nil
 }
