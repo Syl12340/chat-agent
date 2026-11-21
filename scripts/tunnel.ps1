@@ -1,4 +1,4 @@
-# 把本机的图像生成能力接到服务器
+﻿# 把本机的图像生成能力接到服务器
 #
 # 用法（本机 PowerShell）：
 #   .\scripts\tunnel.ps1                 启动桥 + 隧道，前台守护
@@ -48,6 +48,10 @@ if ($Build -or -not (Test-Path $bin)) {
 
 # 桥必须是后台作业：它和隧道要同时活着，前台只能守一个。
 function Start-Bridge {
+  # Starting a second bridge on a port that is already serving only produces a
+  # bind error and a dead end; reuse the running one instead.
+  $listening = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+  if ($listening) { Write-Ok "imagebridge 已在运行（pid=$($listening[0].OwningProcess)）"; return $null }
   Write-Step "启动 imagebridge（127.0.0.1:$Port）"
   $args_ = @('-listen', "127.0.0.1:$Port", '-python', $Python, '-script', $Script, '-default', $Default)
   if ($Token)    { $args_ += @('-token', $Token) }
@@ -83,8 +87,42 @@ function Start-Tunnel {
     '-R', "127.0.0.1:${Port}:127.0.0.1:${Port}",
     $Host_
   )
-  return Start-Process -FilePath 'ssh' -ArgumentList $sshArgs -PassThru -WindowStyle Hidden `
-           -RedirectStandardError (Join-Path $root '.cache\tunnel.err')
+  $errFile = Join-Path $root '.cache\tunnel.err'
+  $started = Start-Process -FilePath 'ssh' -ArgumentList $sshArgs -PassThru -WindowStyle Hidden `
+             -RedirectStandardError $errFile
+  Start-Sleep -Seconds 3
+
+  # A tunnel that dies leaves its forwarding socket on the server: sshd keeps the
+  # port bound, so the next attempt fails with "remote port forwarding failed" and
+  # the port looks busy to every later attempt until that sshd is killed. Clear it
+  # once and retry rather than making the operator find it by hand.
+  if ($started.HasExited) {
+    Write-Warn2 '首次转发失败，检查服务器侧是否有残留'
+    # Keep the remote command free of pipes and nested quotes: this script already
+    # carries Chinese text and PowerShell's parser is fragile around both. Parse the
+    # listener here instead.
+    $listeners = ssh -o BatchMode=yes $Host_ 'ss -lntp' 2>$null
+    $stale = $null
+    foreach ($line in $listeners) {
+      if ($line -match "127\.0\.0\.1:$Port\s" -and $line -match 'pid=(\d+)') { $stale = $Matches[1] }
+    }
+    if ($stale) {
+      Write-Warn2 "清理残留 sshd pid=$stale"
+      ssh -o BatchMode=yes $Host_ "kill $stale" | Out-Null
+      Start-Sleep -Seconds 2
+      $started = Start-Process -FilePath 'ssh' -ArgumentList $sshArgs -PassThru -WindowStyle Hidden `
+                 -RedirectStandardError $errFile
+      Start-Sleep -Seconds 3
+    }
+  }
+
+  if ($started.HasExited) {
+    $why = Get-Content $errFile -ErrorAction SilentlyContinue | Select-Object -Last 1
+    Write-Warn2 "隧道仍然失败：$why"
+  } else {
+    Write-Ok "隧道已建立 pid=$($started.Id)"
+  }
+  return $started
 }
 
 if ($Check) {
