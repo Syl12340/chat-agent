@@ -109,14 +109,53 @@ func TestNewRequiresAbsoluteRoot(t *testing.T) {
 	}
 }
 
+// The gap this closes: read used to return only the body while write demanded the
+// exact hash of what it replaces, so an existing file could never be edited - the
+// failure message said to read it again, and reading again gave the same hashless
+// text. This walks the whole loop the way a caller would.
+func TestReadThenWriteClosesTheLoop(t *testing.T) {
+	plugin, root := open(t)
+	path := filepath.Join(root, "note.txt")
+	if err := os.WriteFile(path, []byte("version one"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	read, err := call(t, plugin.read, `{"workspace":"server","path":"note.txt"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256([]byte("version one"))
+	if want := fmt.Sprintf("sha256: %x", digest); !strings.Contains(read.Output, want) {
+		t.Fatalf("read must publish the hash write expects, got %q", read.Output)
+	}
+	write, err := call(t, plugin.write, fmt.Sprintf(`{"workspace":"server","path":"note.txt","content":"version two","expected_sha256":"%x"}`, digest))
+	if err != nil {
+		t.Fatalf("writing with the hash from read must succeed: %v", err)
+	}
+	if !strings.Contains(write.Output, "version two") && !strings.Contains(write.Output, "note.txt") {
+		t.Logf("write result: %q", write.Output)
+	}
+	saved, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(saved) != "version two" {
+		t.Fatalf("file content = %q", saved)
+	}
+}
+
 func TestReadEnforcesTextLimits(t *testing.T) {
 	plugin, root := open(t)
 	if err := os.WriteFile(filepath.Join(root, "ok.txt"), []byte("hello"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	result, err := call(t, plugin.read, `{"workspace":"server","path":"ok.txt"}`)
-	if err != nil || result.Output != "hello" {
+	if err != nil || !strings.HasPrefix(result.Output, "hello") {
 		t.Fatalf("plain text should read: %q %v", result.Output, err)
+	}
+	// The digest workspace_write requires has to come back with the body, or an
+	// edit of an existing file can never be written.
+	if want := fmt.Sprintf("sha256: %x", sha256.Sum256([]byte("hello"))); !strings.Contains(result.Output, want) {
+		t.Fatalf("read must publish its write precondition, got %q", result.Output)
 	}
 
 	if err := os.WriteFile(filepath.Join(root, "big.txt"), make([]byte, limit+1), 0o600); err != nil {

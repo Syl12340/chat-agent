@@ -239,7 +239,16 @@ func (p *Plugin) read(ctx context.Context, raw json.RawMessage) (pluginapi.Resul
 		return pluginapi.Result{}, err
 	}
 	content, err := p.text(path)
-	return pluginapi.Result{Output: content}, err
+	if err != nil {
+		return pluginapi.Result{}, err
+	}
+	// workspace_write demands the exact SHA-256 of the file it replaces, but this
+	// result carried only the body, so "read it again before writing" could not be
+	// satisfied: reading again returned the same hashless text and every edit of an
+	// existing file stalled. The digest travels with the content because Output is
+	// the only channel the model sees - Data is not shown to it.
+	digest := sha256.Sum256([]byte(content))
+	return pluginapi.Result{Output: fmt.Sprintf("%s\n\n---\nsha256: %x\nbytes: %d", content, digest, len(content))}, nil
 }
 
 func (p *Plugin) write(ctx context.Context, raw json.RawMessage) (pluginapi.Result, error) {

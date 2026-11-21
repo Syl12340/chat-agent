@@ -2,6 +2,8 @@
 
 当前源码基线为 **0.7.19**；Android 默认构建为 **0.7.19-debug（versionCode 57）**，包名保持 `dev.chatagent.ai.debug`。电脑端现在可直接启动完整的本地 Go Core、网页界面与 Harness loop：不绑定云端执行器，打开即用本机工作区，模型配置和数据留在本机。云端仍服务手机和常驻陪伴，原远程执行端作为可选扩展保留。完整状态与边界见[电脑本地 Agent](docs/desktop-local-agent.md)、[当前规划](docs/feature-plan.md)和[产品方向与能力设计](docs/product-direction.md)。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
 
+2026-11-21 [源码评估与下一步规划](docs/project-assessment-2026-11-21.md)补充了桌面首次使用/恢复、模型用途路由、工作区读改、课件原件及陪伴反馈范围的具体缺口。当前桌面启动烟测不等于真实模型多步本地任务已完整验收；后续先补基本使用链路。
+
 0.24.0 以 format index + manifest 选择唯一 runtime 代，聊天/队列规范状态与 attempt/model/tool 运行事实处于同一代。旧 transcript v1/v2、turns v1/v2/v3 只由停机维护命令显式迁移；当前 turns v5 还保存外部消息的来源、发送者与受众，用于合并和回复路由。最新轮/整会话删除先登记再重写或清理，旧代和模型快照不会被读取器自动复活。生产配置仍使用 `ecnu-max`，本地搜索、设备白名单和加密 9992 入口保持不变。
 
 0.19 引入的最多三张 JPEG/PNG 图片消息、ECNU Max/Plus 选择、关闭/中/高/超高思考强度，以及聊天阅读与输入界面继续保留，后台接收等 0.18 功能也保留。0.24 在 runtime history/turns 中保留这些字段，不静默降级；旧二进制不能直接写当前数据根。[功能与格式说明](docs/chat-0.19.md)、[Harness 规划](docs/dsh-harness-migration-plan.md)。

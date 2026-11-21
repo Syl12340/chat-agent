@@ -50,7 +50,14 @@ func (e *Executor) Execute(parent context.Context, task Task) Receipt {
 	case "list":
 		receipt.Entries, err = e.Guard.List(task.Path)
 	case "read":
-		receipt.Output, err = e.Guard.Read(task.Path)
+		var text string
+		if text, err = e.Guard.Read(task.Path); err == nil {
+			// Guard.Write verifies the digest of what Guard.Read returned, so the
+			// caller needs it in the same result: without it there is no way to ever
+			// satisfy the precondition and edits of existing files stall here too.
+			digest := sha256.Sum256([]byte(text))
+			receipt.Output = fmt.Sprintf("%s\n\n---\nsha256: %x\nbytes: %d", text, digest, len(text))
+		}
 	case "search":
 		receipt.Entries, err = e.Guard.Search(task.Query)
 	case "share":

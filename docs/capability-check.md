@@ -205,6 +205,49 @@ if status != "completed" { next.Paused = true }
 
 临时会话验证完已删除。
 
+## 读改闭环：write 要求的东西，read 不给（0.7.20）
+
+规划里说的「文件读改没有接通」是真的，而且两端都有：
+
+```go
+func (p *Plugin) read(...) {
+	content, err := p.text(path)
+	return pluginapi.Result{Output: content}, err    // 只有正文
+}
+```
+
+而 `workspace_write` 要求 `expected_sha256`，校验失败时提示 **"read it again before
+writing"**——但再读一次，返回的还是同一段没有 hash 的正文。**这个提示无法被满足**，所以
+任何对已存在文件的修改都停在这里。本机 agent 的 `Guard.Read` / `Guard.Write` 是同一个形状。
+
+### 改法
+
+hash 随正文一起返回：
+
+```
+正文……
+
+---
+sha256: 2cf24dba…
+bytes: 5
+```
+
+放在 `Output` 而不是 `Result.Data`，因为 **`Data` 模型看不到**——`Output` 是唯一通道。
+本机 agent 那边要注意一点：`Guard.Write` 校验的是 `g.Read()` 的返回值，也就是**解码后**的
+文本，所以 GBK 文件也不会有落差（读出来是 UTF-8，写回去也是 UTF-8 的 hash）。
+
+### 验证
+
+新增 `TestReadThenWriteClosesTheLoop`：读文件 → 从 `Output` 取 hash → 带着它写 →
+断言磁盘内容真的变了。这是直接证明闭环通了的测试，而不是只检查「hash 字段存在」。
+
+同时改了 `TestReadEnforcesTextLimits` 的断言：它原来要求 `Output == "hello"`，这是
+**预期的行为变更**，不是为了让测试通过而放宽——现在是「以 hello 开头」加上「必须带上
+`workspace_write` 所需的 digest」。
+
+**没有动的部分**：读上限仍是 12 KiB、写上限 256 KiB；检查 hash 到原子替换之间的并发窗口
+也还在。这两条是规划里另外列的问题，不属于「闭环断开」。
+
 ## 连发是真的，但分隔符不是（0.7.13）
 
 「一次回复拆成多条气泡」这个能力一直在，也从没验证过模型是否真的会用。这轮实测了两轮、
