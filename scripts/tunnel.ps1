@@ -20,7 +20,9 @@ param(
   [string]$Profiles = '',
   [string]$Default = 'z_anime_d8',
   [switch]$Build,
-  [switch]$Check
+  [switch]$Check,
+  [switch]$Serve,
+  [int]$ServePort = 9992
 )
 
 $ErrorActionPreference = 'Stop'
@@ -74,9 +76,45 @@ function Test-BridgeLocal {
   return $r
 }
 
+# 网页访问用的本地转发：本机 9992 → 服务器的 9991。
+# 同样用 Start-Process 起独立 ssh：作为作业的前台进程跑会被沙箱回收掉，
+# 而独立进程能活过会话，这也是本脚本比 serve-local.py 更耐用的原因。
+function Start-Serve {
+  $listening = Get-NetTCPConnection -LocalPort $ServePort -State Listen -ErrorAction SilentlyContinue
+  if ($listening) { Write-Ok "网页转发已在运行（pid=$($listening[0].OwningProcess)）"; return $null }
+  Write-Step "建立网页转发 127.0.0.1:$ServePort → ${Host_} 的 9991"
+  $args_ = @(
+    '-N', '-T',
+    '-o', 'BatchMode=yes',
+    '-o', 'ExitOnForwardFailure=yes',
+    '-o', 'ServerAliveInterval=30',
+    '-o', 'ServerAliveCountMax=3',
+    '-L', "127.0.0.1:${ServePort}:127.0.0.1:9991",
+    $Host_
+  )
+  $errFile = Join-Path $root '.cache\serve-local.err'
+  $proc = Start-Process -FilePath 'ssh' -ArgumentList $args_ -PassThru -WindowStyle Hidden -RedirectStandardError $errFile
+  Start-Sleep -Seconds 4
+  if ($proc.HasExited) {
+    Write-Warn2 "网页转发失败：$((Get-Content $errFile -ErrorAction SilentlyContinue | Select-Object -Last 1))"
+  } else {
+    Write-Ok "pid=$($proc.Id)"
+  }
+  return $proc
+}
+
 # SSH 反向隧道：把服务器的 127.0.0.1:PORT 转到本机同一个端口。
 # ExitOnForwardFailure 保证端口被占用时立刻失败，而不是静默地不转发。
 function Start-Tunnel {
+  # Probe the server side first: if its forward already reaches the bridge, reuse it.
+  # Without this, a second run kills the forwarding sshd that the first run is
+  # healthily using (the cleanup below cannot tell a stale socket from a live one)
+  # and the two instances fight over the port, reconnecting in a loop.
+  $probe = ssh -o BatchMode=yes $Host_ "curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:$Port/health"
+  if ($probe -match '^(200|503)$') {
+    Write-Ok "服务器侧转发已就绪（$probe），复用既有隧道"
+    return $null
+  }
   Write-Step "建立反向隧道 $Host_ 的 127.0.0.1:$Port → 本机 $Port"
   $sshArgs = @(
     '-N', '-T',
@@ -139,6 +177,7 @@ if ($Check) {
 
 $bridge = Start-Bridge
 $tunnel = Start-Tunnel
+if ($Serve) { $serve = Start-Serve }
 Start-Sleep -Seconds 3
 
 Write-Step '验证端到端'
