@@ -156,7 +156,19 @@ func (s *Server) runProactive(parent context.Context, role, preferred, kind, tri
 			runErr = errors.Join(runErr, closeErr)
 		}
 	}()
+	// Follow the model this conversation last used. A proactive message that
+	// arrives from the startup-config model while the person is talking to another
+	// one reads as a different participant joining the chat.
+	var follow *chatSelection
+	if last := s.turns.LastModel(target.id); last != "" {
+		if choice, selErr := s.selectChat(last, ""); selErr == nil {
+			follow = &choice
+		}
+	}
 	agent, err := s.agentForTurn(target.session, []string{}, target.id, func(c *probe.Config) {
+		if follow != nil {
+			c.Model, c.BaseURL, c.APIKey = follow.WireModel, follow.BaseURL, follow.APIKey
+		}
 		c.MaxTurns = 1
 		c.MaxToolCalls = 1
 		if c.MaxOutputTokens == 0 || c.MaxOutputTokens > outputLimit {

@@ -270,7 +270,20 @@ func (s *Server) exportMemory(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) agent(sess *probe.Session, query, sessionID string, modes ...string) (*probe.Agent, error) {
-	return s.agentForTurn(sess, []string{query}, sessionID)
+	// Manual summaries and other server-initiated work run through here with no
+	// model in hand, so they inherited the startup configuration even after the
+	// person switched models. Follow the conversation instead.
+	var follow *chatSelection
+	if last := s.turns.LastModel(sessionID); last != "" {
+		if choice, selErr := s.selectChat(last, ""); selErr == nil {
+			follow = &choice
+		}
+	}
+	return s.agentForTurn(sess, []string{query}, sessionID, func(c *probe.Config) {
+		if follow != nil {
+			c.Model, c.BaseURL, c.APIKey = follow.WireModel, follow.BaseURL, follow.APIKey
+		}
+	})
 }
 
 func (s *Server) agentForTurn(sess *probe.Session, inputs []string, sessionID string, configure ...func(*probe.Config)) (*probe.Agent, error) {

@@ -375,6 +375,26 @@ func (s *Store) EnqueueWithOrigin(id, rid, content, mode, model, thinking string
 	}
 	return cloneTurn(turn), false, nil
 }
+// LastModel reports the model this session last ran a turn with. Paths that do
+// not originate from a client request — proactive care, compaction summaries —
+// have no model in hand and used to fall back to the startup configuration, so a
+// person who switched models kept getting the old one for anything the server
+// generated on its own. An empty result means the session never recorded one.
+func (s *Store) LastModel(id string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st, err := s.load(id)
+	if err != nil {
+		return ""
+	}
+	for i := len(st.Items) - 1; i >= 0; i-- {
+		if m := st.Items[i].Model; m != "" {
+			return m
+		}
+	}
+	return ""
+}
+
 func (s *Store) List(id string) ([]Turn, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
