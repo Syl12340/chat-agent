@@ -29,6 +29,12 @@ const Permission = "filesystem:workspace://server"
 const limit = 12 << 10
 const downloadLimit = 32 << 20
 
+// writeLimit bounds a whole file; limit bounds one read response. They used to be
+// the same number, which meant a file larger than one response could not be read
+// at all and therefore could never be edited — the edit path requires having read
+// the file. Reads now page through anything write would accept.
+const writeLimit = 256 << 10
+
 type Plugin struct {
 	path    string
 	root    *os.Root
@@ -113,7 +119,7 @@ func (p *Plugin) Register(registry *pluginapi.Registry) error {
 	search := `{"type":"object","properties":{"workspace":{"type":"string","enum":["server"]},"query":{"type":"string","minLength":1,"maxLength":128}},"required":["workspace","query"],"additionalProperties":false}`
 	tools := []pluginapi.Tool{
 		{Name: "workspace_list", Description: "List the approved server workspace. Use path . for its root.", Parameters: json.RawMessage(path), Handler: p.list},
-		{Name: "workspace_read", Description: "Read a small UTF-8 text file in the approved server workspace.", Parameters: json.RawMessage(path), Handler: p.read},
+		{Name: "workspace_read", Description: "Read a UTF-8 text file in the approved server workspace. The reply ends with the file's sha256, which workspace_write requires; long files come back in pages marked truncated with a next_offset to resume from.", Parameters: json.RawMessage(path), Handler: p.read},
 		{Name: "workspace_search", Description: "Find literal text in small files in the approved server workspace.", Parameters: json.RawMessage(search), Handler: p.search},
 		{Name: "workspace_write", Kind: "edit", Description: "Create or replace one bounded UTF-8 file in the approved workspace. The expected SHA-256 prevents overwriting a file that changed since it was read.", Usage: "read an existing file first and pass its exact SHA-256; use expected_sha256=missing only for a new path. Write only what the user requested and verify important changes by reading them back.", Parameters: json.RawMessage(`{"type":"object","properties":{"workspace":{"type":"string","enum":["server"]},"path":{"type":"string","maxLength":256},"content":{"type":"string","maxLength":262144},"expected_sha256":{"type":"string","maxLength":64}},"required":["workspace","path","content","expected_sha256"],"additionalProperties":false}`), Decision: string(probe.DecisionRequired), Risk: string(probe.RiskHigh), ApprovalRequired: true, Handler: p.write},
 		{Name: "workspace_share", Kind: "read", Description: "Offer one regular file from the approved workspace to the user as an authenticated, same-session download. The receipt includes the exact size and SHA-256; never expose an absolute host path.", Usage: "use after creating or locating the exact file the user asked to receive; share the file itself instead of pasting binary data or a host path.", Parameters: json.RawMessage(path), Handler: p.share},
@@ -230,7 +236,31 @@ func (p *Plugin) text(path string) (string, error) {
 	return string(b), nil
 }
 
+// readWhole loads a workspace file up to what write accepts. Reads page their
+// responses, but the digest workspace_write verifies is over the whole file, so
+// paging must not change what is hashed.
+func (p *Plugin) readWhole(path string) ([]byte, error) {
+	info, err := p.root.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Size() > writeLimit {
+		return nil, errors.New("workspace file is missing or exceeds the writable limit")
+	}
+	f, err := openText(p.root, path)
+	if err != nil {
+		return nil, errors.New("workspace file unavailable")
+	}
+	defer f.Close()
+	b, err := io.ReadAll(io.LimitReader(f, writeLimit+1))
+	if err != nil || len(b) > writeLimit || !utf8.Valid(b) || strings.ContainsRune(string(b), 0) {
+		return nil, errors.New("workspace file is not bounded UTF-8 text")
+	}
+	return b, nil
+}
+
 func (p *Plugin) read(ctx context.Context, raw json.RawMessage) (pluginapi.Result, error) {
+	var args struct {
+		Offset int `json:"offset"`
+	}
+	_ = json.Unmarshal(raw, &args)
 	path, err := pathArg(raw)
 	if err != nil {
 		return pluginapi.Result{}, err
@@ -238,17 +268,30 @@ func (p *Plugin) read(ctx context.Context, raw json.RawMessage) (pluginapi.Resul
 	if err := ctx.Err(); err != nil {
 		return pluginapi.Result{}, err
 	}
-	content, err := p.text(path)
+	b, err := p.readWhole(path)
 	if err != nil {
 		return pluginapi.Result{}, err
 	}
-	// workspace_write demands the exact SHA-256 of the file it replaces, but this
-	// result carried only the body, so "read it again before writing" could not be
-	// satisfied: reading again returned the same hashless text and every edit of an
-	// existing file stalled. The digest travels with the content because Output is
-	// the only channel the model sees - Data is not shown to it.
-	digest := sha256.Sum256([]byte(content))
-	return pluginapi.Result{Output: fmt.Sprintf("%s\n\n---\nsha256: %x\nbytes: %d", content, digest, len(content))}, nil
+	total := len(b)
+	if args.Offset < 0 || args.Offset > total {
+		return pluginapi.Result{}, errors.New("workspace read offset is outside the file")
+	}
+	end := min(args.Offset+limit, total)
+	// Never cut a multi-byte character in half; the caller resumes from a rune
+	// boundary or the excerpt would not be valid UTF-8 on its own.
+	for end > args.Offset && end < total && !utf8.RuneStart(b[end]) {
+		end--
+	}
+	digest := sha256.Sum256(b)
+	if end < total {
+		return pluginapi.Result{Output: fmt.Sprintf(
+			"%s\n\n---\ntruncated: true\noffset: %d\nshown_bytes: %d\ntotal_bytes: %d\nnext_offset: %d\nsha256: %x",
+			b[args.Offset:end], args.Offset, end-args.Offset, total, end, digest)}, nil
+	}
+	// The digest is over the whole file even when this is one page of several, so
+	// workspace_write can verify what it replaces.
+	return pluginapi.Result{Output: fmt.Sprintf(
+		"%s\n\n---\noffset: %d\ntotal_bytes: %d\nsha256: %x", b[args.Offset:end], args.Offset, total, digest)}, nil
 }
 
 func (p *Plugin) write(ctx context.Context, raw json.RawMessage) (pluginapi.Result, error) {
@@ -258,7 +301,7 @@ func (p *Plugin) write(ctx context.Context, raw json.RawMessage) (pluginapi.Resu
 		Content        string `json:"content"`
 		ExpectedSHA256 string `json:"expected_sha256"`
 	}
-	if json.Unmarshal(raw, &args) != nil || args.Workspace != "server" || args.Path == "." || !allowedPath(args.Path) || len(args.Content) > 256<<10 || !utf8.ValidString(args.Content) {
+	if json.Unmarshal(raw, &args) != nil || args.Workspace != "server" || args.Path == "." || !allowedPath(args.Path) || len(args.Content) > writeLimit || !utf8.ValidString(args.Content) {
 		return pluginapi.Result{}, errors.New("invalid workspace write")
 	}
 	if err := ctx.Err(); err != nil {
@@ -270,7 +313,7 @@ func (p *Plugin) write(ctx context.Context, raw json.RawMessage) (pluginapi.Resu
 			return pluginapi.Result{}, errors.New("workspace path already exists or cannot be verified")
 		}
 	} else {
-		if len(args.ExpectedSHA256) != 64 || strings.ToLower(args.ExpectedSHA256) != args.ExpectedSHA256 || statErr != nil || !info.Mode().IsRegular() || info.Size() > 256<<10 {
+		if len(args.ExpectedSHA256) != 64 || strings.ToLower(args.ExpectedSHA256) != args.ExpectedSHA256 || statErr != nil || !info.Mode().IsRegular() || info.Size() > writeLimit {
 			return pluginapi.Result{}, errors.New("workspace file is missing or expected hash is invalid")
 		}
 		if _, err := hex.DecodeString(args.ExpectedSHA256); err != nil {

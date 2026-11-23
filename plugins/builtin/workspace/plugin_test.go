@@ -158,11 +158,36 @@ func TestReadEnforcesTextLimits(t *testing.T) {
 		t.Fatalf("read must publish its write precondition, got %q", result.Output)
 	}
 
-	if err := os.WriteFile(filepath.Join(root, "big.txt"), make([]byte, limit+1), 0o600); err != nil {
+	// Paging is the point: a file bigger than one response is readable now, and
+	// the response says where to resume. Only the whole-file ceiling refuses.
+	paged := []byte(strings.Repeat("a", limit+100))
+	if err := os.WriteFile(filepath.Join(root, "paged.txt"), paged, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	page, err := call(t, plugin.read, `{"workspace":"server","path":"paged.txt"}`)
+	if err != nil {
+		t.Fatalf("a file larger than one page must still read: %v", err)
+	}
+	if !strings.Contains(page.Output, "truncated: true") || !strings.Contains(page.Output, "next_offset: ") {
+		t.Fatalf("a partial read must say so and where to resume, got %q", page.Output)
+	}
+	// The digest stays over the whole file so a paged read can still drive a write.
+	if want := fmt.Sprintf("sha256: %x", sha256.Sum256(paged)); !strings.Contains(page.Output, want) {
+		t.Fatal("a paged read must publish the whole-file digest")
+	}
+	tail := len(paged) - 100
+	rest := fmt.Sprintf(`{"workspace":"server","path":"paged.txt","offset":%d}`, tail)
+	if last, err := call(t, plugin.read, rest); err != nil || !strings.Contains(last.Output, "total_bytes: ") {
+		t.Fatalf("resuming from next_offset must read the tail: %v", err)
+	} else if strings.Contains(last.Output, "truncated: true") {
+		t.Fatal("the final page must not claim to be truncated")
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "big.txt"), []byte(strings.Repeat("a", writeLimit+1)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := call(t, plugin.read, `{"workspace":"server","path":"big.txt"}`); err == nil {
-		t.Fatal("an oversized file must be refused, not truncated")
+		t.Fatal("a file beyond the writable ceiling must be refused")
 	}
 
 	if err := os.WriteFile(filepath.Join(root, "bin.txt"), []byte{0xff, 0xfe, 0x00}, 0o600); err != nil {

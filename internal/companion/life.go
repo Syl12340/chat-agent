@@ -794,6 +794,38 @@ func careInterval(p CareSettings, items []CareItem, role string, now time.Time) 
 	}
 }
 
+// CareKind groups what this store generates, because "fewer of these" has to
+// name one kind: a daily greeting someone finds repetitive is not the same thing
+// as a follow-up they asked for and still expect. The split is structural — a
+// check-in either belongs to an episode or it does not.
+func CareKind(item CareItem) string {
+	if item.EpisodeID != "" {
+		return "followup"
+	}
+	return "greeting"
+}
+
+// CareKindMuted reports whether recent explicit feedback asks this kind to back
+// off. It is scoped to one role and one kind, only counts the "less" rating, and
+// needs at least half of that kind's ratings in the last 30 days — the same bar
+// careInterval uses, so one explicit "less" takes effect instead of being
+// cancelled by an earlier "more". A single bad evening cannot silence greetings
+// permanently because the window moves.
+func CareKindMuted(items []CareItem, role, kind string, now time.Time) bool {
+	cutoff := now.Add(-30 * 24 * time.Hour)
+	rated, less := 0, 0
+	for _, item := range items {
+		if item.RoleID != role || item.Feedback == "" || item.CreatedAt.Before(cutoff) || CareKind(item) != kind {
+			continue
+		}
+		rated++
+		if item.Feedback == "less" {
+			less++
+		}
+	}
+	return rated > 0 && less*2 >= rated
+}
+
 func (s *LifeStore) ClaimCare(role, id string, automatic bool, now time.Time, location *time.Location) (CareItem, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -833,6 +865,11 @@ func (s *LifeStore) ClaimCare(role, id string, automatic bool, now time.Time, lo
 			continue
 		}
 		if c.Status != "due" || c.DueAt.After(now) {
+			return CareItem{}, ErrCareBlocked
+		}
+		// Automatic sends respect the per-kind rating; a manual one does not,
+		// because asking for this specific check-in is itself the decision.
+		if automatic && CareKindMuted(s.state.Care, role, CareKind(c), now) {
 			return CareItem{}, ErrCareBlocked
 		}
 		if c.EpisodeID != "" {
