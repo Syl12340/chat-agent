@@ -4,12 +4,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"chat-agent/internal/deviceauth"
 )
@@ -58,6 +60,8 @@ func deviceFailure(w http.ResponseWriter, err error) {
 		deviceFail(w, 409, "device_revision_conflict", "设备记录已变更，请刷新后重试")
 	case errors.Is(err, deviceauth.ErrAdmin):
 		deviceFail(w, 403, "device_admin_required", "此操作需要设备管理员权限")
+	case errors.Is(err, deviceauth.ErrOwnerClaimed):
+		deviceFail(w, 409, "instance_already_claimed", "这个实例已由管理员认领")
 	case errors.Is(err, deviceauth.ErrChallenge):
 		deviceFail(w, 401, "challenge_invalid", "登录挑战无效、已使用或已过期")
 	case errors.Is(err, deviceauth.ErrSignature):
@@ -126,11 +130,21 @@ func (s *Server) registerDevice(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		PublicKey string `json:"public_key"`
 		Name      string `json:"name"`
+		ClaimCode string `json:"claim_code,omitempty"`
 	}
 	if !decodeDeviceInput(w, r, &input) {
 		return
 	}
-	device, err := s.devices.Register(input.PublicKey, input.Name)
+	register := s.devices.Register
+	if input.ClaimCode != "" {
+		digest := sha256.Sum256([]byte(input.ClaimCode))
+		if s.config.InstanceName == "" || len(input.ClaimCode) != 64 || !time.Now().Before(s.config.ClaimExpires) || subtle.ConstantTimeCompare([]byte(hex.EncodeToString(digest[:])), []byte(s.config.ClaimHash)) != 1 {
+			deviceFail(w, 403, "invalid_instance_claim", "实例认领链接无效或已过期")
+			return
+		}
+		register = s.devices.ClaimOwner
+	}
+	device, err := register(input.PublicKey, input.Name)
 	if err != nil {
 		deviceFailure(w, err)
 		return

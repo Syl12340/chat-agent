@@ -33,23 +33,22 @@ if [ ! -e /etc/chat-agent/chat-agent.env ]; then
     chmod 0600 /etc/chat-agent/chat-agent.env
 fi
 install -d -o chat-agent -g chat-agent -m 0700 /var/lib/chat-agent
-ln -s "$target" /opt/chat-agent/current.next
-mv -Tf /opt/chat-agent/current.next /opt/chat-agent/current
 install -m 0644 "$here/chat-agent.service" /etc/systemd/system/chat-agent.service
 systemd-analyze verify /etc/systemd/system/chat-agent.service
 systemctl daemon-reload
 systemctl enable chat-agent.service
 # Each store takes an exclusive lock file on startup and does not remove it when the
-# process is killed hard. A plain restart then fails with "store lock unavailable",
-# systemd retries, hits its start limit and leaves the service down — so stop first,
-# wait for the process to actually leave, and clear the locks it left behind.
-systemctl stop chat-agent.service 2>/dev/null || true
-waited=0
-while pgrep -x chat-agent >/dev/null 2>&1 && [ "$waited" -lt 10 ]; do
-    waited=$((waited + 1))
-    sleep 1
-done
+# process is killed hard. Stop the primary unit and confirm its exit before clearing
+# its locks. Private instances run the same binary under their own service units.
+systemctl stop chat-agent.service
+case $(systemctl show -p ActiveState --value chat-agent.service) in
+    inactive|failed) ;;
+    *) echo 'Primary service is still active; locks were left intact.' >&2; exit 1 ;;
+esac
+[ "$(systemctl show -p MainPID --value chat-agent.service)" = 0 ] || { echo 'Primary service still owns a process.' >&2; exit 1; }
 find /var/lib/chat-agent -name '*.lock' -delete 2>/dev/null || true
+ln -s "$target" /opt/chat-agent/current.next
+mv -Tf /opt/chat-agent/current.next /opt/chat-agent/current
 systemctl reset-failed chat-agent.service 2>/dev/null || true
 systemctl restart chat-agent.service
 attempt=0

@@ -1,0 +1,40 @@
+[Unit]
+Description=chat-agent private instance %i
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+User=ca-%i
+Group=ca-%i
+WorkingDirectory=/var/lib/chat-agent-instances/%i
+EnvironmentFile=/etc/chat-agent-instances/%i/instance.env
+Environment=CHAT_INSTANCE=%i CHAT_BINARY=/opt/chat-agent/instances/%i/current/chat-agent
+Environment=GOMEMLIMIT=160MiB GOMAXPROCS=2
+ExecStart=/opt/chat-agent/instances/%i/current/start.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+StateDirectory=chat-agent-instances/%i
+StateDirectoryMode=0700
+UMask=0077
+KillMode=control-group
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+LockPersonality=true
+MemoryMax=256M
+TasksMax=64
+CPUQuota=100%
+
+[Install]
+WantedBy=multi-user.target

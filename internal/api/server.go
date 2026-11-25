@@ -84,6 +84,9 @@ type Config struct {
 	// DesktopLocal runs the same Go core and Harness directly on the user's
 	// computer. It changes presentation and host-tool scope, not tool approval.
 	DesktopLocal bool
+	InstanceName string
+	ClaimHash    string
+	ClaimExpires time.Time
 	// Plugins is the host's decision about installed plugins: which load, and
 	// which declared permissions are really granted. The zero value enables
 	// everything and grants nothing.
@@ -294,7 +297,7 @@ func New(c Config) (*Server, error) {
 		mem.Close()
 		return nil, err
 	}
-	deviceStore, err := deviceauth.Open(filepath.Join(path, "devices"))
+	deviceStore, err := deviceauth.Open(filepath.Join(path, "devices"), c.InstanceName != "")
 	if err != nil {
 		webClient.Close()
 		return nil, errors.Join(err, activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
@@ -644,7 +647,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // version is the service version reported by /api/status.
-const version = "0.7.22"
+const version = "0.7.23"
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model
@@ -652,7 +655,11 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		model = "chat-agent Demo"
 	}
 	identity := currentAuth(r)
-	writeJSON(w, 200, map[string]any{"name": "chat-agent", "version": version, "auth_method": identity.Method, "device_id": identity.Device.ID, "device_admin": identity.Method == "owner" || identity.Device.Admin, "desktop_local": s.config.DesktopLocal, "speech_enabled": s.speechEnabled(), "speech_max_chars": 1200, "model": model, "demo": s.config.Agent.Demo, "max_output": s.config.Agent.MaxOutputTokens, "thinking_max_output": s.config.ThinkingMaxOutput, "max_turns": s.config.Agent.MaxTurns, "max_tools": s.config.Agent.MaxToolCalls, "continuous_loop": s.config.Agent.MaxTurns == 0 && s.config.Agent.MaxToolCalls == 0, "timeout_seconds": s.config.Agent.Timeout.Seconds(), "time_zone": s.location.String(), "web_fetch": s.web.FetchEnabled(), "web_search": s.web.SearchEnabled(), "image_generation": s.imageAvailable(), "image_reason": s.imageUnavailableReason(), "reminder_delivery": "inbox", "scheduler_ok": s.schedulerOK.Load(), "onebot_enabled": s.onebot != nil, "qq_official_enabled": s.qqofficial != nil, "astrbot_enabled": s.astrbot != nil, "transport": s.transportInfo(r)})
+	status := map[string]any{"name": "chat-agent", "version": version, "auth_method": identity.Method, "device_id": identity.Device.ID, "device_admin": identity.Method == "owner" || identity.Device.Admin, "desktop_local": s.config.DesktopLocal, "speech_enabled": s.speechEnabled(), "speech_max_chars": 1200, "model": model, "demo": s.config.Agent.Demo, "max_output": s.config.Agent.MaxOutputTokens, "thinking_max_output": s.config.ThinkingMaxOutput, "max_turns": s.config.Agent.MaxTurns, "max_tools": s.config.Agent.MaxToolCalls, "continuous_loop": s.config.Agent.MaxTurns == 0 && s.config.Agent.MaxToolCalls == 0, "timeout_seconds": s.config.Agent.Timeout.Seconds(), "time_zone": s.location.String(), "web_fetch": s.web.FetchEnabled(), "web_search": s.web.SearchEnabled(), "image_generation": s.imageAvailable(), "image_reason": s.imageUnavailableReason(), "reminder_delivery": "inbox", "scheduler_ok": s.schedulerOK.Load(), "onebot_enabled": s.onebot != nil, "qq_official_enabled": s.qqofficial != nil, "astrbot_enabled": s.astrbot != nil, "transport": s.transportInfo(r)}
+	if s.config.InstanceName != "" {
+		status["account"] = map[string]string{"id": s.devices.ServerID(), "name": s.config.InstanceName}
+	}
+	writeJSON(w, 200, status)
 }
 
 func validID(id string) bool {

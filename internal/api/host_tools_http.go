@@ -19,7 +19,8 @@ func (s *Server) hostToolState(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{
 		"configured":   s.hostToolingConfigured(),
-		"auto_grant":   s.config.HostTools.AutoGrant,
+		"auto_grant":   s.config.HostTools.AutoGrant || s.config.InstanceName != "",
+		"instance":     s.config.InstanceName,
 		"scope_label":  map[bool]string{true: "本机", false: "服务器"}[s.config.DesktopLocal],
 		"tools":        s.hostToolNames(),
 		"sessions":     s.hostGrants.List(),

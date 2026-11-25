@@ -22,7 +22,7 @@ func TestApprovedDeviceSurvivesRestartAndAuthenticates(t *testing.T) {
 	}
 	publicKey := base64.StdEncoding.EncodeToString(der)
 
-	store, err := Open(dir)
+	store, err := Open(dir, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func TestApprovedDeviceSurvivesRestartAndAuthenticates(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store, err = Open(dir)
+	store, err = Open(dir, false)
 	if err != nil {
 		t.Fatal(err)
 	}

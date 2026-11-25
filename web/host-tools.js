@@ -18,7 +18,7 @@ export function createHostTools({state,json,onError}) {
     allow.checked=granted;
     allow.disabled=pending || !session || fromEnv || automatic;
     note.hidden=!fromEnv&&!automatic;
-    note.textContent=automatic ? '电脑本地模式打开即用；读写仍受工作区边界约束，写入和执行仍需逐次批准。' : fromEnv ? '这个会话由服务器环境配置固定授权，页面上不能关闭。' : '';
+    note.textContent=automatic ? '可直接在对话中读取工作区。修改文件和执行命令时需要确认。' : fromEnv ? '这个会话由服务器环境配置固定授权，页面上不能关闭。' : '';
     const text=failure || (pending ? '正在保存…'
       : automatic ? `已启用：当前会话直接使用${value?.scope_label||'本机'}工作区。`
       : fromEnv ? '由服务器配置授权。'
@@ -32,7 +32,8 @@ export function createHostTools({state,json,onError}) {
     try{
       value=await json('/api/host-tools');
       section.hidden=!value.configured;
-      if(value.auto_grant){title.textContent='本机工作区';description.textContent='本地 Agent loop 直接读取当前电脑工作区。文件写入仍需逐次批准；Windows 尚无强制 shell 沙箱，因此不会开放任意命令。';label.lastChild.textContent=' 本机工作区已直接启用';}
+      if(value.instance){title.textContent='服务器工作区';description.textContent=`${value.instance} 的私有工作区可在应用内的对话直接使用。`;label.lastChild.textContent=' 私有工作区已启用';}
+      else if(value.auto_grant){title.textContent='本机工作区';description.textContent='本地 Agent loop 直接读取当前电脑工作区。文件写入仍需逐次批准；Windows 尚无强制 shell 沙箱，因此不会开放任意命令。';label.lastChild.textContent=' 本机工作区已直接启用';}
       else{title.textContent='服务器运维';description.textContent='开启后，这个会话可以查看服务器状态、日志和版本，也能在你的服务器沙箱里读写文件。维护动作仍然要在每次执行前单独批准，开关本身不等于执行许可。';label.lastChild.textContent=' 允许当前会话查看和管理服务器';}
       failure='';
       render();

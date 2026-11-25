@@ -106,6 +106,9 @@ func (s *Server) pluginTools(enable pluginapi.Enablement, sessionID, roleID stri
 				return out, nil
 			},
 		}
+		if s.config.InstanceName != "" && tool.Name == "workspace_shell" {
+			definition.ApprovalRequired = true
+		}
 		out = append(out, definition)
 	}
 	return out

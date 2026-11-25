@@ -47,6 +47,9 @@ func (c Config) hostPlugins() ([]pluginapi.Plugin, error) {
 		}
 		plugins = append(plugins, p)
 	}
+	if c.InstanceName != "" {
+		return plugins, nil
+	}
 	if c.Plugins.Grant(serverdiag.ID, serverdiag.Permission) {
 		actions := ""
 		if c.Plugins.Grant(serverdiag.ID, serverdiag.MaintenancePermission) {
@@ -80,6 +83,10 @@ func (s *Server) hostToolsAllowed(session string) bool {
 	}
 	if s.config.HostTools.AutoGrant {
 		return true
+	}
+	if s.config.InstanceName != "" {
+		_, channel := s.sessionChannel(session)
+		return !channel && !s.publicChannelSession(session)
 	}
 	if slices.Contains(s.config.HostTools.Sessions, session) {
 		return true

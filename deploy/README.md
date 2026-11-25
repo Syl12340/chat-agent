@@ -145,6 +145,8 @@ go build -trimpath -buildvcs=false -ldflags '-s -w' -o bin/chat-agent-linux-amd6
 
 ## 可选的工作区与主机巡检
 
+生产服务已加载工作区插件时，用管理员设备打开要授权的普通会话，在「连接信息 → 服务器运维」开启「允许当前会话查看和管理服务器」。保存后，下一轮开始时会根据该会话的授权装配服务器工具，无需重新部署或绑定电脑。当前开关同时授予工作区和已配置的主机运维工具，请只在预期的私聊会话开启。若看不到这项设置，先确认当前设备拥有管理员权限，并且连接的是云端 CA。
+
 在主机本地配置 `CHAT_HOST_TOOL_SESSIONS` 为获准会话 ID，多个用逗号分隔。再按需要将 `builtin.workspace:filesystem:workspace://server` 或 `builtin.server:filesystem:diagnostics://host` 加入现有 `CHAT_PLUGIN_GRANTS`。停用任一插件可将对应 ID 加入 `CHAT_PLUGINS_DISABLED`。
 
 工作区指向 `CHAT_WORKSPACE_ROOT` 的独立目录。执行动作可选，由 `CHAT_WORKSPACE_ACTIONS` 的 JSON 对象定义。键是模型可选的动作名，值是宿主配置的完整 argv 数组。只把受信动作放入白名单。执行器在 Linux 上以 CA 服务账号运行，使用进程组取消和固定超时。它继承服务单元的访问权限，适用于受信任务。
@@ -152,6 +154,22 @@ go build -trimpath -buildvcs=false -ldflags '-s -w' -o bin/chat-agent-linux-amd6
 巡检读取负载、内存、磁盘、监听端口、固定服务状态、发布链接和备份文件名。日志工具只返回 CA 与搜索服务日志的时间、优先级与 unit。采集账号权限不足时会报告相应数据不可读。
 
 新工具视图随 turns v4 保存。回退旧服务时按发布记录恢复升级前备份，或停机通过兼容导出取得不含新卡片元数据的 turns v3。
+
+## 私有 CA 实例
+
+一套实例包含一个 owner、独立的设备登记、模型配置、会话和工作区。部署机为每套实例分配单独的 Linux 服务账号和 systemd unit。服务的 HTTP 与可选签名传输入口都监听 loopback，连接时使用已有 SSH 转发。浏览器应为每套实例使用独立 origin，例如不同的本地转发端口。
+
+将 Linux 成品命名为 `chat-agent`，与 `start.sh`、`install-instance.sh`、`chat-agent@.service` 放在同一个服务器暂存目录。以 root 执行下面的命令创建一个新实例，可选的最后一个参数是对应 Android 的加密传输端口。
+
+```sh
+sh install-instance.sh personal 18761 <release> <binary-sha256> 18762
+```
+
+通过 SSH 将本地端口转发到该实例的 HTTP 端口。在本机访问 `http://127.0.0.1:18761/#claim=<一次性认领码>`。宿主从 `/etc/chat-agent-instances/personal/owner-claim` 私下交付认领码，链接约一天内有效。浏览器完成认领后成为账户的第一台信任设备，以后凭设备密钥无感登录。已信任设备在「信任设备」中核对公钥指纹并批准后续设备。每台信任设备都代表同一用户，可以管理信任列表，并共享会话、模型和工作区。撤销只结束这台设备的访问。实例恢复使用 `instance.env` 中的管理员令牌。Android 加密连接使用该实例的传输端口与 `server-public.pem`，每次连接后核对目标实例。
+
+普通私聊自动获得当前实例的工作区能力。文件写入和 shell 调用采用现有的操作批准，服务器维护工具与固定宿主命令在私有实例装配中移除。工作区固定在 `/var/lib/chat-agent-instances/personal/workspace`，CA 状态与设备记录在同级 `data` 下。按实例设置实际磁盘配额属于宿主管理。子进程共享本实例的资源上限。
+
+实例默认使用 Demo，登录后可在模型设置添加自己的 API。单独停启使用 `systemctl stop chat-agent@personal` 和 `systemctl start chat-agent@personal`。备份仅需停止并备份该实例的状态目录和对应配置目录，恢复时也必须保留对应实例身份和文件所有权。实例二进制通过 `/opt/chat-agent/instances/personal/current` 指向部署机上的只读 release，切换前核对目标能够读取既有数据并保存原链接与备份。现有主服务的 `current` 与 APK 发布路径独立。
 
 ## Android 包发布
 

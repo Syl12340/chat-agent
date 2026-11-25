@@ -211,6 +211,7 @@ func run() error {
 	wireListen := flag.String("wire-listen", os.Getenv("CHAT_WIRE_LISTEN"), "optional encrypted TCP listen address")
 	wireKey := flag.String("wire-key", os.Getenv("CHAT_WIRE_KEY"), "P-256 server signing private key PEM file")
 	data := flag.String("data", "", "session directory (default data/sessions, or data/demo-sessions in demo mode)")
+	instance := flag.String("instance", "", "private cloud instance name")
 	workspaceRoot := flag.String("workspace", "", "desktop workspace exposed to the local agent loop")
 	rolesDir := flag.String("roles", "", "role workspace directory (default <data>/roles)")
 	timeZone := flag.String("timezone", "Asia/Shanghai", "user timezone for reminder interpretation")
@@ -226,6 +227,9 @@ func run() error {
 	flag.IntVar(&c.MaxOutputTokens, "max-output", c.MaxOutputTokens, "output tokens per generation; 0 omits the limit (provider default)")
 	flag.StringVar(&c.TokenParameter, "token-parameter", c.TokenParameter, "max_tokens or max_completion_tokens")
 	flag.Parse()
+	if *instance != "" && (!storage.ValidID(*instance) || *desktop || !filepath.IsAbs(*data) || !filepath.IsAbs(os.Getenv("CHAT_WORKSPACE_ROOT")) || !loopbackAddress(*listen) || (*wireListen != "" && !loopbackAddress(*wireListen))) {
+		return errors.New("private instances need explicit absolute storage and workspace paths, and loopback listeners")
+	}
 	if *desktop {
 		if *wireListen != "" || *wireKey != "" {
 			return errors.New("desktop mode only serves loopback HTTP")
@@ -323,7 +327,7 @@ func run() error {
 	// decision: CHAT_PLUGINS_DISABLED switches a plugin off entirely, and
 	// CHAT_PLUGIN_GRANTS grants the declared permissions one by one.
 	grants := splitList(os.Getenv("CHAT_PLUGIN_GRANTS"))
-	if *desktop {
+	if *desktop || *instance != "" {
 		grants = append(grants, workspaceplugin.ID+":"+workspaceplugin.Permission)
 	}
 	pluginPolicy, err := pluginapi.NewPolicy(
@@ -341,10 +345,25 @@ func run() error {
 		}
 	}
 	hostWorkspace := os.Getenv("CHAT_WORKSPACE_ROOT")
+	workspaceActions := os.Getenv("CHAT_WORKSPACE_ACTIONS")
 	if *desktop {
 		hostWorkspace = *workspaceRoot
 	}
-	app, err := api.New(api.Config{Agent: c, ChatModels: chatModels, ThinkingMaxOutput: thinkingMax, Speech: api.SpeechConfig{Model: os.Getenv("CHAT_TTS_MODEL"), Voice: os.Getenv("CHAT_TTS_VOICE")}, DataDir: *data, RolesDir: *rolesDir, TimeZone: *timeZone, Web: webtools.Config{Enabled: *webEnabled, AllowedHosts: strings.Split(os.Getenv("CHAT_WEB_HOSTS"), ","), SearchURL: searchEngine(*webEnabled)}, AccessToken: accessToken, AndroidReleaseDir: os.Getenv("CHAT_ANDROID_RELEASE_DIR"), Semantic: semantic.Config{BaseURL: os.Getenv("CHAT_BASE_URL"), APIKey: os.Getenv("CHAT_API_KEY"), Model: os.Getenv("CHAT_RERANK_MODEL")}, Decision: decision.Config{BaseURL: os.Getenv("CHAT_BASE_URL"), APIKey: os.Getenv("CHAT_API_KEY"), Model: decisionModel()}, ImageRemote: imagegen.RemoteConfig{BaseURL: os.Getenv("CHAT_IMAGE_REMOTE"), Token: os.Getenv("CHAT_IMAGE_TOKEN")}, Images: imagegen.Config{Python: os.Getenv("CHAT_IMAGE_PYTHON"), Script: os.Getenv("CHAT_IMAGE_BRIDGE"), Profiles: splitList(os.Getenv("CHAT_IMAGE_PROFILES")), DefaultProfile: os.Getenv("CHAT_IMAGE_PROFILE")}, OneBot: onebotConfig, QQOfficial: qqOfficialConfig, AstrBot: astrBotConfig, Plugins: pluginPolicy, HostTools: api.HostToolsConfig{Sessions: splitList(os.Getenv("CHAT_HOST_TOOL_SESSIONS")), WorkspaceRoot: hostWorkspace, WorkspaceActions: os.Getenv("CHAT_WORKSPACE_ACTIONS"), AutoGrant: *desktop, ServiceUnits: splitList(os.Getenv("CHAT_SERVICE_UNITS")), ServiceActions: os.Getenv("CHAT_SERVICE_ACTIONS")}, LocalAgent: api.LocalAgentConfig{Devices: api.ParseLocalAgentDevices(os.Getenv("CHAT_LOCAL_AGENT_DEVICES")), DefaultDevice: os.Getenv("CHAT_LOCAL_AGENT_DEVICE")}, DesktopLocal: *desktop})
+	if *instance != "" {
+		workspaceActions = ""
+	}
+	claimHash := os.Getenv("CHAT_INSTANCE_CLAIM_HASH")
+	var claimExpires time.Time
+	if *instance != "" && claimHash != "" {
+		decoded, hashErr := hex.DecodeString(claimHash)
+		seconds, timeErr := strconv.ParseInt(os.Getenv("CHAT_INSTANCE_CLAIM_EXPIRES"), 10, 64)
+		if hashErr != nil || len(decoded) != 32 || timeErr != nil || seconds <= 0 {
+			return errors.New("invalid private instance claim configuration")
+		}
+		claimHash = hex.EncodeToString(decoded)
+		claimExpires = time.Unix(seconds, 0)
+	}
+	app, err := api.New(api.Config{Agent: c, ChatModels: chatModels, ThinkingMaxOutput: thinkingMax, Speech: api.SpeechConfig{Model: os.Getenv("CHAT_TTS_MODEL"), Voice: os.Getenv("CHAT_TTS_VOICE")}, DataDir: *data, RolesDir: *rolesDir, TimeZone: *timeZone, Web: webtools.Config{Enabled: *webEnabled, AllowedHosts: strings.Split(os.Getenv("CHAT_WEB_HOSTS"), ","), SearchURL: searchEngine(*webEnabled)}, AccessToken: accessToken, AndroidReleaseDir: os.Getenv("CHAT_ANDROID_RELEASE_DIR"), Semantic: semantic.Config{BaseURL: os.Getenv("CHAT_BASE_URL"), APIKey: os.Getenv("CHAT_API_KEY"), Model: os.Getenv("CHAT_RERANK_MODEL")}, Decision: decision.Config{BaseURL: os.Getenv("CHAT_BASE_URL"), APIKey: os.Getenv("CHAT_API_KEY"), Model: decisionModel()}, ImageRemote: imagegen.RemoteConfig{BaseURL: os.Getenv("CHAT_IMAGE_REMOTE"), Token: os.Getenv("CHAT_IMAGE_TOKEN")}, Images: imagegen.Config{Python: os.Getenv("CHAT_IMAGE_PYTHON"), Script: os.Getenv("CHAT_IMAGE_BRIDGE"), Profiles: splitList(os.Getenv("CHAT_IMAGE_PROFILES")), DefaultProfile: os.Getenv("CHAT_IMAGE_PROFILE")}, OneBot: onebotConfig, QQOfficial: qqOfficialConfig, AstrBot: astrBotConfig, Plugins: pluginPolicy, HostTools: api.HostToolsConfig{Sessions: splitList(os.Getenv("CHAT_HOST_TOOL_SESSIONS")), WorkspaceRoot: hostWorkspace, WorkspaceActions: workspaceActions, AutoGrant: *desktop, ServiceUnits: splitList(os.Getenv("CHAT_SERVICE_UNITS")), ServiceActions: os.Getenv("CHAT_SERVICE_ACTIONS")}, LocalAgent: api.LocalAgentConfig{Devices: api.ParseLocalAgentDevices(os.Getenv("CHAT_LOCAL_AGENT_DEVICES")), DefaultDevice: os.Getenv("CHAT_LOCAL_AGENT_DEVICE")}, DesktopLocal: *desktop, InstanceName: *instance, ClaimHash: claimHash, ClaimExpires: claimExpires})
 	if err != nil {
 		return err
 	}

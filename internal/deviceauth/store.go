@@ -27,18 +27,19 @@ import (
 )
 
 var (
-	ErrInvalid     = errors.New("invalid device request")
-	ErrNotFound    = errors.New("device not found")
-	ErrPending     = errors.New("device pending approval")
-	ErrRevoked     = errors.New("device revoked")
-	ErrConflict    = errors.New("device revision conflict")
-	ErrLimit       = errors.New("device authentication capacity reached")
-	ErrRateLimited = errors.New("device authentication rate limited")
-	ErrChallenge   = errors.New("challenge invalid or expired")
-	ErrSignature   = errors.New("invalid device signature")
-	ErrSession     = errors.New("device session invalid or expired")
-	ErrClosed      = errors.New("device store closed")
-	ErrAdmin       = errors.New("device administrator required")
+	ErrInvalid      = errors.New("invalid device request")
+	ErrNotFound     = errors.New("device not found")
+	ErrPending      = errors.New("device pending approval")
+	ErrRevoked      = errors.New("device revoked")
+	ErrConflict     = errors.New("device revision conflict")
+	ErrLimit        = errors.New("device authentication capacity reached")
+	ErrRateLimited  = errors.New("device authentication rate limited")
+	ErrChallenge    = errors.New("challenge invalid or expired")
+	ErrSignature    = errors.New("invalid device signature")
+	ErrSession      = errors.New("device session invalid or expired")
+	ErrClosed       = errors.New("device store closed")
+	ErrAdmin        = errors.New("device administrator required")
+	ErrOwnerClaimed = errors.New("instance already has an owner")
 )
 
 const maxDevices = 512
@@ -57,9 +58,10 @@ type record struct {
 	PublicKey string `json:"public_key"`
 }
 type snapshot struct {
-	Version  int      `json:"version"`
-	ServerID string   `json:"server_id"`
-	Devices  []record `json:"devices"`
+	Version      int      `json:"version"`
+	ServerID     string   `json:"server_id"`
+	Devices      []record `json:"devices"`
+	OwnerClaimed bool     `json:"owner_claimed,omitempty"`
 }
 type Challenge struct {
 	ID        string    `json:"challenge_id"`
@@ -87,15 +89,17 @@ type rateWindow struct {
 	Count int
 }
 type Store struct {
-	mu         sync.Mutex
-	dir        string
-	lockPath   string
-	serverID   string
-	devices    map[string]record
-	challenges map[string]challengeState
-	sessions   map[[32]byte]sessionState
-	rates      map[string]rateWindow
-	closed     bool
+	mu            sync.Mutex
+	dir           string
+	lockPath      string
+	serverID      string
+	devices       map[string]record
+	challenges    map[string]challengeState
+	sessions      map[[32]byte]sessionState
+	rates         map[string]rateWindow
+	closed        bool
+	ownerClaimed  bool
+	sharedAccount bool
 }
 
 func randomID() (string, error) {
@@ -147,7 +151,7 @@ func parseKey(encoded string) (*ecdsa.PublicKey, string, error) {
 	return key, hex.EncodeToString(sum[:]), nil
 }
 
-func Open(dir string) (_ *Store, resultErr error) {
+func Open(dir string, sharedAccount bool) (_ *Store, resultErr error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
@@ -165,14 +169,14 @@ func Open(dir string) (_ *Store, resultErr error) {
 	if err := errors.Join(writeErr, f.Close()); err != nil {
 		return nil, err
 	}
-	s := &Store{dir: dir, lockPath: lockPath, devices: make(map[string]record), challenges: make(map[string]challengeState), sessions: make(map[[32]byte]sessionState), rates: make(map[string]rateWindow)}
+	s := &Store{dir: dir, lockPath: lockPath, sharedAccount: sharedAccount, devices: make(map[string]record), challenges: make(map[string]challengeState), sessions: make(map[[32]byte]sessionState), rates: make(map[string]rateWindow)}
 	f, err = os.Open(filepath.Join(dir, "devices.json"))
 	if errors.Is(err, os.ErrNotExist) {
 		s.serverID, err = randomID()
 		if err != nil {
 			return nil, err
 		}
-		if err := s.save(s.devices); err != nil {
+		if err := s.save(s.devices, false); err != nil {
 			return nil, err
 		}
 		return s, nil
@@ -198,6 +202,7 @@ func Open(dir string) (_ *Store, resultErr error) {
 		return nil, errors.New("invalid device snapshot")
 	}
 	s.serverID = snap.ServerID
+	s.ownerClaimed = snap.OwnerClaimed
 	for _, item := range snap.Devices {
 		_, id, err := parseKey(item.PublicKey)
 		if err != nil || id != item.ID || item.Fingerprint != id || !validName(item.Name) || item.Revision < 1 || (item.Status != "pending" && item.Status != "approved" && item.Status != "revoked") || (item.Admin && item.Status != "approved") {
@@ -206,17 +211,20 @@ func Open(dir string) (_ *Store, resultErr error) {
 		if _, exists := s.devices[id]; exists {
 			return nil, errors.New("duplicate device record")
 		}
+		if sharedAccount && item.Status == "approved" {
+			item.Admin = true
+		}
 		s.devices[id] = item
 	}
 	return s, nil
 }
-func (s *Store) save(devices map[string]record) error {
+func (s *Store) save(devices map[string]record, ownerClaimed bool) error {
 	items := make([]record, 0, len(devices))
 	for _, item := range devices {
 		items = append(items, item)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
-	data, err := json.MarshalIndent(snapshot{Version: 1, ServerID: s.serverID, Devices: items}, "", "  ")
+	data, err := json.MarshalIndent(snapshot{Version: 1, ServerID: s.serverID, Devices: items, OwnerClaimed: ownerClaimed}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -239,6 +247,16 @@ func (s *Store) Close() error {
 	return os.Remove(s.lockPath)
 }
 func (s *Store) Register(publicKey, name string) (Device, error) {
+	return s.register(publicKey, name, false)
+}
+
+// ClaimOwner atomically enrolls the first administrator and consumes the claim.
+// The caller must verify the instance's bootstrap credential before calling it.
+func (s *Store) ClaimOwner(publicKey, name string) (Device, error) {
+	return s.register(publicKey, name, true)
+}
+
+func (s *Store) register(publicKey, name string, claim bool) (Device, error) {
 	_, id, err := parseKey(publicKey)
 	if err != nil || !validName(name) {
 		return Device{}, ErrInvalid
@@ -248,22 +266,40 @@ func (s *Store) Register(publicKey, name string) (Device, error) {
 	if s.closed {
 		return Device{}, ErrClosed
 	}
-	if item, exists := s.devices[id]; exists {
+	item, exists := s.devices[id]
+	if exists && !claim {
 		return item.Device, nil
 	}
-	if len(s.devices) >= maxDevices {
+	if !exists && len(s.devices) >= maxDevices {
 		return Device{}, ErrLimit
 	}
-	item := record{Device: Device{ID: id, Fingerprint: id, Name: name, Status: "pending", Revision: 1}, PublicKey: publicKey}
+	if !exists {
+		item = record{Device: Device{ID: id, Fingerprint: id, Name: name, Status: "pending", Revision: 1}, PublicKey: publicKey}
+	}
+	if claim {
+		if s.ownerClaimed || item.Status == "revoked" {
+			return Device{}, ErrOwnerClaimed
+		}
+		for _, existing := range s.devices {
+			if existing.Admin {
+				return Device{}, ErrOwnerClaimed
+			}
+		}
+		if exists {
+			item.Revision++
+		}
+		item.Status, item.Admin = "approved", true
+	}
 	updated := make(map[string]record, len(s.devices)+1)
 	for k, v := range s.devices {
 		updated[k] = v
 	}
 	updated[id] = item
-	if err := s.save(updated); err != nil {
+	if err := s.save(updated, s.ownerClaimed || claim); err != nil {
 		return Device{}, err
 	}
 	s.devices = updated
+	s.ownerClaimed = s.ownerClaimed || claim
 	return item.Device, nil
 }
 func (s *Store) authorizeAdmin(actorID string, owner bool) error {
@@ -319,7 +355,9 @@ func (s *Store) Update(id string, revision int, status string, admin *bool, acto
 	}
 	item.Status = status
 	item.Revision++
-	if admin != nil {
+	if s.sharedAccount {
+		item.Admin = status == "approved"
+	} else if admin != nil {
 		item.Admin = *admin
 	}
 	if status == "revoked" {
@@ -330,7 +368,7 @@ func (s *Store) Update(id string, revision int, status string, admin *bool, acto
 		updated[k] = v
 	}
 	updated[id] = item
-	if err := s.save(updated); err != nil {
+	if err := s.save(updated, s.ownerClaimed); err != nil {
 		return Device{}, err
 	}
 	s.devices = updated

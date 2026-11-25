@@ -1,8 +1,8 @@
 # chat-agent
 
-当前源码基线为 **0.7.19**；Android 默认构建为 **0.7.19-debug（versionCode 57）**，包名保持 `dev.chatagent.ai.debug`。电脑端现在可直接启动完整的本地 Go Core、网页界面与 Harness loop：不绑定云端执行器，打开即用本机工作区，模型配置和数据留在本机。云端仍服务手机和常驻陪伴，原远程执行端作为可选扩展保留。完整状态与边界见[电脑本地 Agent](docs/desktop-local-agent.md)、[当前规划](docs/feature-plan.md)和[产品方向与能力设计](docs/product-direction.md)。源码仓库：[Syl12340/chat-agent](https://github.com/Syl12340/chat-agent)。
+当前源码版本为 **0.7.23**，Android 默认构建为 **0.7.23-debug（versionCode 61）**，包名为 `dev.chatagent.ai.debug`。电脑端可直接启动本地 Core、工作区和持续 Harness。Linux 可按用户启动私有实例，同一账户下的信任设备共享会话、记忆、模型和文件。参见[私有实例部署](deploy/README.md#私有-ca-实例)、[电脑本地 Agent](docs/desktop-local-agent.md)和[当前规划](docs/feature-plan.md)。
 
-2026-11-21 [源码评估与下一步规划](docs/project-assessment-2026-11-21.md)补充了桌面首次使用/恢复、模型用途路由、工作区读改、课件原件及陪伴反馈范围的具体缺口。当前桌面启动烟测不等于真实模型多步本地任务已完整验收；后续先补基本使用链路。
+2026-11-23 的[全面工程评估](docs/project-assessment-2026-11-23.md)核对了最新分页、模型跟随和分类反馈实现，指出正常调用入口与恢复链路的具体缺口。四条主线的实施依赖和验收标准汇总在[当前规划](docs/feature-plan.md)。
 
 0.24.0 以 format index + manifest 选择唯一 runtime 代，聊天/队列规范状态与 attempt/model/tool 运行事实处于同一代。旧 transcript v1/v2、turns v1/v2/v3 只由停机维护命令显式迁移；当前 turns v5 还保存外部消息的来源、发送者与受众，用于合并和回复路由。最新轮/整会话删除先登记再重写或清理，旧代和模型快照不会被读取器自动复活。生产配置仍使用 `ecnu-max`，本地搜索、设备白名单和加密 9992 入口保持不变。
 
