@@ -3,6 +3,7 @@ package qqofficial
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -14,6 +15,17 @@ func testClient(t *testing.T, groups, groupAll bool) *Client {
 		t.Fatal(err)
 	}
 	return client
+}
+
+func TestNormalizeCaptionStickerAndMixedAttachments(t *testing.T) {
+	raw := json.RawMessage(`{"id":"mixed-media","content":"看看 <face id=\"12\"/>","author":{"user_openid":"user-1"},"attachments":[{"url":"//multimedia.nt.qq.com.cn/image","filename":"动图.gif","content_type":"file"},{"url":"http://ignored.example/file.txt"},{"url":"https://multimedia.nt.qq.com.cn/file","filename":"说明.txt","content_type":"text/plain"}]}`)
+	envelope, err := testClient(t, false, false).normalize(payload{T: "C2C_MESSAGE_CREATE", D: raw})
+	if err != nil || len(envelope.Message.Attachments) != 2 || !strings.Contains(envelope.Message.Text, "[QQ 表情]") || !strings.Contains(envelope.Message.Text, "缺少可用下载地址") {
+		t.Fatalf("normalized mixed content = %+v, %v", envelope.Message, err)
+	}
+	if got := envelope.Message.Attachments[0].URL; got != "https://multimedia.nt.qq.com.cn/image" {
+		t.Fatalf("invalid normalized download address %q", got)
+	}
 }
 
 func TestNormalizeC2CUsesOpenIDAndStableMessageIndex(t *testing.T) {

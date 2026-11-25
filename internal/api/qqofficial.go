@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -15,7 +14,6 @@ import (
 
 	channelstore "chat-agent/internal/channel"
 	"chat-agent/internal/channel/qqofficial"
-	"chat-agent/internal/media"
 	"chat-agent/internal/probe"
 	"chat-agent/internal/turns"
 	"chat-agent/internal/webtools"
@@ -41,6 +39,7 @@ type qqOfficialIntegration struct {
 	wake    chan struct{}
 	done    chan struct{}
 	close   sync.Once
+	ingress sync.Mutex
 }
 
 func newQQOfficialIntegration(server *Server, cfg QQOfficialConfig, dir string) (_ *qqOfficialIntegration, err error) {
@@ -66,7 +65,9 @@ func newQQOfficialIntegration(server *Server, cfg QQOfficialConfig, dir string) 
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(server.workCtx)
-	integration := &qqOfficialIntegration{server: server, config: cfg, store: store, adapter: adapter, http: webtools.NewPublicHTTPClient(), ctx: ctx, cancel: cancel, wake: make(chan struct{}, 1), done: make(chan struct{})}
+	downloads := webtools.NewPublicHTTPClient()
+	downloads.CheckRedirect = qqAttachmentRedirect
+	integration := &qqOfficialIntegration{server: server, config: cfg, store: store, adapter: adapter, http: downloads, ctx: ctx, cancel: cancel, wake: make(chan struct{}, 1), done: make(chan struct{})}
 	defer func() {
 		if err != nil {
 			cancel()
@@ -103,6 +104,8 @@ func (q *qqOfficialIntegration) run() {
 }
 
 func (q *qqOfficialIntegration) receive(ctx context.Context, envelope channelstore.Envelope) error {
+	q.ingress.Lock()
+	defer q.ingress.Unlock()
 	if envelope.Conversation.Kind == "private" {
 		identity, bound, bindErr := q.server.bindChannelIdentity(envelope)
 		if _, isBind := linkCommand(envelope.Message.Text); isBind {
@@ -130,9 +133,10 @@ func (q *qqOfficialIntegration) receive(ctx context.Context, envelope channelsto
 		_ = q.store.SetInboxState(envelope.EventID, "needs_attention", "")
 		return err
 	}
-	images := q.downloadImages(ctx, sess.RoleID(), mapping.SessionID, envelope.Message.Attachments)
+	choice := q.chatSelection(mapping.SessionID, envelope.Message.Attachments)
+	content, images := q.prepareAttachments(ctx, sess.RoleID(), mapping.SessionID, envelope.Message.Text, envelope.Message.Attachments, choice.Vision)
 	origin := turns.TurnOrigin{Kind: "channel", Platform: envelope.Platform, AccountID: envelope.AccountID, ConversationKind: envelope.Conversation.Kind, ConversationID: envelope.Conversation.ID, SenderID: envelope.Sender.ID}
-	_, _, err = q.server.SubmitTurn(ctx, TurnSubmission{SessionID: mapping.SessionID, RequestID: envelope.EventID, Content: envelope.Message.Text, Mode: "auto", Images: images, Origin: origin, DeferStart: true})
+	_, _, err = q.server.SubmitTurn(ctx, TurnSubmission{SessionID: mapping.SessionID, RequestID: envelope.EventID, Content: content, Mode: "auto", Model: choice.Model, Thinking: choice.Thinking, Images: images, Origin: origin, DeferStart: true})
 	if err != nil {
 		_ = q.store.SetInboxState(envelope.EventID, "needs_attention", mapping.SessionID)
 		return err
@@ -147,46 +151,21 @@ func (q *qqOfficialIntegration) receive(ctx context.Context, envelope channelsto
 	return nil
 }
 
-func (q *qqOfficialIntegration) downloadImages(ctx context.Context, roleID, sessionID string, attachments []channelstore.Attachment) []media.Image {
-	choice, err := q.server.selectChat("", "")
-	if err != nil || !choice.Vision {
-		return nil
-	}
-	items := make([]media.Image, 0, min(len(attachments), 3))
-	for _, attachment := range attachments {
-		if len(items) >= 3 || attachment.ContentType != "image/jpeg" && attachment.ContentType != "image/png" {
-			continue
-		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, attachment.URL, nil)
-		if err != nil {
-			continue
-		}
-		resp, err := q.http.Do(req)
-		if err != nil {
-			continue
-		}
-		if resp.StatusCode != http.StatusOK || resp.ContentLength > media.MaxImageBytes {
-			_ = resp.Body.Close()
-			continue
-		}
-		q.server.mediaMu.Lock()
-		item, uploadErr := q.server.images.Upload(roleID, sessionID, io.LimitReader(resp.Body, media.MaxImageBytes+1))
-		q.server.mediaMu.Unlock()
-		_ = resp.Body.Close()
-		if uploadErr == nil {
-			items = append(items, item)
-		}
-	}
-	return items
-}
-
 func (q *qqOfficialIntegration) ensureSession(envelope channelstore.Envelope) (channelstore.Mapping, *probe.Session, error) {
 	key := channelstore.ConversationKey{Platform: envelope.Platform, AccountID: envelope.AccountID, ConversationKind: envelope.Conversation.Kind, ConversationID: envelope.Conversation.ID, RoleID: q.config.RoleID}
 	var random [16]byte
 	if _, err := rand.Read(random[:]); err != nil {
 		return channelstore.Mapping{}, nil, err
 	}
-	mapping, _, err := q.store.ProvisionMapping(key, hex.EncodeToString(random[:]))
+	sessionID := hex.EncodeToString(random[:])
+	if key.ConversationKind == "private" {
+		if _, found := q.store.Mapping(key); !found {
+			if appSession := q.server.latestPrivateAppSession(key.RoleID); appSession != "" {
+				sessionID = appSession
+			}
+		}
+	}
+	mapping, _, err := q.store.ProvisionMapping(key, sessionID)
 	if err != nil {
 		return channelstore.Mapping{}, nil, err
 	}
@@ -209,6 +188,36 @@ func (q *qqOfficialIntegration) ensureSession(envelope channelstore.Envelope) (c
 	}
 	mapping.State = "active"
 	return mapping, sess, nil
+}
+
+func (s *Server) latestPrivateAppSession(role string) string {
+	entries, err := s.runtime.Entries()
+	if err != nil {
+		return ""
+	}
+	for _, entry := range entries {
+		if entry.RoleID != role || s.publicChannelSession(entry.ID) {
+			continue
+		}
+		if _, linked := s.sessionChannel(entry.ID); linked {
+			continue
+		}
+		history, _, err := s.turns.List(entry.ID)
+		if err != nil {
+			continue
+		}
+		containsExternal := false
+		for _, turn := range history {
+			containsExternal = containsExternal || turn.Origin.Kind == "channel"
+		}
+		if containsExternal {
+			continue
+		}
+		if sess, err := s.session(entry.ID); err == nil && sess.RoleID() == role && hasUserConversation(sess.Messages()) {
+			return entry.ID
+		}
+	}
+	return ""
 }
 
 func (q *qqOfficialIntegration) TurnCompleted(_ context.Context, item TurnCompletion) error {

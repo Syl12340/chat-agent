@@ -76,7 +76,11 @@ export function createTurnsUI({ state, json, storage, onError, onHistory, onStat
     clearTimeout(timer); timer = null;
     if (!canRead()) return;
     const waiting = history?.active || (!history?.queue_paused && (history?.turns || []).some(item => item.status === 'queued')) || pending;
-    if (waiting) timer = setTimeout(() => refresh().catch(report),failures ? Math.min(5000,1000 * failures) : pending && !history?.active ? 1500:600);
+    const sharedQQ = history?.channel?.platform === 'qq-official' && history.channel.conversation_kind === 'private';
+    if (waiting || sharedQQ) {
+      const interval = waiting ? pending && !history?.active ? 1500 : 600 : 4500;
+      timer = setTimeout(() => refresh().catch(report), failures ? Math.max(interval, Math.min(5000, 1000 * failures)) : interval);
+    }
   }
   function apply(value) {
     const previousActive = Boolean(history?.active);

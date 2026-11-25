@@ -25,6 +25,15 @@ this, a UTF-8-only read made most text files on that machine unreadable. The
 decoder runs only after the strict UTF-8 path fails, so nothing that is already
 valid UTF-8 is touched, and binary files are still refused.
 
+## golang.org/x/image 0.39.0
+
+Source: https://cs.opensource.google/go/x/image/+/refs/tags/v0.39.0
+
+Copyright 2009 The Go Authors. Licensed under the BSD 3-Clause License; see
+[licenses/golang-x-image-BSD.txt](licenses/golang-x-image-BSD.txt). The `webp`
+decoder in `internal/media` validates and converts supported WebP uploads into
+PNG so they can be displayed in the App and sent as native model image inputs.
+
 ## DeepSeek Harness — design tokens
 
 Upstream: `@deepseek-ai/dsh-client-ui-theme`, source path

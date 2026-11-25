@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -406,7 +407,68 @@ type incomingMessage struct {
 	MessageScene struct {
 		Ext []string `json:"ext"`
 	} `json:"message_scene"`
-	Attachments []channel.Attachment `json:"attachments"`
+	Attachments []json.RawMessage `json:"attachments"`
+	Elements    []json.RawMessage `json:"msg_elements"`
+}
+
+var qqInlineFace = regexp.MustCompile(`(?i)<(?:face|emoji|mface)\b[^>]{0,512}>|\[CQ:face,id=[0-9]{1,8}\]`)
+
+// QQ may send protocol-relative CDN addresses and a mixture of captions,
+// files, and face elements. A bad attachment cannot discard the message.
+func inboundContent(message incomingMessage) (string, []channel.Attachment) {
+	text := strings.TrimSpace(qqInlineFace.ReplaceAllString(message.Content, "[QQ 表情]"))
+	raw := append([]json.RawMessage(nil), message.Attachments...)
+	faces := 0
+	for _, element := range message.Elements {
+		var item struct {
+			Type        json.RawMessage   `json:"type"`
+			Attachments []json.RawMessage `json:"attachments"`
+		}
+		if json.Unmarshal(element, &item) != nil {
+			continue
+		}
+		raw = append(raw, item.Attachments...)
+		var kind string
+		_ = json.Unmarshal(item.Type, &kind)
+		if kind == "face" || kind == "mface" || kind == "emoji" {
+			faces++
+		}
+	}
+	var attachments []channel.Attachment
+	skipped := 0
+	for _, value := range raw {
+		var item channel.Attachment
+		if err := json.Unmarshal(value, &item); err != nil || len(attachments) >= 8 {
+			skipped++
+			continue
+		}
+		item.URL = strings.TrimSpace(item.URL)
+		if strings.HasPrefix(item.URL, "//") {
+			item.URL = "https:" + item.URL
+		}
+		parsed, err := url.Parse(item.URL)
+		if err != nil || parsed.Scheme != "https" || parsed.Hostname() == "" || parsed.User != nil || parsed.Fragment != "" || len(item.URL) > 4096 {
+			skipped++
+			continue
+		}
+		// Absent or implausible dimensions are optional provider hints. The
+		// downloader and image decoder enforce their own byte and pixel limits.
+		if item.Size < 0 || item.Size > 32<<20 || item.Width < 0 || item.Height < 0 {
+			skipped++
+			continue
+		}
+		attachments = append(attachments, item)
+	}
+	if faces > 0 && !strings.Contains(text, "[QQ 表情]") {
+		text = strings.TrimSpace(text + " [QQ 表情]")
+	}
+	if skipped > 0 {
+		text = strings.TrimSpace(text + " [有 QQ 附件缺少可用下载地址或超出接收限制]")
+	}
+	if text == "" && len(attachments) > 0 {
+		text = "[发送了 QQ 附件]"
+	}
+	return text, attachments
 }
 
 func extValue(values []string, key string) string {
@@ -434,18 +496,7 @@ func (c *Client) normalize(event payload) (channel.Envelope, error) {
 	if conversationID == "" || senderID == "" {
 		return channel.Envelope{}, ErrInvalidEvent
 	}
-	text := strings.TrimSpace(message.Content)
-	if text == "" && len(message.Attachments) > 0 {
-		parts := make([]string, 0, len(message.Attachments))
-		for _, item := range message.Attachments {
-			label := strings.TrimSpace(item.Filename)
-			if label == "" {
-				label = item.ContentType
-			}
-			parts = append(parts, "[附件："+label+"]")
-		}
-		text = strings.Join(parts, "\n")
-	}
+	text, attachments := inboundContent(message)
 	if text == "" || len(text) > 64<<10 {
 		return channel.Envelope{}, ErrInvalidEvent
 	}
@@ -458,7 +509,7 @@ func (c *Client) normalize(event payload) (channel.Envelope, error) {
 	if parsed, parseErr := time.Parse(time.RFC3339, message.Timestamp); parseErr == nil {
 		occurred = parsed.UTC()
 	}
-	envelope := channel.Envelope{Version: channel.ContractVersion, EventID: requestID, Platform: "qq-official", Adapter: "gateway-v2", AccountID: c.cfg.AppID, Conversation: channel.Conversation{Kind: kind, ID: conversationID}, Sender: channel.Sender{ID: senderID, DisplayName: strings.TrimSpace(message.Author.Username)}, Message: channel.Message{ID: message.ID, Text: text, ReplyTo: extValue(message.MessageScene.Ext, "ref_msg_idx"), Attachments: message.Attachments}, OccurredAt: occurred, ReceivedAt: c.now(), PayloadSHA256: channel.PayloadDigest(event.D)}
+	envelope := channel.Envelope{Version: channel.ContractVersion, EventID: requestID, Platform: "qq-official", Adapter: "gateway-v2", AccountID: c.cfg.AppID, Conversation: channel.Conversation{Kind: kind, ID: conversationID}, Sender: channel.Sender{ID: senderID, DisplayName: strings.TrimSpace(message.Author.Username)}, Message: channel.Message{ID: message.ID, Text: text, ReplyTo: extValue(message.MessageScene.Ext, "ref_msg_idx"), Attachments: attachments}, OccurredAt: occurred, ReceivedAt: c.now(), PayloadSHA256: channel.PayloadDigest(event.D)}
 	if err := envelope.Validate(); err != nil {
 		return channel.Envelope{}, err
 	}

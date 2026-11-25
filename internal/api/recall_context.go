@@ -53,6 +53,10 @@ func (s *Server) recallReference(role, query, preferences string, activity *comp
 }
 
 func (s *Server) recallReferenceContext(ctx context.Context, role, query, preferences string, activity *companion.Activity, activityState map[string]any) (string, error) {
+	return s.recallReferenceWithBaseline(ctx, role, query, preferences, activity, activityState, nil)
+}
+
+func (s *Server) recallReferenceWithBaseline(ctx context.Context, role, query, preferences string, activity *companion.Activity, activityState map[string]any, baseline []memory.Entry) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -76,6 +80,18 @@ func (s *Server) recallReferenceContext(ctx context.Context, role, query, prefer
 		related, err = s.relatedActivities(role, query, boundID, 2)
 		if err != nil {
 			return "", err
+		}
+	}
+	for _, entry := range baseline {
+		if len(facts) >= 4 {
+			break
+		}
+		found := false
+		for _, fact := range facts {
+			found = found || fact.ID == entry.ID
+		}
+		if !found {
+			facts = append(facts, entry)
 		}
 	}
 	for i := range facts {

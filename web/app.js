@@ -89,7 +89,7 @@ const reasoningViews = new Map();
 Object.assign(state, { roles: [], roleID: 'companion', memories: [], memoryFilter: 'pending', memoryEditing: null, roleDocument: null, summary: null, compacting: false, replyRhythm: 'default' });
 const deviceAuth = createDeviceAuth({state,onToken:token=>connect(token,'device'),onError:handleError,adminRequest:json});
 const modelConfigs = createModelConfigs({state,json,onChanged:()=>chatInput.refreshOptions(),onError:handleError});
-const channelUI = createChannelSettings({json,getSessions:()=>state.sessions,getCurrent:()=>state.current,onLinked:refreshSessions,onError:handleError});
+const channelUI = createChannelSettings({json,getSessions:()=>state.sessions,getCurrent:()=>state.current,onLinked:async()=>{await refreshSessions();await turnUI.refresh();},onError:handleError});
 const hostTools = createHostTools({state,json,onError:handleError});
 const advancedAgentSettings = createAdvancedAgentSettings();
 const taskUI = createTaskUI({ state, request, json, roleName, drawer, onError: handleError });

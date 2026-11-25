@@ -11,6 +11,7 @@ import (
 
 	"chat-agent/internal/companion"
 	"chat-agent/internal/interactive"
+	"chat-agent/internal/memory"
 	"chat-agent/internal/probe"
 	"chat-agent/internal/retrieval"
 )
@@ -136,7 +137,12 @@ func (s *Server) turnContext(sess *probe.Session, role, sessionID, query string)
 			return probe.StepState{}, err
 		}
 		floor := max(lifeFloor, activityFloor)
-		recallQuery := continuityRecallQuery(query, sess.Messages(), floor, historyEnd)
+		messages := sess.Messages()
+		recallQuery := continuityRecallQuery(query, messages, floor, historyEnd)
+		var baseline []memory.Entry
+		if channel, ok := s.sessionChannel(sessionID); ok && channel.Platform == "qq-official" && channel.ConversationKind == "private" {
+			baseline = approved[:min(len(approved), 2)]
+		}
 		// Include review status/revisions and bindings so corrections, forgetting,
 		// pausing or switching activities cannot resurrect an initial snapshot.
 		signature, err := json.Marshal([]any{preferences, activity, approved, visible, activities, floor})
@@ -154,7 +160,7 @@ func (s *Server) turnContext(sess *probe.Session, role, sessionID, query string)
 					active = nil
 				}
 			}
-			text, err := s.recallReferenceContext(ctx, role, recallQuery, prefJSON, active, activityState)
+			text, err := s.recallReferenceWithBaseline(ctx, role, recallQuery, prefJSON, active, activityState, baseline)
 			if err != nil {
 				return probe.StepState{}, err
 			}

@@ -112,7 +112,7 @@ func (s *Store) Add(role, name, mediaType string, raw []byte) (Document, error) 
 	if !storage.ValidID(role) || name == "." || name == "" || len(name) > 180 || len(raw) == 0 || len(raw) > sourceLimit {
 		return Document{}, errors.New("invalid courseware upload")
 	}
-	text, err := extract(name, mediaType, raw)
+	text, err := ExtractText(name, raw)
 	if err != nil {
 		return Document{}, err
 	}
@@ -251,10 +251,14 @@ func (s *Store) save(next snapshot) error {
 	return nil
 }
 
-func extract(name, mediaType string, raw []byte) (string, error) {
+// ExtractText is the bounded document parser used for both uploads and chat attachments.
+func ExtractText(name string, raw []byte) (string, error) {
+	if len(raw) == 0 || len(raw) > sourceLimit {
+		return "", errors.New("文件为空或超过大小限制")
+	}
 	ext := strings.ToLower(filepath.Ext(name))
 	switch ext {
-	case ".txt", ".md", ".markdown", ".csv":
+	case ".txt", ".md", ".markdown", ".csv", ".json", ".log":
 		if !utf8.Valid(raw) {
 			return "", errors.New("文本课件必须是 UTF-8")
 		}

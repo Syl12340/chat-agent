@@ -231,6 +231,10 @@ func (s *Server) linkChannelSession(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "渠道会话参数无效")
 		return
 	}
+	if s.qqofficial != nil {
+		s.qqofficial.ingress.Lock()
+		defer s.qqofficial.ingress.Unlock()
+	}
 	source, err := s.session(input.ChannelSessionID)
 	if err != nil || source.RoleID() != target.RoleID() {
 		fail(w, http.StatusConflict, "两个会话必须存在并使用同一助手")
@@ -245,6 +249,7 @@ func (s *Server) linkChannelSession(w http.ResponseWriter, r *http.Request) {
 	}
 	var mapping channelstore.Mapping
 	var store *channelstore.Store
+	ok = false
 	if s.qqofficial != nil {
 		mapping, ok = s.qqofficial.store.MappingForSession(input.ChannelSessionID)
 		if ok {
@@ -279,6 +284,10 @@ func (s *Server) linkChannelSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if mapping.Key.ConversationKind == "group" && len(target.Messages()) > 0 {
 		fail(w, http.StatusConflict, "群聊只能关联到没有私人历史的新会话")
+		return
+	}
+	if mapping.Key.ConversationKind == "private" && s.publicChannelSession(targetID) {
+		fail(w, http.StatusConflict, "私聊只能关联到私人会话")
 		return
 	}
 	if _, occupied := s.sessionChannel(targetID); occupied {

@@ -11,6 +11,8 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/draw"
+	_ "image/gif"
 	"image/jpeg"
 	"image/png"
 	"io"
@@ -20,6 +22,7 @@ import (
 	"sync"
 
 	"chat-agent/internal/storage"
+	_ "golang.org/x/image/webp"
 )
 
 const (
@@ -380,14 +383,26 @@ func normalize(reader io.Reader) (Image, []byte, error) {
 		return Image{}, nil, ErrLimit
 	}
 	config, format, err := image.DecodeConfig(bytes.NewReader(data))
-	if err != nil || format != "png" && format != "jpeg" {
+	if err != nil || format != "png" && format != "jpeg" && format != "gif" && format != "webp" {
 		return Image{}, nil, ErrInvalid
 	}
 	if config.Width < 1 || config.Height < 1 || config.Width > MaxDimension || config.Height > MaxDimension || int64(config.Width)*int64(config.Height) > MaxPixels {
 		return Image{}, nil, ErrLimit
 	}
 	picture, decoded, err := image.Decode(bytes.NewReader(data))
-	if err != nil || decoded != format || picture.Bounds().Dx() != config.Width || picture.Bounds().Dy() != config.Height {
+	if err != nil || decoded != format {
+		return Image{}, nil, ErrInvalid
+	}
+	canvas := image.Rect(0, 0, config.Width, config.Height)
+	if format == "gif" && picture.Bounds() != canvas {
+		if !picture.Bounds().In(canvas) {
+			return Image{}, nil, ErrInvalid
+		}
+		frame := image.NewRGBA(canvas)
+		draw.Draw(frame, picture.Bounds(), picture, picture.Bounds().Min, draw.Src)
+		picture = frame
+	}
+	if picture.Bounds().Size() != canvas.Size() {
 		return Image{}, nil, ErrInvalid
 	}
 	var output limitedBuffer
