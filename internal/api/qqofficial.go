@@ -79,6 +79,10 @@ func newQQOfficialIntegration(server *Server, cfg QQOfficialConfig, dir string) 
 	}
 	go integration.run()
 	integration.signal()
+	// Only a failure was ever logged, so a healthy channel and a channel that was
+	// never enabled looked identical in the journal: both silent. Say which one it
+	// is, once, with the settings that decide what it will accept.
+	log.Printf("QQ official channel ready (app=%s role=%s groups=%t group_all=%t)", cfg.AppID, cfg.RoleID, cfg.AllowGroups, cfg.AllowGroupAll)
 	return integration, nil
 }
 
