@@ -24,16 +24,25 @@ func (s *Server) approveCall(w http.ResponseWriter, r *http.Request) {
 		Session string `json:"session"`
 		Tool    string `json:"tool"`
 		Digest  string `json:"digest"`
+		ID      string `json:"id,omitempty"`
 	}
 	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 	d.DisallowUnknownFields()
-	if err := d.Decode(&body); err != nil || !validID(body.Session) || !validToolName(body.Tool) || !validApprovalDigest(body.Digest) {
+	if err := d.Decode(&body); err != nil || !validID(body.Session) || !validToolName(body.Tool) || !validApprovalDigest(body.Digest) || (body.ID != "" && !validID(body.ID)) {
 		fail(w, 400, "请求格式不正确")
 		return
 	}
 	sess, err := s.session(body.Session)
 	if err != nil {
 		fail(w, 404, "会话不存在")
+		return
+	}
+	if body.ID != "" {
+		if err := s.approvals.ApprovePending(body.ID, body.Session, sess.RoleID(), body.Tool, body.Digest); err != nil {
+			fail(w, 409, "此调用已结束或不在当前会话，请查看执行状态")
+			return
+		}
+		writeJSON(w, 200, map[string]string{"id": body.ID, "status": "approved"})
 		return
 	}
 	ticket, err := s.approvals.Issue(body.Session, sess.RoleID(), body.Tool, body.Digest)

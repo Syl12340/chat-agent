@@ -39,11 +39,13 @@ func finishToolView(tool *turns.ToolEvent, result *probe.ToolResult, elapsed tim
 		tool.Output = strings.ToValidUTF8(tool.Output[:4096], "") + "…"
 	}
 	tool.Error = result.Error
+	tool.Approval = nil
 	if result.Error != "" {
 		tool.Status = "unfinished"
 	}
 	if result.Code == "DECISION_NEEDS_APPROVAL" && result.Decision != nil && result.Decision.Approval != nil {
 		tool.Status = "approval_required"
-		tool.Approval = &probe.ApprovalRequest{Tool: result.Decision.Approval.Tool, Digest: result.Decision.Approval.Digest}
+		approval := *result.Decision.Approval
+		tool.Approval = &approval
 	}
 }

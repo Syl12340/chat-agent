@@ -1,6 +1,7 @@
 package probe
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -35,6 +36,7 @@ var (
 // Digest is computed by the host from the canonical arguments. The model cannot
 // talk another operation onto the same digest by reordering or respelling JSON.
 type ApprovalRequest struct {
+	ID     string `json:"id,omitempty"`
 	Tool   string `json:"tool"`
 	Digest string `json:"digest"`
 	Reason string `json:"reason,omitempty"`
@@ -69,6 +71,12 @@ type deniedApproval struct {
 	at      time.Time
 }
 
+type pendingApproval struct {
+	key      string
+	done     chan struct{}
+	approved bool
+}
+
 // ApprovalStore keeps single-use authorizations in memory. Tickets never
 // survive a restart: an authorization belongs to an interactive moment, and
 // replaying one after a restart would be a guess about consent.
@@ -78,6 +86,7 @@ type ApprovalStore struct {
 	now     func() time.Time
 	tickets map[string]ApprovalTicket
 	denied  map[string]deniedApproval
+	pending map[string]*pendingApproval
 }
 
 func NewApprovalStore() *ApprovalStore {
@@ -86,7 +95,50 @@ func NewApprovalStore() *ApprovalStore {
 		now:     time.Now,
 		tickets: map[string]ApprovalTicket{},
 		denied:  map[string]deniedApproval{},
+		pending: map[string]*pendingApproval{},
 	}
+}
+
+// wait pauses one live call. The opaque ID keeps the decision tied to this
+// invocation rather than to a future call with the same arguments.
+func (s *ApprovalStore) wait(ctx context.Context, execution ToolExecution, request ApprovalRequest, notify func(ApprovalRequest)) (string, error) {
+	if s == nil {
+		return "", ErrApprovalUnavailable
+	}
+	id, err := newApprovalID()
+	if err != nil {
+		return "", err
+	}
+	request.ID = id
+	pending := &pendingApproval{key: approvalKey(execution.Step.SessionID, execution.Step.RoleID, request.Tool, request.Digest), done: make(chan struct{})}
+	s.mu.Lock()
+	s.pending[id] = pending
+	s.mu.Unlock()
+	defer func() { s.mu.Lock(); delete(s.pending, id); s.mu.Unlock() }()
+	notify(request)
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case <-pending.done:
+		return id, ctx.Err()
+	}
+}
+
+func (s *ApprovalStore) ApprovePending(id, sessionID, roleID, tool, digest string) error {
+	if s == nil {
+		return ErrApprovalUnavailable
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	pending := s.pending[id]
+	if pending == nil || pending.key != approvalKey(sessionID, roleID, tool, digest) {
+		return ErrApprovalUnknown
+	}
+	if !pending.approved {
+		pending.approved = true
+		close(pending.done)
+	}
+	return nil
 }
 
 func approvalKey(sessionID, roleID, tool, digest string) string {

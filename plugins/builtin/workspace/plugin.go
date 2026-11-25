@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -39,6 +40,7 @@ type Plugin struct {
 	path    string
 	root    *os.Root
 	actions map[string][]string
+	writeMu sync.Mutex
 }
 
 func New(path, dataDir, actionsJSON string) (*Plugin, error) {
@@ -116,10 +118,11 @@ func (p *Plugin) Stop(context.Context) error {
 
 func (p *Plugin) Register(registry *pluginapi.Registry) error {
 	path := `{"type":"object","properties":{"workspace":{"type":"string","enum":["server"]},"path":{"type":"string","maxLength":256}},"required":["workspace","path"],"additionalProperties":false}`
+	read := `{"type":"object","properties":{"workspace":{"type":"string","enum":["server"]},"path":{"type":"string","maxLength":256},"offset":{"type":"integer","minimum":0,"maximum":262144},"expected_sha256":{"type":"string","minLength":64,"maxLength":64}},"required":["workspace","path"],"additionalProperties":false}`
 	search := `{"type":"object","properties":{"workspace":{"type":"string","enum":["server"]},"query":{"type":"string","minLength":1,"maxLength":128}},"required":["workspace","query"],"additionalProperties":false}`
 	tools := []pluginapi.Tool{
 		{Name: "workspace_list", Description: "List the approved server workspace. Use path . for its root.", Parameters: json.RawMessage(path), Handler: p.list},
-		{Name: "workspace_read", Description: "Read a UTF-8 text file in the approved server workspace. The reply ends with the file's sha256, which workspace_write requires; long files come back in pages marked truncated with a next_offset to resume from.", Parameters: json.RawMessage(path), Handler: p.read},
+		{Name: "workspace_read", Description: "Read a UTF-8 text file in the approved workspace. For a truncated result, pass next_offset as offset and the first page's sha256 as expected_sha256 to continue. The digest covers the full file and is also accepted by workspace_write.", Parameters: json.RawMessage(read), Handler: p.read},
 		{Name: "workspace_search", Description: "Find literal text in small files in the approved server workspace.", Parameters: json.RawMessage(search), Handler: p.search},
 		{Name: "workspace_write", Kind: "edit", Description: "Create or replace one bounded UTF-8 file in the approved workspace. The expected SHA-256 prevents overwriting a file that changed since it was read.", Usage: "read an existing file first and pass its exact SHA-256; use expected_sha256=missing only for a new path. Write only what the user requested and verify important changes by reading them back.", Parameters: json.RawMessage(`{"type":"object","properties":{"workspace":{"type":"string","enum":["server"]},"path":{"type":"string","maxLength":256},"content":{"type":"string","maxLength":262144},"expected_sha256":{"type":"string","maxLength":64}},"required":["workspace","path","content","expected_sha256"],"additionalProperties":false}`), Decision: string(probe.DecisionRequired), Risk: string(probe.RiskHigh), ApprovalRequired: true, Handler: p.write},
 		{Name: "workspace_share", Kind: "read", Description: "Offer one regular file from the approved workspace to the user as an authenticated, same-session download. The receipt includes the exact size and SHA-256; never expose an absolute host path.", Usage: "use after creating or locating the exact file the user asked to receive; share the file itself instead of pasting binary data or a host path.", Parameters: json.RawMessage(path), Handler: p.share},
@@ -249,6 +252,9 @@ func (p *Plugin) readWhole(path string) ([]byte, error) {
 		return nil, errors.New("workspace file unavailable")
 	}
 	defer f.Close()
+	if opened, err := f.Stat(); err != nil || !opened.Mode().IsRegular() {
+		return nil, errors.New("workspace file is not regular")
+	}
 	b, err := io.ReadAll(io.LimitReader(f, writeLimit+1))
 	if err != nil || len(b) > writeLimit || !utf8.Valid(b) || strings.ContainsRune(string(b), 0) {
 		return nil, errors.New("workspace file is not bounded UTF-8 text")
@@ -258,9 +264,12 @@ func (p *Plugin) readWhole(path string) ([]byte, error) {
 
 func (p *Plugin) read(ctx context.Context, raw json.RawMessage) (pluginapi.Result, error) {
 	var args struct {
-		Offset int `json:"offset"`
+		Offset         int    `json:"offset"`
+		ExpectedSHA256 string `json:"expected_sha256"`
 	}
-	_ = json.Unmarshal(raw, &args)
+	if err := json.Unmarshal(raw, &args); err != nil {
+		return pluginapi.Result{}, errors.New("invalid workspace read arguments")
+	}
 	path, err := pathArg(raw)
 	if err != nil {
 		return pluginapi.Result{}, err
@@ -273,8 +282,8 @@ func (p *Plugin) read(ctx context.Context, raw json.RawMessage) (pluginapi.Resul
 		return pluginapi.Result{}, err
 	}
 	total := len(b)
-	if args.Offset < 0 || args.Offset > total {
-		return pluginapi.Result{}, errors.New("workspace read offset is outside the file")
+	if args.Offset < 0 || args.Offset > total || (args.Offset < total && !utf8.RuneStart(b[args.Offset])) {
+		return pluginapi.Result{}, errors.New("workspace read offset is not a UTF-8 boundary inside the file")
 	}
 	end := min(args.Offset+limit, total)
 	// Never cut a multi-byte character in half; the caller resumes from a rune
@@ -283,6 +292,9 @@ func (p *Plugin) read(ctx context.Context, raw json.RawMessage) (pluginapi.Resul
 		end--
 	}
 	digest := sha256.Sum256(b)
+	if args.ExpectedSHA256 != "" && args.ExpectedSHA256 != hex.EncodeToString(digest[:]) {
+		return pluginapi.Result{}, errors.New("workspace file changed; restart reading at offset 0")
+	}
 	if end < total {
 		return pluginapi.Result{Output: fmt.Sprintf(
 			"%s\n\n---\ntruncated: true\noffset: %d\nshown_bytes: %d\ntotal_bytes: %d\nnext_offset: %d\nsha256: %x",
@@ -304,10 +316,12 @@ func (p *Plugin) write(ctx context.Context, raw json.RawMessage) (pluginapi.Resu
 	if json.Unmarshal(raw, &args) != nil || args.Workspace != "server" || args.Path == "." || !allowedPath(args.Path) || len(args.Content) > writeLimit || !utf8.ValidString(args.Content) {
 		return pluginapi.Result{}, errors.New("invalid workspace write")
 	}
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return pluginapi.Result{}, err
 	}
-	info, statErr := p.root.Stat(args.Path)
+	info, statErr := p.root.Lstat(args.Path)
 	if args.ExpectedSHA256 == "missing" {
 		if statErr == nil || !errors.Is(statErr, os.ErrNotExist) {
 			return pluginapi.Result{}, errors.New("workspace path already exists or cannot be verified")
@@ -319,7 +333,7 @@ func (p *Plugin) write(ctx context.Context, raw json.RawMessage) (pluginapi.Resu
 		if _, err := hex.DecodeString(args.ExpectedSHA256); err != nil {
 			return pluginapi.Result{}, errors.New("workspace expected hash is invalid")
 		}
-		current, readErr := p.root.ReadFile(args.Path)
+		current, readErr := p.readWhole(args.Path)
 		if readErr != nil {
 			return pluginapi.Result{}, errors.New("workspace file cannot be verified")
 		}
@@ -354,8 +368,21 @@ func (p *Plugin) write(ctx context.Context, raw json.RawMessage) (pluginapi.Resu
 	if err != nil {
 		return pluginapi.Result{}, errors.New("workspace write failed")
 	}
-	if err = p.root.Rename(temporary, args.Path); err != nil {
-		return pluginapi.Result{}, errors.New("workspace atomic replace failed")
+	if err := ctx.Err(); err != nil {
+		return pluginapi.Result{}, err
+	}
+	if args.ExpectedSHA256 == "missing" {
+		if err = p.root.Link(temporary, args.Path); err != nil {
+			return pluginapi.Result{}, errors.New("workspace exclusive create failed; verify the target path before retrying")
+		}
+	} else {
+		current, readErr := p.readWhole(args.Path)
+		if readErr != nil || fmt.Sprintf("%x", sha256.Sum256(current)) != args.ExpectedSHA256 {
+			return pluginapi.Result{}, errors.New("workspace file changed; read it again before writing")
+		}
+		if err = p.root.Rename(temporary, args.Path); err != nil {
+			return pluginapi.Result{}, errors.New("workspace atomic replace failed")
+		}
 	}
 	digest := sha256.Sum256([]byte(args.Content))
 	return encoded(map[string]any{"path": args.Path, "bytes": len(args.Content), "sha256": fmt.Sprintf("%x", digest[:]), "status": "written"})

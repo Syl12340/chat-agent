@@ -80,19 +80,23 @@ func (e *ToolExecutor) gateDecision(ctx context.Context, execution ToolExecution
 func (e *ToolExecutor) requireHumanApproval(execution ToolExecution, record *DecisionRecord) (*DecisionRecord, error) {
 	digest := ApprovalDigest(execution.Name, execution.Arguments)
 	roleID, sessionID := execution.Step.RoleID, execution.Step.SessionID
-	if ticket, ok := e.approvals.Consume(sessionID, roleID, execution.Name, digest); ok {
-		record.Outcome = "user_override"
-		// Approval is the request to approve, not a record of having approved.
-		// Leaving it set makes the client offer the button again for a call that
-		// already ran, and that second click can only 409.
-		record.Approval = nil
-		record.ApprovalID = ticket.ID
-		return record, nil
+	if !execution.interactiveApproval {
+		if ticket, ok := e.approvals.Consume(sessionID, roleID, execution.Name, digest); ok {
+			record.Outcome = "user_override"
+			// Approval is the request to approve, not a record of having approved.
+			// Leaving it set makes the client offer the button again for a call that
+			// already ran, and that second click can only 409.
+			record.Approval = nil
+			record.ApprovalID = ticket.ID
+			return record, nil
+		}
 	}
 	const reason = "该主机操作被配置为必须由用户逐次批准"
 	record.Outcome = "needs_approval"
 	record.Approval = &ApprovalRequest{Tool: execution.Name, Digest: digest, Reason: reason}
-	e.approvals.NoteDenied(sessionID, roleID, execution.Name, digest, reason)
+	if !execution.interactiveApproval {
+		e.approvals.NoteDenied(sessionID, roleID, execution.Name, digest, reason)
+	}
 	return record, fmt.Errorf("%w（原因：%s）", ErrNeedsApproval, reason)
 }
 
@@ -111,12 +115,14 @@ func (e *ToolExecutor) degradedRecord(execution ToolExecution, record *DecisionR
 	}
 	digest := ApprovalDigest(execution.Name, execution.Arguments)
 	roleID, sessionID := execution.Step.RoleID, execution.Step.SessionID
-	if ticket, ok := e.approvals.Consume(sessionID, roleID, execution.Name, digest); ok {
-		record.Outcome = "user_override"
-		// See requireHumanApproval: the approved call must not look pending.
-		record.Approval = nil
-		record.ApprovalID = ticket.ID
-		return record, nil
+	if !execution.interactiveApproval {
+		if ticket, ok := e.approvals.Consume(sessionID, roleID, execution.Name, digest); ok {
+			record.Outcome = "user_override"
+			// See requireHumanApproval: the approved call must not look pending.
+			record.Approval = nil
+			record.ApprovalID = ticket.ID
+			return record, nil
+		}
 	}
 	reason := record.Reason
 	if reason == "" {
@@ -126,7 +132,9 @@ func (e *ToolExecutor) degradedRecord(execution ToolExecution, record *DecisionR
 	record.Approval = &ApprovalRequest{Tool: execution.Name, Digest: digest, Reason: reason}
 	// Remember the refusal so a later confirmation can be matched to this call.
 	// The model cannot issue this record; only the executor can.
-	e.approvals.NoteDenied(sessionID, roleID, execution.Name, digest, reason)
+	if !execution.interactiveApproval {
+		e.approvals.NoteDenied(sessionID, roleID, execution.Name, digest, reason)
+	}
 	return record, fmt.Errorf("%w（原因：%s）", ErrNeedsApproval, reason)
 }
 
@@ -152,7 +160,7 @@ func decisionSummary(record *DecisionRecord) string {
 		return "决策服务不可用（" + record.Reason + "）。这项操作风险较高，没有执行。" +
 			"请向用户说明具体风险和影响范围；用户在界面上确认执行后，才可以原样重试这一次调用。"
 	case "user_override":
-		return "决策服务不可用，本次执行依据用户在界面上的明确授权放行，已记录单据编号。"
+		return "本次执行已获用户在界面上的明确确认，已记录批准编号。"
 	case "refused":
 		message := "决策检查未通过"
 		if record.Reason != "" {

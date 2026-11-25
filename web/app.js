@@ -689,9 +689,9 @@ function toolApproval(log, approval) {
       if (!pending || button.disabled) return;
       button.disabled = true; button.textContent = '正在授权…';
       try {
-        await json('/api/approvals', { method: 'POST', body: JSON.stringify({ session: state.current, tool: pending.tool, digest: pending.digest }) });
+        await json('/api/approvals', { method: 'POST', body: JSON.stringify({ session: state.current, tool: pending.tool, digest: pending.digest, id: pending.id }) });
         button.textContent = '已授权';
-        hint.textContent = '再发一条消息，它才会原样重试这一次调用。';
+        hint.textContent = pending.id ? '已确认，正在继续原操作。' : '发送一条消息以重试这条旧调用。';
       } catch (error) {
         button.disabled = false; button.textContent = '允许这一次';
         hint.textContent = error.message || '授权失败，请稍后再试。';
@@ -702,7 +702,7 @@ function toolApproval(log, approval) {
   }
   log.approvalButton.disabled = false;
   log.approvalButton.textContent = '允许这一次';
-  log.approvalHint.textContent = approval.reason ? `决策服务不可用：${approval.reason}` : '决策服务不可用，需要你确认。';
+  log.approvalHint.textContent = approval.reason || '需要你确认这次操作。';
 }
 
 // Only the provider's reasoning_content is shown. Treat it as inert text:
@@ -1161,13 +1161,25 @@ function renderMemories() {
     const article = document.createElement('article'); article.className = 'memory-entry'; article.dataset.memoryId = entry.id;
     const content = document.createElement('p'); content.className = 'memory-entry-content'; content.textContent = entry.content;
     const footer = document.createElement('div'); footer.className = 'memory-entry-footer';
-    const source = document.createElement('span'); source.className = 'memory-entry-source'; source.textContent = `${entry.source?.startsWith('merged:') ? '合并记录' : entry.source === 'agent' ? '助手提议' : '手动添加'} · ${new Date(entry.updated_at).toLocaleDateString('zh-CN')}`;
+    const messageID = /^agent:(msg_[0-9a-f]+)$/.exec(entry.source || '')?.[1];
+    const source = document.createElement('span'); source.className = 'memory-entry-source'; source.textContent = `${entry.source?.startsWith('merged:') ? '合并记录' : entry.source === 'agent' || messageID ? '助手提议' : '手动添加'} · ${new Date(entry.updated_at).toLocaleDateString('zh-CN')}`;
     const actions = document.createElement('div'); actions.className = 'memory-entry-actions';
     const action = (label, className, handler) => { const button = document.createElement('button'); button.type = 'button'; button.className = className; button.textContent = label; button.addEventListener('click', handler); actions.append(button); };
+    const quote = document.createElement('p'); quote.className = 'memory-entry-content'; quote.hidden = true;
+    if (messageID && entry.session_id) action('查看原话', 'edit', async () => {
+      if (!quote.hidden) { quote.hidden = true; return; }
+      quote.hidden = false;
+      quote.textContent = '正在读取来源…';
+      try {
+        const history = await json(`/api/sessions/${encodeURIComponent(entry.session_id)}/messages`);
+        const message = history.messages?.find(item => item.id === messageID && item.role === 'user');
+        quote.textContent = message ? [...message.content].slice(0, 500).join('') : '原消息已不可用。';
+      } catch { quote.textContent = '原消息已不可用。'; }
+    });
     if (entry.status === 'pending') action('确认使用', 'approve', () => memoryAction(async () => { await json(memoryURL(entry.id), { method: 'PATCH', body: JSON.stringify({ status: 'approved', revision: entry.revision }) }); state.memoryFilter = 'approved'; dialogMessage('memory-message', '已审核，这条事实可以用于当前角色的新请求。'); }));
     action('编辑', 'edit', () => { state.memoryEditing = entry; ui['memory-content'].value = entry.content; ui['memory-status'].value = entry.status; ui['memory-form-label'].textContent = '修改这条记忆'; ui['memory-save'].textContent = '更新记忆'; ui['memory-cancel-edit'].hidden = false; ui['memory-content'].focus(); });
     action('删除', 'delete', () => { if (confirm('删除这条长期记忆？它将不再用于之后的记忆检索，已有聊天记录不会被删除。')) memoryAction(async () => { await json(`${memoryURL(entry.id)}&revision=${entry.revision}`, { method: 'DELETE' }); if (state.memoryEditing?.id === entry.id) resetMemoryForm(); dialogMessage('memory-message', '记忆已删除。'); }); });
-    footer.append(source, actions); article.append(content, footer); ui['memory-list'].append(article);
+    footer.append(source, actions); article.append(content, footer, quote); ui['memory-list'].append(article);
   }
   const count = state.memories.filter(entry => entry.status === 'pending').length; ui['memory-count'].textContent = String(count); ui['memory-count'].hidden = !count;
 }

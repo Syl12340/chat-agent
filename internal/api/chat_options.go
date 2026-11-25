@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"chat-agent/internal/modelconfig"
+	"chat-agent/internal/probe"
 )
 
 // This is an explicit server allowlist. The browser cannot choose an endpoint,
@@ -71,6 +72,21 @@ func (s *Server) chatOptions(w http.ResponseWriter, r *http.Request) {
 type chatSelection struct {
 	Model, WireModel, BaseURL, APIKey, Thinking, Effort, ProviderThinking string
 	Vision                                                                bool
+}
+
+func (s *Server) applyChatSelection(c *probe.Config, choice chatSelection) {
+	// A startup utility model is configured for the startup endpoint. A route to
+	// a different endpoint uses its own selected model for compaction.
+	if strings.TrimRight(choice.BaseURL, "/") != strings.TrimRight(s.config.Agent.BaseURL, "/") {
+		c.UtilityModel = ""
+	}
+	c.Demo = choice.Model == "demo" && choice.BaseURL == "" && choice.APIKey == ""
+	c.Model, c.BaseURL, c.APIKey = choice.WireModel, choice.BaseURL, choice.APIKey
+	c.Thinking, c.ReasoningEffort = choice.ProviderThinking, choice.Effort
+	c.Timeout = s.chatTimeout(choice)
+	if choice.Thinking != "off" {
+		c.MaxOutputTokens = s.config.ThinkingMaxOutput
+	}
 }
 
 func (s *Server) selectChat(model, thinking string) (chatSelection, error) {

@@ -253,18 +253,10 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 			}
 			if err == nil {
 				agent, err = s.agentForTurn(sess, query, id, func(c *probe.Config) {
-					c.Demo = choice.Model == "demo" && choice.BaseURL == "" && choice.APIKey == ""
-					c.Model = choice.WireModel
-					c.BaseURL = choice.BaseURL
-					c.APIKey = choice.APIKey
-					c.Thinking = choice.ProviderThinking
-					c.ReasoningEffort = choice.Effort
-					c.Timeout = s.chatTimeout(choice)
-					if choice.Thinking != "off" {
-						c.MaxOutputTokens = s.config.ThinkingMaxOutput
-					}
+					s.applyChatSelection(c, choice)
 					c.RequestID = root
 					c.Recorder = recorder
+					c.InteractiveApproval = batch[0].Origin.Kind == "" && !s.publicChannelSession(id)
 				})
 				if err != nil {
 					// Assembly failures (role, memory, tools) look identical from

@@ -55,8 +55,8 @@ func TestRoleMemoryLifecycle(t *testing.T) {
 					t.Errorf("approved/corrected memory not returned: %s", last.Content)
 				}
 			}
-			if last.ToolCallID == "call-p2-memory_write" && !strings.Contains(last.Content, `"status":"pending"`) {
-				t.Error("model write bypassed review")
+			if last.ToolCallID == "call-p2-memory_write" && (!strings.Contains(last.Content, `"status":"pending"`) || !strings.Contains(last.Content, `"source":"agent:msg_`)) {
+				t.Error("model write did not keep pending status and the exact source message")
 			}
 			if last.ToolCallID == "call-p2-skill_load" && !strings.Contains(last.Content, "记忆整理") {
 				t.Error("role skill not loaded")
@@ -67,7 +67,7 @@ func TestRoleMemoryLifecycle(t *testing.T) {
 		}
 		switch last.Content {
 		case "提议记忆":
-			tool("memory_write", `{"content":"用户喜欢乌龙茶"}`)
+			tool("memory_write", `{"content":"用户喜欢乌龙茶","evidence":"提议记忆"}`)
 		case "加载记忆整理技能":
 			tool("skill_load", `{"name":"memory-review"}`)
 		default:

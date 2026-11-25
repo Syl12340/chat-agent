@@ -5,6 +5,7 @@ package sandbox
 import (
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -212,7 +213,16 @@ func Run(policy Policy, argv []string) error {
 	if err != nil {
 		return fmt.Errorf("找不到命令 %q：%w", argv[0], err)
 	}
-	return syscall.Exec(binary, argv, []string{"PATH=/usr/bin:/bin:/usr/local/bin", "LANG=C.UTF-8", "HOME=/nonexistent"})
+	env := []string{"PATH=/usr/bin:/bin:/usr/local/bin", "LANG=C.UTF-8", "HOME=/nonexistent"}
+	if tmp := os.Getenv("TMPDIR"); filepath.IsAbs(tmp) {
+		for _, writable := range policy.Writable {
+			if filepath.Clean(writable) == filepath.Clean(tmp) {
+				env = append(env, "TMPDIR="+tmp)
+				break
+			}
+		}
+	}
+	return syscall.Exec(binary, argv, env)
 }
 
 // ParseArgs reads the internal re-exec form:

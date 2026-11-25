@@ -273,16 +273,12 @@ func (s *Server) agent(sess *probe.Session, query, sessionID string, modes ...st
 	// Manual summaries and other server-initiated work run through here with no
 	// model in hand, so they inherited the startup configuration even after the
 	// person switched models. Follow the conversation instead.
-	var follow *chatSelection
-	if last := s.turns.LastModel(sessionID); last != "" {
-		if choice, selErr := s.selectChat(last, ""); selErr == nil {
-			follow = &choice
-		}
+	choice, err := s.selectChat(s.turns.LastModel(sessionID), "")
+	if err != nil {
+		return nil, err
 	}
 	return s.agentForTurn(sess, []string{query}, sessionID, func(c *probe.Config) {
-		if follow != nil {
-			c.Model, c.BaseURL, c.APIKey = follow.WireModel, follow.BaseURL, follow.APIKey
-		}
+		s.applyChatSelection(c, choice)
 	})
 }
 

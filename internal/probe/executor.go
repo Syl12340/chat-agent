@@ -26,6 +26,10 @@ type ToolExecutor struct {
 func (e *ToolExecutor) SetDecisionGate(gate DecisionGate) { e.gate = gate }
 
 func (e *ToolExecutor) Execute(ctx context.Context, set *ToolSet, call ToolCall, recorder RunRecorder, step int) (result ToolResult, recordErr error) {
+	return e.execute(ctx, set, call, recorder, step, nil)
+}
+
+func (e *ToolExecutor) execute(ctx context.Context, set *ToolSet, call ToolCall, recorder RunRecorder, step int, notifyApproval func(ToolResult)) (result ToolResult, recordErr error) {
 	started := time.Now()
 	operationID := ""
 	dispatched := false
@@ -65,17 +69,9 @@ func (e *ToolExecutor) Execute(ctx context.Context, set *ToolSet, call ToolCall,
 			return toolFailure("INVALID_ARGUMENTS", err.Error()), nil
 		}
 	}
-	invocation := ToolExecution{Step: set.step, CallID: call.ID, Name: call.Function.Name, Arguments: canonical}
-	guards := append(append([]ToolGuard(nil), e.guards...), tool.definition.Guard)
-	for _, guard := range guards {
-		if guard == nil {
-			continue
-		}
-		copy := invocation
-		copy.Arguments = append(json.RawMessage(nil), canonical...)
-		if err := guard(ctx, copy); err != nil {
-			return toolFailure("TOOL_DENIED", err.Error()), nil
-		}
+	invocation := ToolExecution{Step: set.step, CallID: call.ID, Name: call.Function.Name, Arguments: canonical, interactiveApproval: notifyApproval != nil}
+	if err := e.checkGuards(ctx, tool.definition, invocation); err != nil {
+		return toolFailure("TOOL_DENIED", err.Error()), nil
 	}
 	if ctx.Err() != nil {
 		return toolFailure("TOOL_CANCELED", "tool canceled before dispatch"), nil
@@ -96,7 +92,27 @@ func (e *ToolExecutor) Execute(ctx context.Context, set *ToolSet, call ToolCall,
 		if record, ok := recorder.(DecisionRecorder); ok && decision != nil {
 			_ = record.DecisionEvaluated(context.WithoutCancel(ctx), step, call, decision)
 		}
-		return failure, nil
+		if code != "DECISION_NEEDS_APPROVAL" || notifyApproval == nil || decision == nil || decision.Approval == nil {
+			return failure, nil
+		}
+		wait, stop := context.WithTimeout(ctx, 90*time.Second)
+		defer stop()
+		id, err := e.approvals.wait(wait, invocation, *decision.Approval, func(request ApprovalRequest) {
+			pending := *decision
+			pending.Approval = &request
+			failure.Decision = &pending
+			notifyApproval(failure)
+		})
+		if err != nil {
+			return toolFailure("APPROVAL_EXPIRED", "确认已结束，工具未执行"), nil
+		}
+		if err := e.checkGuards(ctx, tool.definition, invocation); err != nil {
+			return toolFailure("TOOL_DENIED", err.Error()), nil
+		}
+		if ctx.Err() != nil {
+			return toolFailure("TOOL_CANCELED", "tool canceled before dispatch"), nil
+		}
+		decision.Outcome, decision.ApprovalID, decision.Approval = "user_override", id, nil
 	}
 	if recorder != nil {
 		operationID, err = recorder.ToolStarted(ctx, step, call, canonical, tool.definition.Receipt)
@@ -125,6 +141,20 @@ func (e *ToolExecutor) Execute(ctx context.Context, set *ToolSet, call ToolCall,
 	// A committed successful write stays successful even if cancellation raced
 	// its return. Do not pretend it was rolled back or invite an automatic retry.
 	return result, nil
+}
+
+func (e *ToolExecutor) checkGuards(ctx context.Context, tool Tool, invocation ToolExecution) error {
+	guards := append(append([]ToolGuard(nil), e.guards...), tool.Guard)
+	for _, guard := range guards {
+		if guard != nil {
+			copy := invocation
+			copy.Arguments = append(json.RawMessage(nil), invocation.Arguments...)
+			if err := guard(ctx, copy); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func toolFailure(code, message string) ToolResult { return ToolResult{Error: message, Code: code} }

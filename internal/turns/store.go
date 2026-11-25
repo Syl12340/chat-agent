@@ -195,6 +195,16 @@ func decodeState(id string, b []byte) (*state, bool, error) {
 		default:
 			return nil, false, errors.New("invalid turn status")
 		}
+		if t.Status == "interrupted" {
+			for i := range t.Tools {
+				tool := &t.Tools[i]
+				if tool.Approval != nil && tool.Approval.ID != "" {
+					tool.Approval = nil
+					tool.Status, tool.Error = "unfinished", "服务中断，待确认操作已取消"
+					changed = true
+				}
+			}
+		}
 	}
 	return &st, changed, nil
 }
@@ -375,6 +385,7 @@ func (s *Store) EnqueueWithOrigin(id, rid, content, mode, model, thinking string
 	}
 	return cloneTurn(turn), false, nil
 }
+
 // LastModel reports the model this session last ran a turn with. Paths that do
 // not originate from a client request — proactive care, compaction summaries —
 // have no model in hand and used to fall back to the startup configuration, so a
@@ -388,8 +399,8 @@ func (s *Store) LastModel(id string) string {
 		return ""
 	}
 	for i := len(st.Items) - 1; i >= 0; i-- {
-		if m := st.Items[i].Model; m != "" {
-			return m
+		if t := st.Items[i]; t.Status == "completed" && t.Model != "" {
+			return t.Model
 		}
 	}
 	return ""

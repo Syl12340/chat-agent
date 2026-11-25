@@ -45,10 +45,11 @@ type Tool struct {
 }
 
 type ToolExecution struct {
-	Step      StepContext
-	CallID    string
-	Name      string
-	Arguments json.RawMessage
+	Step                StepContext
+	CallID              string
+	Name                string
+	Arguments           json.RawMessage
+	interactiveApproval bool
 }
 
 type ToolGuard func(context.Context, ToolExecution) error

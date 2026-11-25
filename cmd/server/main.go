@@ -239,6 +239,9 @@ func run() error {
 		}
 		if *workspaceRoot == "" {
 			*workspaceRoot = defaultDesktopWorkspace()
+			if err := os.MkdirAll(*workspaceRoot, 0700); err != nil {
+				return fmt.Errorf("create desktop workspace: %w", err)
+			}
 		}
 		root, err := filepath.Abs(*workspaceRoot)
 		if err != nil {
@@ -473,7 +476,7 @@ func defaultDesktopWorkspace() string {
 	if info, err := os.Stat(documents); err == nil && info.IsDir() {
 		return documents
 	}
-	return home
+	return filepath.Join(home, "ChatAgent Workspace")
 }
 
 func desktopAccessToken(dataDir string) (string, error) {

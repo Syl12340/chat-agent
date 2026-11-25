@@ -108,10 +108,11 @@ func (p *Plugin) writeTool() pluginapi.Tool {
 		Usage:    "use only when the user explicitly asks you to remember something; it proposes a candidate the user still has to approve.",
 		Description: "Propose a memory only when the user explicitly asks. " +
 			"Always creates a pending candidate, never an approved fact.",
-		Parameters: json.RawMessage(`{"type":"object","properties":{"content":{"type":"string"}},"required":["content"],"additionalProperties":false}`),
+		Parameters: json.RawMessage(`{"type":"object","properties":{"content":{"type":"string"},"evidence":{"type":"string","maxLength":8192,"description":"Exact quote from the current user message asking to remember this."}},"required":["content","evidence"],"additionalProperties":false}`),
 		Handler: func(ctx context.Context, data json.RawMessage) (pluginapi.Result, error) {
 			var args struct {
-				Content string `json:"content"`
+				Content  string `json:"content"`
+				Evidence string `json:"evidence"`
 			}
 			if err := json.Unmarshal(data, &args); err != nil {
 				return pluginapi.Result{}, err
@@ -121,7 +122,11 @@ func (p *Plugin) writeTool() pluginapi.Tool {
 				return pluginapi.Result{}, errors.New("工具上下文缺少角色")
 			}
 			session := probe.ToolSession(ctx)
-			entry, err := p.store.Create(role, args.Content, "pending", "agent", session)
+			messageID := probe.ToolEvidenceMessageID(ctx, args.Evidence)
+			if messageID == "" {
+				return pluginapi.Result{}, errors.New("记忆候选需要引用本轮用户的原话")
+			}
+			entry, err := p.store.Create(role, args.Content, "pending", "agent:"+messageID, session)
 			if err != nil {
 				return pluginapi.Result{}, errors.New("记忆候选保存失败")
 			}

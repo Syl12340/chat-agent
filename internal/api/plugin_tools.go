@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -91,6 +92,12 @@ func (s *Server) pluginTools(enable pluginapi.Enablement, sessionID, roleID stri
 			ApprovalRequired: tool.ApprovalRequired,
 			Receipt:          probe.ReceiptCapability(tool.Receipt),
 			Parameters:       tool.Parameters,
+			Guard: func(_ context.Context, _ probe.ToolExecution) error {
+				if !s.hostPluginAllowed(loaded.PluginID, sessionID) {
+					return errors.New("当前会话的工具权限已撤销")
+				}
+				return nil
+			},
 			Execute: func(ctx context.Context, data json.RawMessage) (probe.ToolResult, error) {
 				result, err := tool.Handler(ctx, data)
 				if err != nil {

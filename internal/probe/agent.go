@@ -43,6 +43,7 @@ type Config struct {
 	// Approvals holds host-issued single-use authorizations for calls that were
 	// refused only because no verdict could be obtained. Nil authorizes nothing.
 	Approvals                     *ApprovalStore
+	InteractiveApproval           bool
 	Provider                      ModelProvider
 	ContextBytes, KeepRecentTurns int
 	HistoryFloor                  int
@@ -88,21 +89,35 @@ func ToolContext(ctx context.Context, sessionID, roleID, callID, operationID str
 // quote cannot be laundered through a previous reply and then cited as consent.
 // The returned slice is read-only; a caller must not modify it.
 func ToolInputs(ctx context.Context) []string {
-	inputs, _ := ctx.Value(toolInputsKey{}).([]string)
-	return inputs
+	messages, _ := ctx.Value(toolInputsKey{}).([]Message)
+	texts := make([]string, 0, len(messages))
+	for _, message := range messages {
+		texts = append(texts, message.Content)
+	}
+	return texts
+}
+
+func ToolEvidenceMessageID(ctx context.Context, quote string) string {
+	messages, _ := ctx.Value(toolInputsKey{}).([]Message)
+	for _, message := range messages {
+		if message.ID != "" && TurnHasEvidence([]string{message.Content}, quote) {
+			return message.ID
+		}
+	}
+	return ""
 }
 
 // WithToolInputs adds this turn's user text. The run wraps its context once
 // before the first model call, so every tool call in the turn sees the same
 // inputs and a retry cannot widen them.
 func WithToolInputs(ctx context.Context, inputs []Message) context.Context {
-	texts := make([]string, 0, len(inputs))
+	messages := make([]Message, 0, len(inputs))
 	for _, input := range inputs {
 		if input.Role == "user" && input.Content != "" {
-			texts = append(texts, input.Content)
+			messages = append(messages, Message{ID: input.ID, Content: input.Content})
 		}
 	}
-	return context.WithValue(ctx, toolInputsKey{}, texts)
+	return context.WithValue(ctx, toolInputsKey{}, messages)
 }
 
 // ToolCallID lets a tool scope an idempotency key to the current invocation.
@@ -311,6 +326,7 @@ func RunMessages(ctx context.Context, a *Agent, timeout time.Duration, inputs []
 	if err := a.session.append(inputs...); err != nil {
 		return err
 	}
+	toolCtx := WithToolInputs(ctx, inputs)
 	if a.config.ContextBytes > 0 {
 		// Size the same message projection a provider receives. Display-only
 		// final reasoning remains in the journal but must not force an early
@@ -389,7 +405,11 @@ func RunMessages(ctx context.Context, a *Agent, timeout time.Duration, inputs []
 			} else {
 				calls++
 				var recordErr error
-				result, recordErr = a.executor.Execute(WithToolInputs(ctx, inputs), assembly.Tools, call, a.config.Recorder, turn)
+				var notifyApproval func(ToolResult)
+				if a.config.InteractiveApproval {
+					notifyApproval = func(pending ToolResult) { send(Event{Type: EventToolResult, ToolCall: &call, Result: &pending}) }
+				}
+				result, recordErr = a.executor.execute(toolCtx, assembly.Tools, call, a.config.Recorder, turn, notifyApproval)
 				if recordErr != nil {
 					results = append(results, result)
 					send(Event{Type: EventToolResult, ToolCall: &call, Result: &result})
