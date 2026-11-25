@@ -386,7 +386,41 @@ func (p *Plugin) write(ctx context.Context, raw json.RawMessage) (pluginapi.Resu
 		}
 	}
 	digest := sha256.Sum256([]byte(args.Content))
-	return encoded(map[string]any{"path": args.Path, "bytes": len(args.Content), "sha256": fmt.Sprintf("%x", digest[:]), "status": "written"})
+	result, err := encoded(map[string]any{"path": args.Path, "bytes": len(args.Content), "sha256": fmt.Sprintf("%x", digest[:]), "status": "written"})
+	if err != nil {
+		return result, err
+	}
+	// A write is a business operation, not just a tool result: the receipt is what
+	// lets the outcome be reconciled after a restart. The receipt contract requires
+	// identifier-shaped entity ids and a revision of at least 1, and a workspace
+	// path is neither — "note.txt" contains a dot — so the id is derived from the
+	// path and the revision from the content digest. Both are deterministic, which
+	// is what makes them checkable later: same path and same bytes reproduce the
+	// same pair, different bytes do not.
+	argumentsDigest := sha256.Sum256(raw)
+	entityDigest := sha256.Sum256([]byte(args.Path))
+	revision := int(digest[0])<<16 | int(digest[1])<<8 | int(digest[2])
+	if revision == 0 {
+		revision = 1
+	}
+	operationID := probe.ToolOperationID(ctx)
+	if operationID == "" {
+		operationID = probe.ToolCallID(ctx)
+	}
+	if operationID == "" {
+		// Derive a stable id from the call itself so the receipt still names an
+		// operation when the runtime supplied neither.
+		operationID = fmt.Sprintf("workspace-%x", argumentsDigest[:16])
+	}
+	result.Receipt = &pluginapi.Receipt{
+		Store:              "workspace",
+		OperationID:        operationID,
+		ArgumentsSHA256:    fmt.Sprintf("%x", argumentsDigest[:]),
+		EntityIDs:          []string{fmt.Sprintf("%x", entityDigest[:16])},
+		ResultingRevisions: []int{revision},
+		OutcomeDigest:      fmt.Sprintf("%x", digest[:]),
+	}
+	return result, nil
 }
 
 func (p *Plugin) search(ctx context.Context, raw json.RawMessage) (pluginapi.Result, error) {
