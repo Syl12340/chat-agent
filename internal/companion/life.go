@@ -770,12 +770,24 @@ func (s *LifeStore) Care(role string) ([]CareItem, error) {
 // feedback is the only explicit signal this feature collects, so ignoring it
 // would make the question pointless. The stretch is bounded: a bad week should
 // make check-ins rarer, not switch them off for good.
+// careInterval is the whole-role question: "how much longer than the floor should
+// this person's check-ins be spaced". Callers that care about one kind pass it to
+// careIntervalFor so a rating on greetings does not slow down follow-ups.
 func careInterval(p CareSettings, items []CareItem, role string, now time.Time) time.Duration {
+	return careIntervalFor(p, items, role, "", now)
+}
+
+// careIntervalFor is careInterval scoped to one kind; an empty kind aggregates
+// every rating, which is what the role-wide floor means.
+func careIntervalFor(p CareSettings, items []CareItem, role, kind string, now time.Time) time.Duration {
 	base := time.Duration(p.MinIntervalMinutes) * time.Minute
 	cutoff := now.Add(-30 * 24 * time.Hour)
 	less, rated := 0, 0
 	for _, item := range items {
 		if item.RoleID != role || item.Feedback == "" || item.CreatedAt.Before(cutoff) {
+			continue
+		}
+		if kind != "" && CareKind(item) != kind {
 			continue
 		}
 		rated++
@@ -826,6 +838,27 @@ func CareKindMuted(items []CareItem, role, kind string, now time.Time) bool {
 	return rated > 0 && less*2 >= rated
 }
 
+// careKindCooling reports whether the last check-in of this kind is still inside
+// the spacing its own ratings ask for. excludeID skips the item being claimed so
+// it cannot block itself.
+func careKindCooling(items []CareItem, p CareSettings, role, kind, excludeID string, now time.Time) bool {
+	interval := careIntervalFor(p, items, role, kind, now)
+	for _, old := range items {
+		if old.RoleID != role || old.ID == excludeID || CareKind(old) != kind {
+			continue
+		}
+		attempt := old.AttemptedAt
+		if attempt == nil && (old.Status == "generating" || old.Status == "ready" || old.Status == "seen" || old.Status == "failed" || old.Status == "interrupted") {
+			timestamp := old.CreatedAt
+			attempt = &timestamp
+		}
+		if attempt != nil && now.Before(attempt.Add(interval)) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *LifeStore) ClaimCare(role, id string, automatic bool, now time.Time, location *time.Location) (CareItem, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -836,7 +869,10 @@ func (s *LifeStore) ClaimCare(role, id string, automatic bool, now time.Time, lo
 	if !ok || !p.Enabled || (automatic && !p.AutoGenerate) || quiet(p, now, location) || (p.SnoozeUntil != nil && now.Before(*p.SnoozeUntil)) {
 		return CareItem{}, ErrCareBlocked
 	}
-	interval := careInterval(p, s.state.Care, role, now)
+	// The role-wide floor spaces any two check-ins apart and deliberately ignores
+	// the feedback multipliers: one rating on greetings must not slow the
+	// follow-ups someone asked for. Each kind keeps its own pace below.
+	interval := time.Duration(p.MinIntervalMinutes) * time.Minute
 	for _, old := range s.state.Care {
 		if old.RoleID != role {
 			continue
@@ -870,6 +906,11 @@ func (s *LifeStore) ClaimCare(role, id string, automatic bool, now time.Time, lo
 		// Automatic sends respect the per-kind rating; a manual one does not,
 		// because asking for this specific check-in is itself the decision.
 		if automatic && CareKindMuted(s.state.Care, role, CareKind(c), now) {
+			return CareItem{}, ErrCareBlocked
+		}
+		// Each kind keeps its own pace, so "fewer greetings" thins greetings alone
+		// instead of stretching every kind's spacing at once.
+		if automatic && careKindCooling(s.state.Care, p, role, CareKind(c), c.ID, now) {
 			return CareItem{}, ErrCareBlocked
 		}
 		if c.EpisodeID != "" {

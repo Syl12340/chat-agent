@@ -71,3 +71,47 @@ func TestCareKindMutedNeedsAMajorityAndExpires(t *testing.T) {
 		t.Fatal("follow-up feedback must mute follow-ups")
 	}
 }
+
+func TestCareIntervalForScopesRatingsByKind(t *testing.T) {
+	now := time.Now()
+	p := CareSettings{MinIntervalMinutes: 60}
+	items := []CareItem{
+		{RoleID: "companion", Feedback: "less", CreatedAt: now.Add(-time.Hour)},
+		{RoleID: "companion", Feedback: "less", CreatedAt: now.Add(-2 * time.Hour)},
+	}
+	if got := careIntervalFor(p, items, "companion", "greeting", now); got != 240*time.Minute {
+		t.Fatalf("greeting interval = %v, want 240m", got)
+	}
+	// The follow-up kind carries no ratings of its own, so it keeps the floor.
+	if got := careIntervalFor(p, items, "companion", "followup", now); got != 60*time.Minute {
+		t.Fatalf("unrated follow-up interval = %v, want 60m", got)
+	}
+	// An empty kind still aggregates, which is what the role-wide floor means.
+	if got := careIntervalFor(p, items, "companion", "", now); got != 240*time.Minute {
+		t.Fatalf("aggregate interval = %v, want 240m", got)
+	}
+}
+
+func TestCareKindCoolingScopesTheSpacing(t *testing.T) {
+	now := time.Now()
+	p := CareSettings{MinIntervalMinutes: 60}
+	last := now.Add(-100 * time.Minute)
+	delivered := CareItem{RoleID: "companion", Status: "ready", CreatedAt: last, AttemptedAt: &last}
+	items := []CareItem{
+		{RoleID: "companion", Feedback: "less", CreatedAt: now.Add(-time.Hour)},
+		{RoleID: "companion", Feedback: "less", CreatedAt: now.Add(-2 * time.Hour)},
+		delivered,
+	}
+	// Greetings were rated down, so 100 minutes is not yet enough for another one.
+	if !careKindCooling(items, p, "companion", "greeting", "new", now) {
+		t.Fatal("a down-rated greeting must still be cooling after 100 minutes")
+	}
+	// Follow-ups were never rated, so the same 100 minutes clears their floor.
+	if careKindCooling(items, p, "companion", "followup", "new", now) {
+		t.Fatal("follow-ups must not inherit the greeting cooldown")
+	}
+	// The item being claimed never blocks itself.
+	if careKindCooling(items, p, "companion", "greeting", delivered.ID, now) {
+		t.Fatal("an item must not cool itself")
+	}
+}

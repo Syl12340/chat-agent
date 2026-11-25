@@ -518,10 +518,22 @@ func checkInsForEpisode(history []companion.CareItem, episodeID string) int {
 // careMotivation describes why this opportunity exists now, in numbers the model
 // can act on instead of an adjective it has to guess at.
 func careMotivation(history []companion.CareItem, claimed companion.CareItem, now time.Time) map[string]any {
-	helpful, less := 0, 0
+	// Count the ratings on this kind, not on check-ins generally: a greeting
+	// arriving while the person asked for fewer greetings is a different situation
+	// from a follow-up arriving while they asked for fewer greetings. The
+	// whole-role count is still reported so the model can see both, but the
+	// per-kind number is the one that explains why this message is here.
+	kind := companion.CareKind(claimed)
+	helpful, less, anyLess := 0, 0, 0
 	cutoff := now.Add(-30 * 24 * time.Hour)
 	for _, item := range history {
 		if item.CreatedAt.Before(cutoff) {
+			continue
+		}
+		if item.Feedback == "less" {
+			anyLess++
+		}
+		if companion.CareKind(item) != kind {
 			continue
 		}
 		switch item.Feedback {
@@ -536,6 +548,7 @@ func careMotivation(history []companion.CareItem, claimed companion.CareItem, no
 		"hours_since_due":            int(now.Sub(claimed.DueAt).Hours()),
 		"recent_helpful_feedback":    helpful,
 		"recent_less_feedback":       less,
+		"recent_less_feedback_any":   anyLess,
 		"source_kind":                "optional_daily_greeting",
 	}
 	if claimed.EpisodeID != "" {
