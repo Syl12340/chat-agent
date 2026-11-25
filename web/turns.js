@@ -2,19 +2,13 @@
 export function splitReply(text) {
   // Keep block markup, references, and math in one render so parser context
   // never changes when the same reply is copied or reopened.
-	if (!text) return [text];
-	const explicit=text.includes('|||'), visible=explicit ? text.replaceAll('|||','') : text;
-	if (explicit && text.length <= 1200 && !/[`$\\\[\]<>~]|^(?:\t| {4}|\s*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|[-*_]{3,}\s*$))/m.test(visible)) {
-		const bubbles=text.split('|||').map(part=>part.trim()).filter(Boolean);
-		if (bubbles.length>=2 && bubbles.length<=3 && bubbles.every(part=>part.length<=600)) return bubbles;
-	}
-	if (text.length > 600 || /[`$\\\[\]<>|~]|^(?:\t| {4}|\s*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|[-*_]{3,}\s*$))/m.test(text)) return [text];
-  const paragraphs = text.split(/\n\s*\n/).map(part => part.trim()).filter(Boolean);
-  if (paragraphs.length <= 1) return [text];
-  if (paragraphs.length <= 3) return paragraphs;
-  const groupSize = Math.ceil(paragraphs.length / 3), groups = [];
-  for (let i=0;i<paragraphs.length;i+=groupSize) groups.push(paragraphs.slice(i,i+groupSize).join('\n\n'));
-  return groups;
+  if (!text) return [text];
+  const explicit = text.includes('|||');
+  const visible = explicit ? text.replaceAll('|||','\n\n') : text;
+  const structured = /[`$\\\[\]<>|~]/.test(visible) || visible.split('\n').some(line => /^(?:\t| {4})/.test(line) || /^(?:#|[-*+] |[0-9][.)])/.test(line.trim()));
+  if ([...text].length > 1200 || structured) return [visible];
+  const parts = text.split(explicit ? '|||' : '\n\n').map(part => part.trim()).filter(Boolean);
+  return parts.length >= 2 && parts.length <= 3 && parts.every(part => [...part].length <= 600) ? parts : [visible];
 }
 export function createTurnsUI({ state, json, storage, onError, onHistory, onState, onSettled, createSession, onDraftRestore, onAccepted }) {
   const $ = id => document.getElementById(id);

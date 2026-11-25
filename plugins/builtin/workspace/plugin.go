@@ -118,11 +118,11 @@ func (p *Plugin) Stop(context.Context) error {
 
 func (p *Plugin) Register(registry *pluginapi.Registry) error {
 	path := `{"type":"object","properties":{"workspace":{"type":"string","enum":["server"]},"path":{"type":"string","maxLength":256}},"required":["workspace","path"],"additionalProperties":false}`
-	read := `{"type":"object","properties":{"workspace":{"type":"string","enum":["server"]},"path":{"type":"string","maxLength":256},"offset":{"type":"integer","minimum":0,"maximum":262144},"expected_sha256":{"type":"string","minLength":64,"maxLength":64}},"required":["workspace","path"],"additionalProperties":false}`
+	read := `{"type":"object","properties":{"workspace":{"type":"string","enum":["server"]},"path":{"type":"string","maxLength":256},"offset":{"type":"integer","minimum":0,"maximum":262144,"description":"Absolute byte offset. Start at zero. For another page use next_read.offset."},"expected_sha256":{"type":"string","minLength":64,"maxLength":64,"description":"Use next_read.expected_sha256 on subsequent pages to keep the same file version."}},"required":["workspace","path"],"additionalProperties":false}`
 	search := `{"type":"object","properties":{"workspace":{"type":"string","enum":["server"]},"query":{"type":"string","minLength":1,"maxLength":128}},"required":["workspace","query"],"additionalProperties":false}`
 	tools := []pluginapi.Tool{
 		{Name: "workspace_list", Description: "List the approved server workspace. Use path . for its root.", Parameters: json.RawMessage(path), Handler: p.list},
-		{Name: "workspace_read", Description: "Read a UTF-8 text file in the approved workspace. For a truncated result, pass next_offset as offset and the first page's sha256 as expected_sha256 to continue. The digest covers the full file and is also accepted by workspace_write.", Parameters: json.RawMessage(read), Handler: p.read},
+		{Name: "workspace_read", Description: "Read a UTF-8 text file in the approved workspace. If truncated, call workspace_read with the JSON object after next_read. The sha256 covers the full file and is accepted by workspace_write.", Parameters: json.RawMessage(read), Handler: p.read},
 		{Name: "workspace_search", Description: "Find literal text in small files in the approved server workspace.", Parameters: json.RawMessage(search), Handler: p.search},
 		{Name: "workspace_write", Kind: "edit", Description: "Create or replace one bounded UTF-8 file in the approved workspace. The expected SHA-256 prevents overwriting a file that changed since it was read.", Usage: "read an existing file first and pass its exact SHA-256; use expected_sha256=missing only for a new path. Write only what the user requested and verify important changes by reading them back.", Parameters: json.RawMessage(`{"type":"object","properties":{"workspace":{"type":"string","enum":["server"]},"path":{"type":"string","maxLength":256},"content":{"type":"string","maxLength":262144},"expected_sha256":{"type":"string","maxLength":64}},"required":["workspace","path","content","expected_sha256"],"additionalProperties":false}`), Decision: string(probe.DecisionRequired), Risk: string(probe.RiskHigh), ApprovalRequired: true, Handler: p.write},
 		{Name: "workspace_share", Kind: "read", Description: "Offer one regular file from the approved workspace to the user as an authenticated, same-session download. The receipt includes the exact size and SHA-256; never expose an absolute host path.", Usage: "use after creating or locating the exact file the user asked to receive; share the file itself instead of pasting binary data or a host path.", Parameters: json.RawMessage(path), Handler: p.share},
@@ -296,9 +296,10 @@ func (p *Plugin) read(ctx context.Context, raw json.RawMessage) (pluginapi.Resul
 		return pluginapi.Result{}, errors.New("workspace file changed; restart reading at offset 0")
 	}
 	if end < total {
+		next, _ := json.Marshal(map[string]any{"workspace": "server", "path": path, "offset": end, "expected_sha256": fmt.Sprintf("%x", digest)})
 		return pluginapi.Result{Output: fmt.Sprintf(
-			"%s\n\n---\ntruncated: true\noffset: %d\nshown_bytes: %d\ntotal_bytes: %d\nnext_offset: %d\nsha256: %x",
-			b[args.Offset:end], args.Offset, end-args.Offset, total, end, digest)}, nil
+			"%s\n\n---\ntruncated: true\nnext_read: %s\noffset: %d\ntotal_bytes: %d\nnext_offset: %d\nsha256: %x",
+			b[args.Offset:end], next, args.Offset, total, end, digest)}, nil
 	}
 	// The digest is over the whole file even when this is one page of several, so
 	// workspace_write can verify what it replaces.

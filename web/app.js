@@ -34,18 +34,19 @@ const storage = {
 function createAdvancedAgentSettings() {
   const section=document.createElement('section');section.className='agent-management';section.setAttribute('aria-labelledby','agent-management-title');
   const title=document.createElement('h3');title.id='agent-management-title';title.textContent='Agent 高级管理';
-  const description=document.createElement('p');description.textContent='待办、活动、事件和交流偏好直接在聊天里说即可，无需维护模式或面板。这里只保留必须由你审核、授权或上传的项目。';
+  const personal=document.createElement('div');personal.className='agent-management-actions';
   const details=document.createElement('details'),summary=document.createElement('summary'),actions=document.createElement('div');summary.textContent='审核、授权与资料';actions.className='agent-management-actions';details.append(summary,actions);
   const definitions=[
-    ['memory-open','记忆审核','查看候选、纠正或删除长期记忆'],
+    ['role-open','编辑角色','手动修改人设、规则和交流风格',personal],
+    ['memory-open','管理记忆','手动添加、修改、审核或删除长期记忆',personal],
     ['role-proposals-open','角色变更审核','决定是否应用助手提出的长期风格变化'],
     ['care-open','主动陪伴','开启、暂停或调整主动消息与手机通知'],
     ['courseware-open','学习资料','上传课件并发起分析、讲解或测试'],
     ['local-agent-open','远程执行端','查看云端可调用的电脑执行端与运行任务']
   ];
   const items=[];
-  for(const [targetID,label,note] of definitions){const target=$(targetID);if(!target)continue;const button=document.createElement('button');button.type='button';button.className='agent-management-entry';const strong=document.createElement('strong'),small=document.createElement('small');strong.textContent=label;small.textContent=note;button.append(strong,small);button.addEventListener('click',()=>{ui['settings-dialog'].close();target.click();});actions.append(button);items.push([button,target]);}
-  section.append(title,description,details);$('model-configs')?.before(section);
+  for(const [targetID,label,note,container=actions] of definitions){const target=$(targetID);if(!target)continue;const button=document.createElement('button');button.type='button';button.className='agent-management-entry';const strong=document.createElement('strong'),small=document.createElement('small');strong.textContent=label;small.textContent=note;button.append(strong,small);button.addEventListener('click',()=>{ui['settings-dialog'].close();target.click();});container.append(button);items.push([button,target]);}
+  section.append(title,personal,details);$('model-configs')?.before(section);
   return {refresh(){for(const [button,target] of items)button.disabled=target.disabled;}};
 }
 const nativeShell = /ChatAgentAndroid\//.test(navigator.userAgent);
@@ -460,7 +461,7 @@ async function copyText(text, button) {
   } catch { notice('暂时无法复制，请长按或选中文字复制。'); }
 }
 
-function card(role, text = '', key = '', images = [], context = null) {
+function card(role, text = '', key = '', images = [], context = null, container = ui.messages) {
   ui.welcome.hidden = true;
   const article = document.createElement('article'); article.className = `message ${role}`; article.dataset.role = role;
   if (key) article.dataset.messageId = key;
@@ -476,7 +477,7 @@ function card(role, text = '', key = '', images = [], context = null) {
   const actions=document.createElement('div'); actions.className='message-actions';
   const copy=document.createElement('button'); copy.type='button'; copy.className='message-copy'; copy.textContent='复制'; copy.setAttribute('aria-label','复制这条回答');
   content.append(label, logs, attachments, body, status); if(role==='assistant'){actions.append(copy);content.append(actions);}
-  article.append(avatar, content); ui.messages.append(article);
+  article.append(avatar, content); container.append(article);
   const result = { node: article, body, status, logs, attachments, tools: new Map(), text: '',
     startedAt: Date.now(), currentTool: '',
     appendSegment(value,source) {
@@ -566,6 +567,7 @@ function groupToolLog(message, node) {
     const cards = message.logs.querySelectorAll('.tool-log');
     if (!cards.length) { message.logs.append(node); return; }
     const group = document.createElement('details'); group.className = 'tool-group';
+    group.dataset.historyDetails = 'tool-group';
     const summary = document.createElement('summary'); summary.className = 'tool-group-summary';
     const list = document.createElement('div'); list.className = 'tool-group-list';
     group.append(summary, list);
@@ -586,6 +588,7 @@ function toolLog(message, data, pending = false) {
   let log = message.tools.get(data.id);
   if (!log) {
     const details = document.createElement('details'); details.className = 'tool-log';
+    details.dataset.historyDetails = `tool:${data.id}`;
     const summary = document.createElement('summary');
     const heading = document.createElement('span'); heading.className = 'tool-title';
     const meta = document.createElement('span'); meta.className = 'tool-meta';
@@ -712,7 +715,7 @@ function showReasoning(article, text, key, status = 'completed') {
   let view = reasoningViews.get(key);
   if (!view) {
     const node=document.createElement('details'), summary=document.createElement('summary'), body=document.createElement('div');
-    node.className='reasoning-log'; body.className='reasoning-body'; node.append(summary,body);
+    node.className='reasoning-log'; node.dataset.historyDetails='reasoning'; body.className='reasoning-body'; node.append(summary,body);
     view={node,summary,body,manual:false};
     summary.addEventListener('click',()=>{view.manual=true;});
     reasoningViews.set(key,view);
@@ -726,21 +729,64 @@ function showReasoning(article, text, key, status = 'completed') {
     if (!unused) break; reasoningViews.delete(unused[0]);
   }
 }
+
+let renderedSession = null, touchingHistory = false, historyHoldUntil = 0, deferredHistory = null, historyTimer;
+
+function flushHistoryAfterScroll() {
+  clearTimeout(historyTimer);
+  if (!deferredHistory || touchingHistory) return;
+  historyTimer = setTimeout(() => {
+    const history = deferredHistory;
+    deferredHistory = null;
+    if (history?.id === state.current) void applyTurnHistory(history);
+  }, Math.max(0, historyHoldUntil - performance.now()) + 16);
+}
+
+function deferHistoryDuringScroll(history) {
+  if (renderedSession !== history.id || (!touchingHistory && performance.now() >= historyHoldUntil)) return false;
+  deferredHistory = history;
+  flushHistoryAfterScroll();
+  return true;
+}
+
+function historyDetailKey(node) {
+  return JSON.stringify([node.closest('[data-message-id]')?.dataset.messageId, node.dataset.historyDetails]);
+}
+
 function renderHistory(messages, turns = [], hashes = new Map()) {
   chatInput.beforeHistoryRender();
   const focus=interactiveUI.captureFocus();
   const richFocus=document.activeElement?.closest?.('.rich-text-segment') ? document.activeElement : null;
+  const sameSession = renderedSession === state.current;
   const top = ui.conversation.scrollTop;
-  ui.messages.replaceChildren(); ui.welcome.hidden = messages.length > 0;
+  const viewportTop = ui.conversation.getBoundingClientRect().top;
+  const anchor = sameSession && !state.follow && Array.from(ui.messages.children).find(node => node.dataset.messageId && node.getBoundingClientRect().bottom > viewportTop);
+  const anchorOffset = anchor ? anchor.getBoundingClientRect().top - viewportTop : 0;
+  const details = new Map();
+  if (sameSession) for (const node of ui.messages.querySelectorAll('[data-history-details]')) {
+    const scroll = node.querySelector('.reasoning-body, .tool-output');
+    details.set(historyDetailKey(node), {open: node.open, top: scroll?.scrollTop || 0, left: scroll?.scrollLeft || 0});
+  }
+  const fragment = document.createDocumentFragment();
+  const makeCard = (role,text,key,images,context) => card(role,text,key,images,context,fragment);
+  ui.welcome.hidden = messages.length > 0;
   const relevant = turns.filter(t => t.content || t.text || t.reasoning_content || t.error || t.images?.length);
   const roots = relevant.filter(t => t.batch_id === t.id && t.status !== 'withdrawn');
   const members = new Map();
   for (const t of relevant) if (t.batch_id) { if (!members.has(t.batch_id)) members.set(t.batch_id,[]); members.get(t.batch_id).push(t); }
   for (const batch of members.values()) batch.sort((a,b) => a.sequence - b.sequence);
-  const userKeys = new Map();
+  const userKeys = new Map(), userReceipts = new Map();
   for (const root of roots) {
     const bound = root.status === 'running' ? messages.length : root.end_index;
-    for (const [offset,t] of (members.get(root.id) || []).entries()) if (root.start_index + offset < bound) userKeys.set(root.start_index + offset,`${state.current}:user:${t.id}`);
+    const batch = members.get(root.id) || [];
+    for (const [offset,t] of batch.entries()) if (root.start_index + offset < bound) userKeys.set(root.start_index + offset,`${state.current}:user:${t.id}`);
+    const last = root.start_index + batch.length - 1;
+    if (batch.length && last < bound) {
+      const platform = root.origin?.platform || '';
+      const label = root.origin?.kind === 'channel' ? (/^(qq|onebot|aiocqhttp)/.test(platform) ? '来自 QQ' : '来自外部消息') : '';
+      const receipt = batch.length > 1 ? `${batch.length} 条连发已合并` : '';
+      userReceipts.set(last,[label,receipt].filter(Boolean).join(' · '));
+    }
   }
   const owner = index => [...turns].reverse().find(root => root.batch_id===root.id && index >= root.start_index && (root.status === 'running' || index < root.end_index));
   let current = null, currentStart = -1;
@@ -750,12 +796,12 @@ function renderHistory(messages, turns = [], hashes = new Map()) {
     if (inserted.has(root.id)) return; inserted.add(root.id);
     const end = root.status === 'running' ? messages.length : root.end_index;
     for (const [offset,t] of (members.get(root.id) || []).entries()) {
-      if (root.start_index + offset >= end) { const user = card('user',t.content,`${state.current}:user:${t.id}`,t.images || []); user.status.textContent = root.status === 'running' ? '已接收':'这次未完成'; }
+      if (root.start_index + offset >= end) { const user = makeCard('user',t.content,`${state.current}:user:${t.id}`,t.images || []); user.status.textContent = root.status === 'running' ? '已接收':'这次未完成'; }
     }
     const committed = messages.slice(root.start_index,end).filter(m => m.role === 'assistant').map(m => m.content || '').join('');
     const remainder = root.text?.startsWith(committed) ? root.text.slice(committed.length) : root.text || '';
     if (root.status === 'running' && !remainder && committed && messages.slice(root.start_index,end).some(m => m.role === 'assistant' && !m.tool_calls?.length && m.content)) return;
-    if (!current || currentStart < root.start_index) { current = card('assistant','',`${state.current}:turn:${root.id}`); currentStart = end; }
+    if (!current || currentStart < root.start_index) { current = makeCard('assistant','',`${state.current}:turn:${root.id}`); currentStart = end; }
     if (remainder) current.setText([current.text,remainder].filter(Boolean).join('\n\n'));
     for (const tool of root.tools || []) if (!calls.has(`${root.id}:${tool.id}`)) {
       const active = root.status === 'running';
@@ -770,11 +816,11 @@ function renderHistory(messages, turns = [], hashes = new Map()) {
   for (let index=0;index<messages.length;index++) {
     for (const root of roots) if (['failed','canceled','interrupted'].includes(root.status) && root.end_index === index) incomplete(root);
     const message = messages[index], root = owner(index), stableKey=message.id || String(index), key = root ? `${state.current}:turn:${root.id}`:`${state.current}:message:${stableKey}`;
-    if (message.role === 'user') { legacyUser = index; const user=card('user',message.content,userKeys.get(index) || `${state.current}:message:${stableKey}`,message.images || []); if(message.id)user.node.dataset.sourceMessageId=message.id; current = null; currentStart = -1; }
+    if (message.role === 'user') { legacyUser = index; const user=makeCard('user',message.content,userKeys.get(index) || `${state.current}:message:${stableKey}`,message.images || []); user.status.textContent=userReceipts.get(index) || ''; if(message.id)user.node.dataset.sourceMessageId=message.id; current = null; currentStart = -1; }
     else if (message.role === 'assistant') {
       const final = !message.tool_calls?.length && (!root || root.status === 'completed' && index === root.end_index - 1);
       const source={role:state.roleID,session:state.current,messageID:message.id || '',messageIndex:index,sha256:hashes.get(index) || '',eligible:Boolean(hashes.get(index) && root && final),floor:uiFloor,segmented:final,origin:message.origin || ''};
-      if (!current) { current = card('assistant',message.content,key,[],source); currentStart = index; }
+      if (!current) { current = makeCard('assistant',message.content,key,[],source); currentStart = index; }
       else if (message.content) current.appendSegment(message.content,source);
       if (!root && message.reasoning_content) showReasoning(current.node,message.reasoning_content,`${state.current}:reasoning:${index}`);
       for (const call of message.tool_calls || []) { toolLog(current,{id:call.id,name:call.function.name},true); calls.set(`${root?.id || `legacy-${legacyUser}`}:${call.id}`,{card:current,name:call.function.name}); }
@@ -798,25 +844,32 @@ function renderHistory(messages, turns = [], hashes = new Map()) {
   for (const root of roots) {
     const end=root.status==='running' ? messages.length : root.end_index;
     const reasoning=root.reasoning_content || messages.slice(root.start_index,end).filter(m=>m.role==='assistant').map(m=>m.reasoning_content || '').filter(Boolean).join('\n\n');
-    showReasoning(ui.messages.querySelector(`[data-message-id="${CSS.escape(`${state.current}:turn:${root.id}`)}"].assistant`),reasoning,`${state.current}:reasoning:turn:${root.id}`,root.status);
+    showReasoning(fragment.querySelector(`[data-message-id="${CSS.escape(`${state.current}:turn:${root.id}`)}"].assistant`),reasoning,`${state.current}:reasoning:turn:${root.id}`,root.status);
   }
   for (const t of relevant.filter(t => t.status === 'queued').sort((a,b) => a.sequence - b.sequence)) {
-    const pending = card('user',t.content,`${state.current}:user:${t.id}`,t.images || []); pending.node.classList.add('queued'); pending.status.textContent = '待发送';
+    const pending = makeCard('user',t.content,`${state.current}:user:${t.id}`,t.images || []); pending.node.classList.add('queued'); pending.status.textContent = '待发送';
+  }
+  for (const node of fragment.querySelectorAll('[data-history-details]')) {
+    const saved = details.get(historyDetailKey(node));
+    if (saved && node.dataset.historyDetails !== 'reasoning') node.open = saved.open;
+  }
+  ui.messages.replaceChildren(fragment);
+  renderedSession = state.current;
+  for (const node of ui.messages.querySelectorAll('[data-history-details]')) {
+    const saved = details.get(historyDetailKey(node));
+    const scroll = saved && node.querySelector('.reasoning-body, .tool-output');
+    if (scroll) { scroll.scrollTop = saved.top; scroll.scrollLeft = saved.left; }
   }
   workspace.reconcile();
   interactiveUI.reconcileResponses(answerTurns(turns),turnUI.pendingSnapshot().pending);
   interactiveUI.update(); interactiveUI.restoreFocus(focus);
   if(richFocus?.isConnected && document.activeElement===document.body)richFocus.focus({preventScroll:true});
-  if (!messages.length && !relevant.length) ui.conversation.scrollTop = 0;
-  else if (!state.follow) ui.conversation.scrollTop = top;
-  else scrollBottom(true);
   for (const root of roots) if(root.model) {
     for(const node of ui.messages.querySelectorAll(`[data-message-id="${CSS.escape(`${state.current}:turn:${root.id}`)}"] .message-actions`)) {
       const label=document.createElement('span'); label.className='message-model';
       label.textContent=root.model+({medium:' · 思考 中',high:' · 思考 高',ultra:' · 思考 超高'}[root.thinking] || ''); node.append(label);
     }
   }
-  updateLatest(!state.follow);
   void refreshSurfaces();
   // Only the newest completed turn can be purged: removing an older one would
   // leave later turns pointing at message indexes that no longer exist.
@@ -831,6 +884,13 @@ function renderHistory(messages, turns = [], hashes = new Map()) {
       node.append(remove);
     }
   }
+  if (!messages.length && !relevant.length) ui.conversation.scrollTop = 0;
+  else if (state.follow) scrollBottom(true);
+  else {
+    const replacement = anchor && ui.messages.querySelector(`[data-message-id="${CSS.escape(anchor.dataset.messageId)}"]`);
+    ui.conversation.scrollTop = replacement ? top + replacement.getBoundingClientRect().top - viewportTop - anchorOffset : top;
+  }
+  updateLatest(!state.follow);
 }
 
 // Persistent surfaces are host-stored views bound to one conversation. They are
@@ -933,6 +993,8 @@ function scrollBottom(force = false) { if (force || state.follow) { ui.conversat
 async function applyTurnHistory(history) {
   if (!state.token || history.id !== state.current) return;
   const revision=++historyRevision, epoch=authEpoch, session=state.current;
+  if (deferHistoryDuringScroll(history)) return;
+  deferredHistory = null;
   if (state.roleID !== (history.role_id || 'companion')) { roleProposalsUI.clear(); topicsUI.clear(); state.memories = []; ui['memory-count'].hidden = true; }
   state.roleID = history.role_id || 'companion'; state.replyRhythm = history.reply_rhythm || 'default'; state.summary = history.summary; showSummary();
   chatInput.syncScope();
@@ -948,6 +1010,7 @@ async function applyTurnHistory(history) {
     }));
   } catch { notice('当前浏览器无法校验互动来源，组件保持只读。'); }
   if (revision!==historyRevision || epoch!==authEpoch || session!==state.current) return;
+  if (deferHistoryDuringScroll(history)) return;
   uiSourceMessages=history.messages || [];
   for(const [key,entry] of richMessages)if(uiSourceMessages[entry.index]?.role!=='assistant' || uiSourceMessages[entry.index].content!==entry.raw)richMessages.delete(key);
   interactiveUI.retainSources([...hashes].map(([message_index,sha256])=>({message_index,sha256})));
@@ -1070,7 +1133,30 @@ ui.composer.addEventListener('submit', sendMessage);
 ui.stop.addEventListener('click', stopMessage);
 ui.prompt.addEventListener('input', () => { ui.prompt.style.height = 'auto'; ui.prompt.style.height = `${Math.min(ui.prompt.scrollHeight, 160)}px`; updateUI(); });
 ui.prompt.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && !matchMedia('(pointer: coarse)').matches) { event.preventDefault(); sendMessage(); } });
-ui.conversation.addEventListener('scroll', () => { state.follow = ui.conversation.scrollHeight - ui.conversation.scrollTop - ui.conversation.clientHeight < 100; updateLatest(); }, { passive: true });
+function holdHistoryWhileReading() {
+  historyHoldUntil = performance.now() + 220;
+  flushHistoryAfterScroll();
+}
+ui.conversation.addEventListener('touchstart', () => { touchingHistory = true; }, { passive: true });
+ui.conversation.addEventListener('touchmove', event => {
+  if (event.target.closest?.('.reasoning-body,.tool-output')) state.follow = false;
+  holdHistoryWhileReading();
+}, { passive: true });
+for (const type of ['touchend','touchcancel']) window.addEventListener(type, event => {
+  if (touchingHistory && !event.touches.length) { touchingHistory = false; holdHistoryWhileReading(); }
+}, { passive: true });
+ui.conversation.addEventListener('wheel', event => {
+  if (event.target.closest?.('.reasoning-body,.tool-output')) state.follow = false;
+  holdHistoryWhileReading();
+}, { passive: true });
+ui.conversation.addEventListener('scroll', () => {
+  state.follow = ui.conversation.scrollHeight - ui.conversation.scrollTop - ui.conversation.clientHeight < 100;
+  if (touchingHistory || performance.now() < historyHoldUntil) holdHistoryWhileReading();
+  updateLatest();
+}, { passive: true });
+ui.conversation.addEventListener('scroll', event => {
+  if (event.target !== ui.conversation && (touchingHistory || performance.now() < historyHoldUntil)) holdHistoryWhileReading();
+}, { capture: true, passive: true });
 document.addEventListener('focusin',event=>{ if(event.target.closest?.('.chat-ui-card')) {state.follow=false;updateLatest();} });
 $('scroll-latest').addEventListener('click',()=>scrollBottom(true));
 if(window.ResizeObserver)new ResizeObserver(entries=>{document.querySelector('.main-panel').style.setProperty('--composer-height',`${Math.ceil(entries[0].target.getBoundingClientRect().height)}px`);}).observe(document.querySelector('.composer-area'));
@@ -1149,8 +1235,8 @@ async function refreshMemoryCount() {
   ui['memory-count'].textContent = String(count); ui['memory-count'].hidden = !count;
 }
 function resetMemoryForm() {
-  state.memoryEditing = null; ui['memory-content'].value = ''; ui['memory-status'].value = 'pending';
-  ui['memory-form-label'].textContent = '添加一条值得记住的事实'; ui['memory-save'].textContent = '保存候选'; ui['memory-cancel-edit'].hidden = true;
+  state.memoryEditing = null; ui['memory-content'].value = ''; ui['memory-status'].value = 'approved';
+  ui['memory-form-label'].textContent = '手动添加记忆'; ui['memory-save'].textContent = '确认并保存'; ui['memory-cancel-edit'].hidden = true;
 }
 function renderMemories() {
   ui['memory-list'].replaceChildren();
@@ -1192,7 +1278,7 @@ async function memoryAction(work) {
   finally { ui['memory-save'].disabled = false; ui['memory-export'].disabled = false; ui['memory-list'].querySelectorAll('button').forEach(button => { button.disabled = false; }); }
 }
 ui['memory-open'].addEventListener('click', async () => {
-  drawer(false); resetMemoryForm(); dialogMessage('memory-message'); ui['memory-role-name'].textContent = roleName(); state.memoryFilter = 'pending'; state.memories = [];
+  drawer(false); resetMemoryForm(); dialogMessage('memory-message'); ui['memory-role-name'].textContent = roleName(); state.memoryFilter = 'approved'; state.memories = [];
   ui['memory-list'].replaceChildren(); ui['memory-dialog'].showModal();
   await memoryAction(async () => {});
 });
