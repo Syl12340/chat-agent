@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
+	"errors"
 	"testing"
 )
 
@@ -22,7 +23,7 @@ func TestApprovedDeviceSurvivesRestartAndAuthenticates(t *testing.T) {
 	}
 	publicKey := base64.StdEncoding.EncodeToString(der)
 
-	store, err := Open(dir, false)
+	store, err := Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,15 +31,21 @@ func TestApprovedDeviceSurvivesRestartAndAuthenticates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := store.Challenge(device.ID); !errors.Is(err, ErrPending) {
+		t.Fatalf("pending device challenge: %v", err)
+	}
 	device, err = store.Update(device.ID, device.Revision, "approved", nil, "", true)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if store.devices[device.ID].Admin {
+		t.Fatal("approval changed the legacy admin bit")
 	}
 	if err = store.Close(); err != nil {
 		t.Fatal(err)
 	}
 
-	store, err = Open(dir, false)
+	store, err = Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +54,7 @@ func TestApprovedDeviceSurvivesRestartAndAuthenticates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if remembered.Status != "approved" || remembered.ID != device.ID {
+	if remembered.Status != "approved" || !remembered.Admin || remembered.ID != device.ID {
 		t.Fatalf("approved device was not remembered after restart: %+v", remembered)
 	}
 	challenge, err := store.Challenge(device.ID)
@@ -68,7 +75,22 @@ func TestApprovedDeviceSurvivesRestartAndAuthenticates(t *testing.T) {
 		t.Fatal(err)
 	}
 	authenticated, err := store.Authenticate(session.Token)
-	if err != nil || authenticated.ID != device.ID {
+	if err != nil || !authenticated.Admin || authenticated.ID != device.ID {
 		t.Fatalf("remembered device did not authenticate: device=%+v err=%v", authenticated, err)
+	}
+	if _, err := store.List(device.ID, false); err != nil {
+		t.Fatalf("trusted device could not manage the trust list: %v", err)
+	}
+	if _, err := store.Update(device.ID, device.Revision, "revoked", nil, device.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Authenticate(session.Token); !errors.Is(err, ErrSession) {
+		t.Fatalf("revoked session still authenticated: %v", err)
+	}
+	if _, err := store.List(device.ID, false); !errors.Is(err, ErrAdmin) {
+		t.Fatalf("revoked device could still manage the trust list: %v", err)
+	}
+	if _, err := store.Challenge(device.ID); !errors.Is(err, ErrRevoked) {
+		t.Fatalf("revoked device challenge: %v", err)
 	}
 }

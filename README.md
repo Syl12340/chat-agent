@@ -1,6 +1,6 @@
 # chat-agent
 
-当前源码版本为 **0.7.26**，Android 默认构建为 **0.7.26-debug（versionCode 64）**，包名为 `dev.chatagent.ai.debug`。电脑端可直接启动本地 Core、工作区和持续 Harness。Linux 可按用户启动私有实例，同一账户下的信任设备共享会话、记忆、模型和文件。参见[私有实例部署](deploy/README.md#私有-ca-实例)、[电脑本地 Agent](docs/desktop-local-agent.md)和[当前规划](docs/feature-plan.md)。
+当前源码版本为 **0.7.27**，Android 默认构建为 **0.7.27-debug（versionCode 65）**，包名为 `dev.chatagent.ai.debug`。电脑端可直接启动本地 Core、工作区和持续 Harness。每个实例内的已信任设备权限等效，共享会话、记忆、模型和文件。参见[私有实例部署](deploy/README.md#私有-ca-实例)、[电脑本地 Agent](docs/desktop-local-agent.md)和[当前规划](docs/feature-plan.md)。
 
 2026-11-23 的[全面工程评估](docs/project-assessment-2026-11-23.md)核对了最新分页、模型跟随和分类反馈实现，指出正常调用入口与恢复链路的具体缺口。四条主线的实施依赖和验收标准汇总在[当前规划](docs/feature-plan.md)。
 

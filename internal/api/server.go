@@ -297,7 +297,7 @@ func New(c Config) (*Server, error) {
 		mem.Close()
 		return nil, err
 	}
-	deviceStore, err := deviceauth.Open(filepath.Join(path, "devices"), c.InstanceName != "")
+	deviceStore, err := deviceauth.Open(filepath.Join(path, "devices"))
 	if err != nil {
 		webClient.Close()
 		return nil, errors.Join(err, activityStore.Close(), turnStore.Close(), runtimeStore.Close(), lifeStore.Close(), companionStore.Close(), taskStore.Close(), mem.Close())
@@ -647,7 +647,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // version is the service version reported by /api/status.
-const version = "0.7.26"
+const version = "0.7.27"
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model

@@ -139,15 +139,15 @@ export function createDeviceAuth({state, onToken, onError, adminRequest}) {
     try{
       const result=await adminRequest('/api/devices');if(auth!==state.token)return;
       const account=state.config.account;
-      $('device-management-title').textContent=account?'信任设备':'设备管理';
-      area.querySelector(':scope > p').textContent=account?`${account.name} 的信任设备共享会话、模型和工作区。`:'仅获授权管理员可管理设备';
-      $('device-list').replaceChildren();$('device-management-status').textContent=account?'核对指纹后信任新设备。撤销会结束该设备的访问。':'新设备需授权后才能连接；撤销后不再接受新的请求。';
+      $('device-management-title').textContent='信任设备';
+      area.querySelector(':scope > p').textContent=`${account?.name || '当前实例'}的信任设备权限等效，共享会话、模型和工作区。`;
+      $('device-list').replaceChildren();$('device-management-status').textContent='核对指纹后信任新设备。撤销会结束该设备的访问。';
       for(const d of result.devices){
         const row=document.createElement('div');row.className='device-card';
         const title=document.createElement('strong');title.textContent=d.name||'未命名设备';
-        const info=document.createElement('p');info.textContent=`${d.status==='approved'?(account?'已信任':'已授权'):d.status==='revoked'?'已撤销':(account?'待核对':'等待授权')}${d.admin&&!account?' · 管理员':''}${d.id===state.config.device_id?' · 当前设备':''}`;
+        const info=document.createElement('p');info.textContent=`${d.status==='approved'?'已信任':d.status==='revoked'?'已撤销':'待核对'}${d.id===state.config.device_id?' · 当前设备':''}`;
         const fingerprint=document.createElement('code');fingerprint.textContent=d.fingerprint||d.id;
-        const button=document.createElement('button');button.type='button';button.className='secondary-button';button.textContent=d.status==='approved'?(account?'撤销信任':'撤销授权'):(account?'信任此设备':'授权此设备');
+        const button=document.createElement('button');button.type='button';button.className='secondary-button';button.textContent=d.status==='approved'?'撤销信任':'信任此设备';
         button.addEventListener('click',async()=>{
           const revoke=d.status==='approved';
           if(!confirm(`${revoke?'撤销':'允许'}设备“${d.name||d.id.slice(0,12)}”访问？`))return;

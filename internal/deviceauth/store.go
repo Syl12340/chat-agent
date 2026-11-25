@@ -57,6 +57,14 @@ type record struct {
 	Device
 	PublicKey string `json:"public_key"`
 }
+
+func (r record) trustedDevice() Device {
+	device := r.Device
+	// Keep the stored admin bit available to older binaries during rollback.
+	device.Admin = device.Status == "approved"
+	return device
+}
+
 type snapshot struct {
 	Version      int      `json:"version"`
 	ServerID     string   `json:"server_id"`
@@ -89,17 +97,16 @@ type rateWindow struct {
 	Count int
 }
 type Store struct {
-	mu            sync.Mutex
-	dir           string
-	lockPath      string
-	serverID      string
-	devices       map[string]record
-	challenges    map[string]challengeState
-	sessions      map[[32]byte]sessionState
-	rates         map[string]rateWindow
-	closed        bool
-	ownerClaimed  bool
-	sharedAccount bool
+	mu           sync.Mutex
+	dir          string
+	lockPath     string
+	serverID     string
+	devices      map[string]record
+	challenges   map[string]challengeState
+	sessions     map[[32]byte]sessionState
+	rates        map[string]rateWindow
+	closed       bool
+	ownerClaimed bool
 }
 
 func randomID() (string, error) {
@@ -151,7 +158,7 @@ func parseKey(encoded string) (*ecdsa.PublicKey, string, error) {
 	return key, hex.EncodeToString(sum[:]), nil
 }
 
-func Open(dir string, sharedAccount bool) (_ *Store, resultErr error) {
+func Open(dir string) (_ *Store, resultErr error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
@@ -169,7 +176,7 @@ func Open(dir string, sharedAccount bool) (_ *Store, resultErr error) {
 	if err := errors.Join(writeErr, f.Close()); err != nil {
 		return nil, err
 	}
-	s := &Store{dir: dir, lockPath: lockPath, sharedAccount: sharedAccount, devices: make(map[string]record), challenges: make(map[string]challengeState), sessions: make(map[[32]byte]sessionState), rates: make(map[string]rateWindow)}
+	s := &Store{dir: dir, lockPath: lockPath, devices: make(map[string]record), challenges: make(map[string]challengeState), sessions: make(map[[32]byte]sessionState), rates: make(map[string]rateWindow)}
 	f, err = os.Open(filepath.Join(dir, "devices.json"))
 	if errors.Is(err, os.ErrNotExist) {
 		s.serverID, err = randomID()
@@ -210,9 +217,6 @@ func Open(dir string, sharedAccount bool) (_ *Store, resultErr error) {
 		}
 		if _, exists := s.devices[id]; exists {
 			return nil, errors.New("duplicate device record")
-		}
-		if sharedAccount && item.Status == "approved" {
-			item.Admin = true
 		}
 		s.devices[id] = item
 	}
@@ -268,7 +272,7 @@ func (s *Store) register(publicKey, name string, claim bool) (Device, error) {
 	}
 	item, exists := s.devices[id]
 	if exists && !claim {
-		return item.Device, nil
+		return item.trustedDevice(), nil
 	}
 	if !exists && len(s.devices) >= maxDevices {
 		return Device{}, ErrLimit
@@ -281,7 +285,7 @@ func (s *Store) register(publicKey, name string, claim bool) (Device, error) {
 			return Device{}, ErrOwnerClaimed
 		}
 		for _, existing := range s.devices {
-			if existing.Admin {
+			if existing.Status == "approved" {
 				return Device{}, ErrOwnerClaimed
 			}
 		}
@@ -300,14 +304,13 @@ func (s *Store) register(publicKey, name string, claim bool) (Device, error) {
 	}
 	s.devices = updated
 	s.ownerClaimed = s.ownerClaimed || claim
-	return item.Device, nil
+	return item.trustedDevice(), nil
 }
 func (s *Store) authorizeAdmin(actorID string, owner bool) error {
 	if owner {
 		return nil
 	}
-	actor, err := s.approved(actorID)
-	if err != nil || !actor.Admin {
+	if _, err := s.approved(actorID); err != nil {
 		return ErrAdmin
 	}
 	return nil
@@ -323,7 +326,7 @@ func (s *Store) List(actorID string, owner bool) ([]Device, error) {
 	}
 	items := make([]Device, 0, len(s.devices))
 	for _, item := range s.devices {
-		items = append(items, item.Device)
+		items = append(items, item.trustedDevice())
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
 	return items, nil
@@ -355,11 +358,6 @@ func (s *Store) Update(id string, revision int, status string, admin *bool, acto
 	}
 	item.Status = status
 	item.Revision++
-	if s.sharedAccount {
-		item.Admin = status == "approved"
-	} else if admin != nil {
-		item.Admin = *admin
-	}
 	if status == "revoked" {
 		item.Admin = false
 	}
@@ -384,7 +382,7 @@ func (s *Store) Update(id string, revision int, status string, admin *bool, acto
 			}
 		}
 	}
-	return item.Device, nil
+	return item.trustedDevice(), nil
 }
 func (s *Store) approved(id string) (record, error) {
 	item, exists := s.devices[id]
@@ -543,7 +541,7 @@ func (s *Store) Verify(id, challengeID, signature string) (Session, error) {
 	token := "dvc1_" + base64.RawURLEncoding.EncodeToString(secret[:])
 	expires := now.Add(20 * time.Minute)
 	s.sessions[sha256.Sum256([]byte(token))] = sessionState{DeviceID: id, ExpiresAt: expires}
-	return Session{Token: token, ExpiresAt: expires, Device: item.Device, ServerID: s.serverID}, nil
+	return Session{Token: token, ExpiresAt: expires, Device: item.trustedDevice(), ServerID: s.serverID}, nil
 }
 func (s *Store) Authenticate(token string) (Device, error) {
 	s.mu.Lock()
@@ -562,7 +560,7 @@ func (s *Store) Authenticate(token string) (Device, error) {
 		delete(s.sessions, key)
 		return Device{}, err
 	}
-	return item.Device, nil
+	return item.trustedDevice(), nil
 }
 func (s *Store) Logout(token string) {
 	s.mu.Lock()

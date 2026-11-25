@@ -2,10 +2,39 @@ package api
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	channelstore "chat-agent/internal/channel"
+	"chat-agent/internal/probe"
 )
+
+func TestTrustedDeviceCanManageChannelsOnMainInstance(t *testing.T) {
+	cfg := probe.DefaultConfig()
+	cfg.Demo = true
+	s, err := New(Config{Agent: cfg, DataDir: t.TempDir(), AccessToken: "channel-trust-fixture-token-over-32"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+	_, token := trustedTestDevice(t, s)
+	for _, route := range []struct {
+		method, path string
+		status       int
+	}{
+		{http.MethodGet, "/api/channels", http.StatusOK},
+		{http.MethodPost, "/api/channels/link-codes", http.StatusCreated},
+	} {
+		req := httptest.NewRequest(route.method, route.path, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		out := httptest.NewRecorder()
+		s.Handler().ServeHTTP(out, req)
+		if out.Code != route.status {
+			t.Fatalf("%s %s: got %d, want %d", route.method, route.path, out.Code, route.status)
+		}
+	}
+}
 
 func TestQQOfficialDoesNotDeliverAppTurnFromLinkedSession(t *testing.T) {
 	store, err := channelstore.OpenStore(t.TempDir())

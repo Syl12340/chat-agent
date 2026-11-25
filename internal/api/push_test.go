@@ -18,7 +18,7 @@ import (
 	"chat-agent/internal/probe"
 )
 
-func pushDevice(t *testing.T, s *Server) (string, string) {
+func trustedTestDevice(t *testing.T, s *Server) (string, string) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -71,7 +71,7 @@ func TestPushInboxLifecycle(t *testing.T) {
 			_ = s.Close(context.Background())
 		}
 	}()
-	id, token := pushDevice(t, s)
+	id, token := trustedTestDevice(t, s)
 	request := func(method, path, body, auth string, want int) *httptest.ResponseRecorder {
 		t.Helper()
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
@@ -162,7 +162,7 @@ func TestPushInboxLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A revoked device must not finish an already-waiting poll with content.
-	secondID, secondToken := pushDevice(t, s)
+	secondID, secondToken := trustedTestDevice(t, s)
 	request("PATCH", "/api/push/settings", `{"enabled":true}`, secondToken, 200)
 	read := request("GET", "/api/push/inbox", "", secondToken, 200)
 	if err = json.Unmarshal(read.Body.Bytes(), &inbox); err != nil {
@@ -210,7 +210,7 @@ func TestBackgroundCareLease(t *testing.T) {
 	if err = s.runtime.Create("background-care-session", "companion"); err != nil {
 		t.Fatal(err)
 	}
-	id, _ := pushDevice(t, s)
+	id, _ := trustedTestDevice(t, s)
 	now := time.Now()
 	p, _ := s.life.Settings("companion")
 	p.Enabled = true
