@@ -1,4 +1,14 @@
-import { Features, supports, waitForShell } from '/native-capabilities.js';
+import { capabilities, Features, inNativeShell, supports, waitForShell } from '/native-capabilities.js';
+
+export async function installedAndroidVersion() {
+  if (!inNativeShell) return '';
+  const name = /\bChatAgentAndroid\/([^\s]+)/.exec(navigator.userAgent)?.[1] || '';
+  if (!await waitForShell()) return name;
+  const info = await window.ChatAndroidShell?.info().catch(() => null);
+  const version = info?.version_name || name;
+  const code = info?.version_code || capabilities().version;
+  return version && code ? `${version} (${code})` : version;
+}
 
 // Shell actions used to live in a native Android title bar above the WebView.
 // They now render inside the page sidebar and reach the shell through the

@@ -397,6 +397,8 @@ class MainActivity : Activity() {
                             "shell_info" -> {
                                 reply.put("host", address?.host ?: "")
                                 reply.put("encrypted", address?.encryptedTCP ?: false)
+                                reply.put("version_name", BuildConfig.VERSION_NAME)
+                                reply.put("version_code", BuildConfig.VERSION_CODE)
                                 port.postMessage(WebMessage(reply.toString()))
                             }
                             "shell_refresh" -> {
@@ -612,7 +614,18 @@ class MainActivity : Activity() {
                     } else if (manual) toast(result.exceptionOrNull()?.message ?: "检查更新失败")
                     return@runOnUiThread
                 }
-                if (release == null || release.versionCode <= BuildConfig.VERSION_CODE) { if (manual) toast("当前已是最新版本 ${BuildConfig.VERSION_NAME}"); return@runOnUiThread }
+                if (release == null) {
+                    if (manual) toast("此服务器尚未提供 Android 更新 · 已安装 ${BuildConfig.VERSION_NAME}")
+                    return@runOnUiThread
+                }
+                if (release.versionCode <= BuildConfig.VERSION_CODE) {
+                    if (manual) {
+                        val message = if (release.versionCode == BuildConfig.VERSION_CODE.toLong()) "已安装此服务器提供的最新版本 ${BuildConfig.VERSION_NAME}"
+                            else "已安装 ${BuildConfig.VERSION_NAME} · 服务器提供 ${release.versionName}"
+                        toast(message)
+                    }
+                    return@runOnUiThread
+                }
                 AlertDialog.Builder(this).setTitle("发现新版本 ${release.versionName}")
                     .setMessage("当前 ${BuildConfig.VERSION_NAME}，更新包 ${(release.size + 1023) / 1024} KB。下载完成并验证后打开系统安装窗口，聊天和登录状态会保留。")
                     .setNegativeButton("稍后", null).setPositiveButton("下载并更新") { _, _ ->

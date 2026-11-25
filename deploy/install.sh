@@ -12,6 +12,7 @@ printf '%s  %s\n' "$expected" "$here/chat-agent" | sha256sum -c -
 if ! getent passwd chat-agent >/dev/null; then
     useradd --system --user-group --home-dir /var/lib/chat-agent --shell /usr/sbin/nologin chat-agent
 fi
+getent group chat-agent-updates >/dev/null || groupadd --system chat-agent-updates
 install -d -m 0755 /opt/chat-agent /opt/chat-agent/releases
 target=/opt/chat-agent/releases/$release
 [ ! -e "$target" ] || { echo 'Release already exists; use a new release ID.' >&2; exit 1; }

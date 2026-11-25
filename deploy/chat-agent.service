@@ -11,6 +11,8 @@ User=chat-agent
 Group=chat-agent
 WorkingDirectory=/var/lib/chat-agent
 EnvironmentFile=/etc/chat-agent/chat-agent.env
+Environment=CHAT_ANDROID_RELEASE_DIR=/opt/chat-agent/android/current
+SupplementaryGroups=chat-agent-updates
 Environment=GOMEMLIMIT=160MiB GOMAXPROCS=2
 ExecStart=/opt/chat-agent/current/start.sh
 Restart=on-failure

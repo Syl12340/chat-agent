@@ -49,6 +49,7 @@ for port in "$http" $wire; do
     done
 done
 
+getent group chat-agent-updates >/dev/null || groupadd --system chat-agent-updates
 install -d -m 0755 "$base" "$base/releases" /etc/chat-agent-instances /var/lib/chat-agent-instances
 target=$base/releases/$release
 if [ -e "$target" ]; then

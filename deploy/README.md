@@ -173,7 +173,9 @@ sh install-instance.sh personal 18761 <release> <binary-sha256> 18762
 
 ## Android 包发布
 
-当前服务版本 `20261109-unified-01`，Android 包为 `0.4.0-debug`（versionCode 7，发布目录 `android-20261109-19`），包名为 `dev.chatagent.ai.debug`。APK SHA-256 为 `335498e562cb9b85fd0a4b446bce0e53433afa4234ca1abdd02510ec7c1e04e9`。发布使用 `deploy/publish-android.ps1`，详情见[自动登录与 Android 更新说明](../docs/android-updates.md)。服务端 `CHAT_ANDROID_RELEASE_DIR=/opt/chat-agent/android/current` 已配置；后续发布只切换安装包目录，无需重启服务。
+主服务和私有实例默认读取 `/opt/chat-agent/android/current`。首次更新到这套部署配置时，安装脚本创建 `chat-agent-updates` 系统组，部署新版主服务 unit 和 `chat-agent@.service` 模板，然后重载 systemd、重启对应实例。该组仅提供 APK 与清单的只读访问，两个实例的数据仍分别由各自的服务账号管理。环境文件中的 `CHAT_ANDROID_RELEASE_DIR` 可覆盖默认路径。
+
+后续用 `deploy/publish-android.ps1` 发布时只需切换安装包目录。主服务和私有实例都能通过各自的设备鉴权读取版本清单和安装包。详情见[自动登录与 Android 更新说明](../docs/android-updates.md)。
 
 语音朗读在同一服务环境文件中显式设置 `CHAT_TTS_MODEL=ecnu-tts` 和 `CHAT_TTS_VOICE=xiayu`，复用服务端网关密钥；聊天模型仍为 `ecnu-max`。取消配置并重启即可关闭，不增加端口、后台推送服务或持久化音频。
 

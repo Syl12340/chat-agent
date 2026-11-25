@@ -13,7 +13,8 @@ import { createModelConfigs } from '/model-configs.js';
 import { createChannelSettings } from '/channels.js';
 import { createHostTools } from '/host-tools.js';
 import { createChatInput } from '/chat-input.js';
-import { createShellBridge } from '/shell-bridge.js';
+import { createShellBridge, installedAndroidVersion } from '/shell-bridge.js';
+import { inNativeShell } from '/native-capabilities.js';
 import { attachGeneratedImage, watchImageJob } from '/generated-image.js';
 import { coursewareResult, describeTool, searchResults, workspaceFileResult } from '/tool-view.js';
 import { createUIRenderer } from '/ui/render.js';
@@ -1181,6 +1182,20 @@ ui.settings.addEventListener('click', () => {
   ui['connection-info'].replaceChildren();
   for (const [label, value, state_, hint] of [['服务', location.host], ['连接', state.config.desktop_local ? '电脑本地 Agent · 本地 Harness' : `${state.transport.carrier === 'securewire' ? '加密直连' : 'HTTP/SSH'} · 协议 v${state.transport.protocol || '?'}`], ['模型', state.config.model], ['模式', state.config.desktop_local ? (state.config.demo ? '本地运行 · 可添加模型 API' : '本地运行 · 自定义模型 API') : state.config.demo ? '本地演示，无真实模型' : '自定义模型 API'], ['时区', state.config.time_zone], ['提醒', '服务端收件箱，无关闭应用推送'], ['网页抓取', state.config.web_fetch ? '限定域名，已开启' : '未开启'], ['网页搜索', state.config.web_search ? '自定义端点，已开启' : '未开启'], ['图像生成', state.config.image_generation ? '已就绪' : (state.config.image_reason || '不可用'), state.config.image_generation ? 'on' : 'off'], ['响应期限', `${state.config.timeout_seconds} 秒`]]) {
     const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = label; dd.textContent = value; if (state_) dd.dataset.state = state_; if (hint) dd.title = hint; ui['connection-info'].append(dt, dd);
+  }
+  const addVersion = (label, version) => {
+    const name = document.createElement('dt'), value = document.createElement('dd');
+    name.textContent = label;
+    value.textContent = version;
+    ui['connection-info'].prepend(name, value);
+    return value;
+  };
+  const serverVersion = addVersion('服务端版本', '正在读取…');
+  void json('/api/status').then(status => { serverVersion.textContent = status.version || '未知'; })
+    .catch(() => { serverVersion.textContent = '暂不可用'; });
+  if (inNativeShell) {
+    const installed = addVersion('Android 已安装版本', '正在读取…');
+    void installedAndroidVersion().then(version => { installed.textContent = version || '未知'; });
   }
   ui['settings-dialog'].showModal(); deviceAuth.refreshManagement();
   modelConfigs.refresh();

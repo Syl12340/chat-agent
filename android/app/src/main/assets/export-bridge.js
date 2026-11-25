@@ -62,7 +62,7 @@
       })
     ) });
     Object.defineProperty(window, 'ChatAndroidShell', { configurable: true, value: Object.freeze({
-      info: () => request('shell_info', {}, 4000).then(({ host, encrypted }) => ({ host: String(host || ''), encrypted: Boolean(encrypted) })),
+      info: () => request('shell_info', {}, 4000).then(({ host, encrypted, version_name, version_code }) => ({ host: String(host || ''), encrypted: Boolean(encrypted), version_name, version_code })),
       refresh: () => request('shell_refresh', {}, 15000),
       checkUpdate: () => request('shell_update', {}, 120000),
       openServer: () => request('shell_server', {}, 15000)

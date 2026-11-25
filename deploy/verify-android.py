@@ -2,15 +2,17 @@
 import hashlib
 import json
 import shlex
+import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
 
+config = Path(sys.argv[1] if len(sys.argv) > 1 else '/etc/chat-agent/chat-agent.env')
+base = sys.argv[2] if len(sys.argv) > 2 else 'http://127.0.0.1:9991'
 values = {}
-for line in Path('/etc/chat-agent/chat-agent.env').read_text().splitlines():
+for line in config.read_text().splitlines():
     if line.startswith('CHAT_ACCESS_TOKEN='):
         values['token'] = shlex.split(line.split('=', 1)[1])[0]
-base = 'http://127.0.0.1:9991'
 client = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 for path in ('/api/updates/android', '/api/updates/android/unauthenticated/app.apk'):
     try:

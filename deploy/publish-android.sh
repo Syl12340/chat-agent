@@ -7,7 +7,7 @@ release=${1:?release ID required}
 case "$release" in ''|*[!a-zA-Z0-9_-]*) echo 'Invalid release ID.' >&2; exit 1 ;; esac
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 python3 - "$here" "$release" <<'PY'
-import grp, hashlib, json, os, pathlib, shutil, sys
+import grp, hashlib, json, os, pathlib, pwd, shutil, sys
 source, release = pathlib.Path(sys.argv[1]), sys.argv[2]
 apk = source / 'app.apk'
 metadata = json.loads((source / 'manifest.json').read_text())
@@ -20,8 +20,11 @@ assert metadata['size'] == apk.stat().st_size
 assert metadata['sha256'] == hashlib.file_digest(apk.open('rb'), 'sha256').hexdigest()
 root = pathlib.Path('/opt/chat-agent/android')
 current = root / 'current'
+previous = None
 if current.exists():
-    old = json.loads((current / 'manifest.json').read_text())
+    previous = current.resolve(strict=True)
+    assert previous.parent == root / 'releases', 'Current release must be inside releases'
+    old = json.loads((previous / 'manifest.json').read_text())
     # Two rules, and the package check comes first on purpose. Within one package
     # the version must only move forward, because that is what makes an upgrade an
     # upgrade. Across packages there is no ordering to preserve: a new application
@@ -32,14 +35,23 @@ if current.exists():
         print('package changed: %s -> %s (version baseline resets)' % (old['package_name'], metadata['package_name']))
 target = root / 'releases' / release
 assert not target.exists(), 'Release already exists'
+gid = grp.getgrnam('chat-agent-updates').gr_gid
 target.mkdir(parents=True)
-gid = grp.getgrnam('chat-agent').gr_gid
-for path in (root, root / 'releases', target):
+directories = (root, root / 'releases', target)
+if previous is not None:
+    directories += (previous,)
+    for name in ('app.apk', 'manifest.json'):
+        path = previous / name
+        assert path.is_file() and not path.is_symlink(), 'Current release files must be regular files'
+        os.chown(path, 0, gid); path.chmod(0o640)
+for path in directories:
     os.chown(path, 0, gid); path.chmod(0o750)
 for name in ('app.apk', 'manifest.json'):
     dest = target / name
     shutil.copyfile(source / name, dest); os.chown(dest, 0, gid); dest.chmod(0o640)
 link = root / ('current.' + release)
-link.symlink_to(target); os.replace(link, current)
+link.symlink_to(target)
+os.chown(link, pwd.getpwnam('chat-agent').pw_uid, gid, follow_symlinks=False)
+os.replace(link, current)
 print(json.dumps({'published': release, **metadata}, ensure_ascii=False))
 PY
