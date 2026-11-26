@@ -136,8 +136,18 @@ Additional source review revision:
 `5eb5b9463f5f0ce14964a2c7d5dcba44ad67fabe` (2026-11-10, MIT). The message
 coalescing, steer-or-queue boundary, delivery settlement, approval queue and
 purpose scheduling implementations were inspected for the design documented in
-`docs/reference-architecture-dsh-go-astrbot-aurabot.md`. No additional source
-from that revision has been copied by this documentation change.
+`docs/reference-architecture-dsh-go-astrbot-aurabot.md`.
+
+The candidate gate and explicit silence are adapted from `src/purpose/module.js`
+at the same revision into `internal/api/care_continuation.go` and `internal/api/push.go`.
+Aurabot's `src/purpose/engine.js` functions `tokenSet`, `textSimilarity` and
+`isDuplicateText` were ported to Go in `internal/companion/care_continuation.go`.
+The port keeps word and Unicode bigram Jaccard similarity and uses chat-agent's
+role ledger, the original private conversation and a 72-hour duplicate window.
+Aurabot attributes this engine to [Mieksido/surfcore](https://github.com/Mieksido/surfcore)
+(`src/purpose-engine.js`). Its upstream MIT notice is reproduced from Aurabot's
+`THIRD-PARTY-NOTICES.md` at the pinned revision in
+[licenses/Surfcore-MIT.txt](licenses/Surfcore-MIT.txt).
 
 ## AstrBot
 

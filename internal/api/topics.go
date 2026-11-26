@@ -301,7 +301,7 @@ func (s *Server) discoverTopic(parent context.Context, record topics.Record) (se
 	trigger := map[string]any{"origin": "topic", "trigger_id": record.ID, "interest": record.Query, "sources": pages, "communication_preferences": prefs.Preferences, "recent_shares": recent}
 	timeout := min(s.config.Agent.Timeout, 20*time.Second)
 	result.ModelCalls = 1
-	_, _, persisted, err := s.runProactive(ctx, record.RoleID, "", "topic", record.ID, trigger, topicDecisionPrompt, 512, timeout, func(sessionID string, response probe.Message, messageIndex int) (probe.Message, bool, error) {
+	_, _, persisted, err := s.runProactive(ctx, record.RoleID, "", "topic", record.ID, trigger, topicDecisionPrompt, 512, timeout, nil, func(sessionID string, response probe.Message, messageIndex int) (probe.Message, bool, error) {
 		var decision struct {
 			Share   bool   `json:"share"`
 			Text    string `json:"text"`

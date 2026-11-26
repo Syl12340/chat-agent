@@ -286,12 +286,10 @@ func (s *Server) startPushScheduler() {
 	}()
 }
 
-// An opt-in alone is insufficient: a recently online receiver must exist. Thus
-// upgrading never silently turns foreground care into a paid background task.
+// Scheduled care uses a receiver lease. Conversation continuation has its own
+// opt-in and uses the durable private conversation as its inbox.
 func (s *Server) sweepBackgroundCare(now time.Time) error {
-	if !s.receiverOnline(now) {
-		return nil
-	}
+	online := s.receiverOnline(now)
 	roles, err := s.roles.List()
 	if err != nil {
 		return err
@@ -303,18 +301,20 @@ func (s *Server) sweepBackgroundCare(now time.Time) error {
 		s.mu.Lock()
 		busy := s.closing || len(s.runs) > 0
 		s.mu.Unlock()
-		if busy || !s.receiverOnline(time.Now()) {
+		if busy {
 			return nil
 		}
 		p, err := s.life.Settings(role.ID)
 		if err != nil {
 			return err
 		}
-		if !p.Enabled || !p.AutoGenerate || !careDeliveryAllowed(p, now, s.location) {
+		if !p.Enabled || !p.AutoGenerate || (!p.ContinueChats && !online) || !careDeliveryAllowed(p, now, s.location) {
 			continue
 		}
-		if err = s.life.Tick(role.ID, now, s.location); err != nil {
-			return err
+		if online {
+			if err = s.life.Tick(role.ID, now, s.location); err != nil {
+				return err
+			}
 		}
 		items, err := s.life.Care(role.ID)
 		if err != nil {
@@ -332,8 +332,16 @@ func (s *Server) sweepBackgroundCare(now time.Time) error {
 			unread = unread || c.Status == "ready" || c.Status == "running"
 		}
 		sort.SliceStable(items, func(i, j int) bool { return items[i].DueAt.Before(items[j].DueAt) })
+		r, _ := http.NewRequestWithContext(s.workCtx, http.MethodPost, "http://internal/api/care/check", nil)
+		handled := false
 		for _, c := range items {
-			if c.Status != "due" || c.DueAt.After(now) {
+			if c.Status != "due" || c.DueAt.After(now) || (!online && c.SourceMessageID == "") || (!p.ContinueChats && c.SourceMessageID != "") {
+				continue
+			}
+			if c.SourceMessageID != "" && now.Sub(c.DueAt) > 2*time.Hour {
+				if _, err := s.life.UpdateCare(role.ID, c.ID, c.Revision, "canceled"); err != nil && err != companion.ErrConflict {
+					return err
+				}
 				continue
 			}
 			// Optional daily greetings don't catch up after two hours or stack
@@ -341,12 +349,21 @@ func (s *Server) sweepBackgroundCare(now time.Time) error {
 			if c.EpisodeID == "" && (unread || now.Sub(c.DueAt) > 2*time.Hour) {
 				continue
 			}
-			r, _ := http.NewRequestWithContext(s.workCtx, http.MethodPost, "http://internal/api/care/check", nil)
-			_, err = s.runCare(r, role.ID, c.ID, true)
+			_, err = s.runCare(r, role.ID, c.ID, true, now)
 			if err != nil && err != companion.ErrCareBlocked {
 				return err
 			}
+			handled = true
 			break
+		}
+		if !handled && !unread && p.ContinueChats {
+			item, err := s.offerChatContinuation(role.ID, now)
+			if err == nil {
+				_, err = s.runCare(r, role.ID, item.ID, true, now)
+			}
+			if err != nil && err != companion.ErrCareBlocked {
+				return err
+			}
 		}
 	}
 	return nil

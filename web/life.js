@@ -2,7 +2,7 @@
 export function createLifeUI({ state, json, onError, drawer, onOpenSession, onCareReady }) {
   const $ = id => document.getElementById(id);
   const ids = ['life-dialog','life-close','life-role','life-list','life-form','life-title','life-content','life-status','life-event-at','life-followup-at','life-allow-followup','life-save','life-cancel-edit','life-editor-title','life-message','life-refresh','life-filter','life-query','life-time-zone','care-dialog','care-close','care-role','care-list','care-message','care-refresh','care-settings-form','care-settings-save','care-settings-reload','care-enabled','care-auto-generate','care-daily-limit','care-quiet-start','care-quiet-end','care-daily-time','care-time-zone','care-min-interval','care-snooze-until'];
-  ids.push('care-auto-probability');
+  ids.push('care-auto-probability', 'care-continue-chats');
   const ui = Object.fromEntries(ids.map(id => [id, $(id)]));
   let role = '', generation = 0, operation = 0, mutationBusy = false;
   let episodes = [], care = [], settings = null, editing = null, settingsRevision = null;
@@ -51,6 +51,7 @@ export function createLifeUI({ state, json, onError, drawer, onOpenSession, onCa
   function setSettingsForm(value) {
     settingsRevision = value.revision; settingsConflict = false;
     ui['care-enabled'].checked = Boolean(value.enabled); ui['care-auto-generate'].checked = Boolean(value.auto_generate);
+    ui['care-continue-chats'].checked = Boolean(value.continue_chats);
     ui['care-daily-limit'].value = String(value.daily_limit ?? 1);
     ui['care-auto-probability'].value = String(value.auto_probability ?? 50);
     ui['care-min-interval'].value = String(value.min_interval_minutes ?? 180);
@@ -77,6 +78,7 @@ export function createLifeUI({ state, json, onError, drawer, onOpenSession, onCa
     ui['care-settings-save'].disabled = unavailable || mutationBusy || settingsRevision === null || settingsConflict;
     ui['care-settings-reload'].disabled = unavailable || mutationBusy;
     ui['care-auto-generate'].disabled = unavailable || mutationBusy || !ui['care-enabled'].checked;
+    ui['care-continue-chats'].disabled = ui['care-auto-generate'].disabled || !ui['care-auto-generate'].checked;
     ui['care-auto-probability'].disabled = unavailable || mutationBusy;
     for (const node of ui['life-list'].querySelectorAll('button[data-write]')) node.disabled = writeLocked;
     for (const node of ui['care-list'].querySelectorAll('button[data-write]')) node.disabled = unavailable || mutationBusy;
@@ -253,6 +255,7 @@ export function createLifeUI({ state, json, onError, drawer, onOpenSession, onCa
     mutate('life',target => json(endpoint(old ? `/api/episodes/${encodeURIComponent(old.id)}` : '/api/episodes',target),{method:old ? 'PATCH':'POST',body:JSON.stringify(body)}),() => { resetEditor(); say('life',old ? '事件已更新，之后会使用新的内容。原聊天仍可查看。':'已保存，可以用于这个角色的之后对话。'); });
   });
   ui['care-enabled'].addEventListener('change',lock);
+  ui['care-auto-generate'].addEventListener('change',lock);
   ui['care-settings-reload'].addEventListener('click',async () => { const target = role, stamp = generation, view = views.care; try { await refresh({auto:false}); if (current(target,stamp) && views.care === view && ui['care-dialog'].open && settings) { setSettingsForm(settings); say('care','已重新读取当前设置。'); } } catch (error) { if (current(target,stamp) && views.care === view) report('care',error); } });
   ui['care-settings-form'].addEventListener('submit',event => {
     event.preventDefault(); if (settingsRevision === null || settingsConflict) return;
@@ -263,7 +266,9 @@ export function createLifeUI({ state, json, onError, drawer, onOpenSession, onCa
     const interval=Number(ui['care-min-interval'].value);
     if (!Number.isInteger(interval) || interval<15 || interval>1440) {say('care','两次问候间隔请选择 15–1440 分钟。');return;}
     let until;try{until=fieldDate('care-snooze-until');}catch(error){say('care',error.message);return;}
-    const body = {revision:settingsRevision,enabled:ui['care-enabled'].checked,auto_generate:ui['care-enabled'].checked && ui['care-auto-generate'].checked,auto_probability:probability,daily_limit:limit,min_interval_minutes:interval,snooze_until:until,quiet_start:ui['care-quiet-start'].value,quiet_end:ui['care-quiet-end'].value,daily_time:ui['care-daily-time'].value};
+    const enabled = ui['care-enabled'].checked;
+    const autoGenerate = enabled && ui['care-auto-generate'].checked;
+    const body = {revision:settingsRevision,enabled,auto_generate:autoGenerate,continue_chats:autoGenerate && ui['care-continue-chats'].checked,auto_probability:probability,daily_limit:limit,min_interval_minutes:interval,snooze_until:until,quiet_start:ui['care-quiet-start'].value,quiet_end:ui['care-quiet-end'].value,daily_time:ui['care-daily-time'].value};
     const work = target => json(endpoint('/api/care/settings',target),{method:'PATCH',body:JSON.stringify(body)}); work.settingsWrite = true;
     mutate('care',work,result => { settings = result; setSettingsForm(result); nextAutoCheck = 0; say('care',body.enabled ? '关怀设置已保存。只在约定范围内准备问候。':'关怀已关闭，尚未交付的问候将停止。'); });
   });

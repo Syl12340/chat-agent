@@ -32,6 +32,7 @@ type proactiveTarget struct {
 }
 
 type proactiveFinalizer func(sessionID string, response probe.Message, messageIndex int) (message probe.Message, persist bool, err error)
+type proactiveSourceCheck func(sessionID string, session *probe.Session) error
 
 func hasUserConversation(messages []probe.Message) bool {
 	for _, message := range messages {
@@ -118,6 +119,9 @@ func (s *Server) beginProactive(parent context.Context, role, preferred string) 
 			if s.runs[id] == state {
 				delete(s.runs, id)
 				close(state.done)
+				if pending, paused, err := s.turns.HasQueued(id); !s.closing && err == nil && pending && !paused {
+					s.startTurnWorkerLocked(id, sess)
+				}
 			}
 			s.mu.Unlock()
 		})
@@ -133,7 +137,7 @@ func proactiveRequestID(kind, id string) (string, error) {
 	return value, nil
 }
 
-func (s *Server) runProactive(parent context.Context, role, preferred, kind, triggerID string, trigger any, instruction string, outputLimit int, timeout time.Duration, finalize proactiveFinalizer) (targetID string, message probe.Message, persisted bool, runErr error) {
+func (s *Server) runProactive(parent context.Context, role, preferred, kind, triggerID string, trigger any, instruction string, outputLimit int, timeout time.Duration, sourceCheck proactiveSourceCheck, finalize proactiveFinalizer) (targetID string, message probe.Message, persisted bool, runErr error) {
 	encoded, err := json.Marshal(trigger)
 	if err != nil || len(encoded) > 16<<10 || !json.Valid(encoded) || finalize == nil {
 		return "", probe.Message{}, false, errors.New("invalid proactive trigger")
@@ -147,6 +151,15 @@ func (s *Server) runProactive(parent context.Context, role, preferred, kind, tri
 		return "", probe.Message{}, false, err
 	}
 	defer target.release()
+	validateSource := func() error {
+		if sourceCheck == nil {
+			return nil
+		}
+		return sourceCheck(target.id, target.session)
+	}
+	if err := validateSource(); err != nil {
+		return target.id, probe.Message{}, false, err
+	}
 	recorder, err := runlog.Open(s.runtime.Root(), runlog.Scope{SessionID: target.id, RoleID: role, RequestID: requestID})
 	if err != nil {
 		return target.id, probe.Message{}, false, err
@@ -182,6 +195,9 @@ func (s *Server) runProactive(parent context.Context, role, preferred, kind, tri
 		return target.id, probe.Message{}, false, err
 	}
 	message, persisted, err = probe.RunFollowup(target.ctx, agent, timeout, func(response probe.Message, messageIndex int) (probe.Message, bool, error) {
+		if err := validateSource(); err != nil {
+			return probe.Message{}, false, err
+		}
 		// Finalizers build the message they persist, so marking the argument alone is
 		// not enough — each one stamps the result too. This marks whatever version
 		// comes back, so a finalizer added later inherits the flag without opting in.

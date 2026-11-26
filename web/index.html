@@ -192,13 +192,15 @@
   </dialog>
   <dialog id="care-dialog" class="knowledge-dialog life-dialog" aria-labelledby="care-heading">
     <div class="dialog-heading"><div><span id="care-role" class="eyebrow">当前角色</span><h2 id="care-heading">按你的节奏关心你</h2></div><button id="care-close" class="icon-button" aria-label="关闭关怀收件箱">×</button></div>
-    <p class="dialog-description">问候留在收件箱。开启自动生成后按额度生成；下方另行开启后台接收后，接收连接在线时也可在关闭页面后生成。关闭接收不会改动角色设置。</p>
+    <p class="dialog-description">问候留在原会话和收件箱。你可以选择让角色接着聊没聊完的话题，或按计划跟进。</p>
     <div class="life-toolbar care-toolbar"><h3 class="life-section-title">关怀收件箱</h3><button id="care-refresh" class="text-button" type="button">刷新</button></div>
     <div id="care-list" class="life-list care-list"></div>
     <form id="care-settings-form" class="memory-form life-form">
       <h3 class="life-section-title">我希望怎样收到关怀</h3>
       <label class="life-check" for="care-enabled"><input id="care-enabled" type="checkbox"><span>开启这个角色的应用内关怀</span></label>
-      <label class="life-check" for="care-auto-generate"><input id="care-auto-generate" type="checkbox"><span>允许打开应用时自动生成到期问候</span></label>
+      <label class="life-check" for="care-auto-generate"><input id="care-auto-generate" type="checkbox"><span>允许自动关怀</span></label>
+      <label class="life-check" for="care-continue-chats"><input id="care-continue-chats" type="checkbox" aria-describedby="care-continue-chats-help"><span>话题没聊完时主动接话</span></label>
+      <p id="care-continue-chats-help" class="life-meta">你说过「晚点再聊」之类的话，安静一段时间后，角色可以在原会话接话。应用关闭时也有效，已关联的 QQ 私聊可收到。</p>
       <p class="life-meta">生成问候会调用模型。每日上限包含失败的调用；失败或中断不会自动重试。关闭关怀后，尚未交付的问候停止。</p>
       <label for="care-auto-probability">自动闲聊概率（%）</label><input id="care-auto-probability" type="number" min="0" max="100" step="1" value="50" aria-describedby="care-auto-probability-help" required><p id="care-auto-probability-help" class="life-meta">仅影响自动闲聊；明确的事件跟进不随机跳过。每次到期只决定一次；未选中不会调用模型。手动生成不受此概率影响。</p>
       <label for="care-daily-limit">每日模型调用上限</label><input id="care-daily-limit" type="number" min="1" max="5" step="1" value="1" required>
@@ -206,7 +208,7 @@
       <label for="care-snooze-until">暂停关怀到（可选）</label><input id="care-snooze-until" type="datetime-local" step="60"><p class="life-meta">暂停期间不生成新问候；留空并保存可恢复原计划，不会自动开启已关闭的关怀。日期输入使用设备时区。</p>
       <div class="life-grid"><div><label for="care-quiet-start">安静时段开始</label><input id="care-quiet-start" type="time" value="22:00" required></div><div><label for="care-quiet-end">安静时段结束</label><input id="care-quiet-end" type="time" value="08:00" required></div></div>
       <p class="life-meta">安静时段内不生成问候；开始和结束相同时表示不设置安静时段。</p>
-      <label for="care-daily-time">每日轻问候时间（可选）</label><input id="care-daily-time" type="time"><p class="life-meta">留空只跟进你允许的事件。设置时间按下面显示的用户时区解释。</p>
+      <label for="care-daily-time">每日轻问候时间（可选）</label><input id="care-daily-time" type="time"><p class="life-meta">留空则取消每日问候。时间使用下方显示的时区。</p>
       <p id="care-time-zone" class="life-meta"></p>
       <div class="life-form-actions"><button id="care-settings-reload" class="text-button" type="button">重新读取设置</button><button id="care-settings-save" class="primary-button" type="submit" disabled>保存关怀设置</button></div>
     </form>

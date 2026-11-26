@@ -60,6 +60,7 @@ type CareSettings struct {
 	Revision           int        `json:"revision"`
 	Enabled            bool       `json:"enabled"`
 	AutoGenerate       bool       `json:"auto_generate"`
+	ContinueChats      bool       `json:"continue_chats,omitempty"`
 	AutoProbability    *int       `json:"auto_probability,omitempty"`
 	DailyLimit         int        `json:"daily_limit"`
 	QuietStart         string     `json:"quiet_start"`
@@ -70,23 +71,26 @@ type CareSettings struct {
 	UpdatedAt          *time.Time `json:"updated_at,omitempty"`
 }
 type CareItem struct {
-	ID              string     `json:"id"`
-	RoleID          string     `json:"role_id"`
-	EpisodeID       string     `json:"episode_id,omitempty"`
-	Title           string     `json:"title"`
-	Status          string     `json:"status"`
-	Content         string     `json:"content"`
-	Error           string     `json:"error,omitempty"`
-	Revision        int        `json:"revision"`
-	DueAt           time.Time  `json:"due_at"`
-	CreatedAt       time.Time  `json:"created_at"`
-	EpisodeRevision int        `json:"episode_revision,omitempty"`
-	PolicyRevision  int        `json:"policy_revision,omitempty"`
-	AttemptedAt     *time.Time `json:"attempted_at,omitempty"`
-	DecisionAt      *time.Time `json:"decision_at,omitempty"`
-	Probability     *int       `json:"probability,omitempty"`
-	SessionID       string     `json:"session_id,omitempty"`
-	MessageIndex    *int       `json:"message_index,omitempty"`
+	ID                string     `json:"id"`
+	RoleID            string     `json:"role_id"`
+	EpisodeID         string     `json:"episode_id,omitempty"`
+	SourceSessionID   string     `json:"source_session_id,omitempty"`
+	SourceMessageID   string     `json:"source_message_id,omitempty"`
+	SourceFingerprint string     `json:"source_topic_fingerprint,omitempty"`
+	Title             string     `json:"title"`
+	Status            string     `json:"status"`
+	Content           string     `json:"content"`
+	Error             string     `json:"error,omitempty"`
+	Revision          int        `json:"revision"`
+	DueAt             time.Time  `json:"due_at"`
+	CreatedAt         time.Time  `json:"created_at"`
+	EpisodeRevision   int        `json:"episode_revision,omitempty"`
+	PolicyRevision    int        `json:"policy_revision,omitempty"`
+	AttemptedAt       *time.Time `json:"attempted_at,omitempty"`
+	DecisionAt        *time.Time `json:"decision_at,omitempty"`
+	Probability       *int       `json:"probability,omitempty"`
+	SessionID         string     `json:"session_id,omitempty"`
+	MessageIndex      *int       `json:"message_index,omitempty"`
 	// Feedback is explicit, role-scoped evidence about this check-in. It is not
 	// promoted to long-term memory or treated as a psychological profile.
 	Feedback string `json:"feedback,omitempty"`
@@ -270,6 +274,9 @@ func validLife(state lifeSnapshot) bool {
 			return false
 		}
 		if (c.Probability != nil && (*c.Probability < 0 || *c.Probability > 100)) || (c.Status == "skipped" && (c.DecisionAt == nil || c.AttemptedAt != nil || c.Probability == nil)) {
+			return false
+		}
+		if (c.SourceMessageID != "" || c.SourceSessionID != "" || c.SourceFingerprint != "") && (c.EpisodeID != "" || !storage.ValidID(c.SourceMessageID) || !storage.ValidID(c.SourceSessionID) || !textValid(c.SourceFingerprint, 4352, false)) {
 			return false
 		}
 		if c.Feedback != "" && c.Feedback != "helpful" && c.Feedback != "less" {
@@ -658,13 +665,12 @@ func (s *LifeStore) SetSettings(role string, p CareSettings) (CareSettings, erro
 	p.UpdatedAt = &now
 	next := cloneLife(s.state)
 	next.Settings[role] = p
-	if !p.Enabled {
-		for i := range next.Care {
-			c := &next.Care[i]
-			if c.RoleID == role && (c.Status == "due" || c.Status == "generating") {
-				c.Status = "canceled"
-				c.Revision++
-			}
+	for i := range next.Care {
+		c := &next.Care[i]
+		if c.RoleID == role && (c.Status == "due" || c.Status == "generating") &&
+			(!p.Enabled || c.SourceMessageID != "" && (!p.AutoGenerate || !p.ContinueChats)) {
+			c.Status = "canceled"
+			c.Revision++
 		}
 	}
 	if err := s.save(next); err != nil {
@@ -766,6 +772,7 @@ func (s *LifeStore) Care(role string) ([]CareItem, error) {
 	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
 	return out, nil
 }
+
 // careInterval stretches the configured floor after the user said "less". That
 // feedback is the only explicit signal this feature collects, so ignoring it
 // would make the question pointless. The stretch is bounded: a bad week should
@@ -813,6 +820,9 @@ func careIntervalFor(p CareSettings, items []CareItem, role, kind string, now ti
 func CareKind(item CareItem) string {
 	if item.EpisodeID != "" {
 		return "followup"
+	}
+	if item.SourceMessageID != "" {
+		return "continuation"
 	}
 	return "greeting"
 }
@@ -903,6 +913,9 @@ func (s *LifeStore) ClaimCare(role, id string, automatic bool, now time.Time, lo
 		if c.Status != "due" || c.DueAt.After(now) {
 			return CareItem{}, ErrCareBlocked
 		}
+		if c.SourceMessageID != "" && (!p.ContinueChats || !p.AutoGenerate) {
+			return CareItem{}, ErrCareBlocked
+		}
 		// Automatic sends respect the per-kind rating; a manual one does not,
 		// because asking for this specific check-in is itself the decision.
 		if automatic && CareKindMuted(s.state.Care, role, CareKind(c), now) {
@@ -924,8 +937,8 @@ func (s *LifeStore) ClaimCare(role, id string, automatic bool, now time.Time, lo
 				return CareItem{}, ErrCareBlocked
 			}
 		}
-		// Only optional automatic daily greetings are sampled. Explicit event
-		// followups and manual generation keep their existing semantics.
+		// Sample optional greetings and conversation continuations. Explicit
+		// event followups and manual generation keep their existing semantics.
 		if automatic && c.EpisodeID == "" && c.DecisionAt == nil {
 			probability := 50
 			if p.AutoProbability != nil {
