@@ -162,6 +162,16 @@ func decodeState(id string, b []byte) (*state, bool, error) {
 		}
 	}
 	changed := false
+	// Older writers stamped v4 when a tool view was saved, even after a
+	// channel turn upgraded the ledger to v5. The origin itself was preserved.
+	if st.Version == 4 {
+		for _, item := range st.Items {
+			if item.Origin.Kind != "" {
+				st.Version, changed = 5, true
+				break
+			}
+		}
+	}
 	seen := map[string]bool{}
 	for i := range st.Items {
 		t := &st.Items[i]
@@ -613,7 +623,7 @@ func (s *Store) ProgressWithReasoning(id, batch, text, reasoning string, tools [
 	}
 	for _, tool := range tools {
 		if tool.View != nil || tool.Status != "" || tool.ElapsedMS != nil || tool.Approval != nil {
-			next.Version = 4
+			next.Version = max(next.Version, 4)
 			break
 		}
 	}
@@ -652,7 +662,7 @@ func (s *Store) FinishWithReasoning(id, batch, status, text, reasoning, message 
 	}
 	for _, tool := range tools {
 		if tool.View != nil || tool.Status != "" || tool.ElapsedMS != nil || tool.Approval != nil {
-			next.Version = 4
+			next.Version = max(next.Version, 4)
 			break
 		}
 	}

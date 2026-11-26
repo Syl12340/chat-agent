@@ -1,17 +1,87 @@
 package turns
 
 import (
-	"chat-agent/internal/media"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"chat-agent/internal/media"
 )
 
 func TestAppOriginRemainsLegacyCompatibleJSON(t *testing.T) {
 	raw, err := json.Marshal(Turn{ID: "app"})
 	if err != nil || strings.Contains(string(raw), `"origin"`) {
 		t.Fatalf("zero app origin changed legacy JSON: %s err=%v", raw, err)
+	}
+}
+
+func TestChannelToolTurnKeepsAndRepairsLedgerVersion(t *testing.T) {
+	dir := t.TempDir()
+	store, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	const session = "shared"
+	origin := TurnOrigin{Kind: "channel", Platform: "qq-official", AccountID: "bot", ConversationKind: "private", ConversationID: "conversation", SenderID: "owner"}
+	if _, _, err := store.EnqueueWithOrigin(session, "qq-turn", "Question", "auto", "", "", nil, origin); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Begin(session, 0, func(Turn) bool { return true }); err != nil {
+		t.Fatal(err)
+	}
+	tools := []ToolEvent{{ID: "call", Name: "clock", Status: "completed"}}
+	if err := store.ProgressWithReasoning(session, "qq-turn", "Reply", "", tools); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.cache[session].Version; got != 5 {
+		t.Fatalf("tool progress downgraded the ledger to v%d", got)
+	}
+	if err := store.Finish(session, "qq-turn", "completed", "Reply", "", 2, tools); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, session+".json")
+	read := func() state {
+		t.Helper()
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var saved state
+		if err := json.Unmarshal(raw, &saved); err != nil {
+			t.Fatal(err)
+		}
+		return saved
+	}
+	saved := read()
+	if saved.Version != 5 {
+		t.Fatalf("tool settlement downgraded the ledger to v%d", saved.Version)
+	}
+	saved.Version = 4
+	raw, err := json.Marshal(saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	items, paused, err := reopened.List(session)
+	if err != nil || paused || len(items) != 1 || items[0].Origin != origin || items[0].Status != "completed" || len(items[0].Tools) != 1 {
+		t.Fatalf("reading damaged ledger lost turn metadata: %+v, %v", items, err)
+	}
+	if got := read().Version; got != 5 {
+		t.Fatalf("repair was not persisted: v%d", got)
 	}
 }
 
