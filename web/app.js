@@ -860,6 +860,22 @@ function renderHistory(messages, turns = [], hashes = new Map()) {
     const saved = details.get(historyDetailKey(node));
     if (saved && node.dataset.historyDetails !== 'reasoning') node.open = saved.open;
   }
+  // Reuse unchanged cards instead of replacing the whole list. A rebuilt node
+  // loses what the reader had open - tool details, reasoning sections, and the
+  // scroll position inside them - which is why a refresh mid-conversation felt
+  // like it jumped. Only nodes whose class and rendered text are identical are
+  // reused, so anything that actually changed (the streaming reply, a new tool
+  // row, a status label) still gets a fresh node.
+  if (sameSession && ui.messages.childElementCount) {
+    const previous = new Map();
+    for (const node of ui.messages.children) {
+      if (node.dataset.messageId) previous.set(node.dataset.messageId, node);
+    }
+    if (previous.size) for (const node of Array.from(fragment.children)) {
+      const old = node.dataset.messageId && previous.get(node.dataset.messageId);
+      if (old && old.isConnected && old.className === node.className && old.textContent === node.textContent) fragment.replaceChild(old, node);
+    }
+  }
   ui.messages.replaceChildren(fragment);
   renderedSession = state.current;
   for (const node of ui.messages.querySelectorAll('[data-history-details]')) {
