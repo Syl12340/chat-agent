@@ -38,10 +38,28 @@ func publicDeviceRequest(r *http.Request) bool {
 		return true
 	}
 	switch r.URL.Path {
-	case "/api/device/register", "/api/device/challenge", "/api/device/verify":
+	case "/api/device/register", "/api/device/resolve", "/api/device/challenge", "/api/device/verify":
 		return true
 	}
 	return false
+}
+func (s *Server) resolveDevice(w http.ResponseWriter, r *http.Request) {
+	if !s.allowDeviceRequest(w, r, "resolve") {
+		return
+	}
+	var input struct {
+		Candidates []string `json:"candidates"`
+	}
+	if !decodeDeviceInput(w, r, &input) {
+		return
+	}
+	id, err := s.devices.Resolve(input.Candidates)
+	if err != nil {
+		deviceFailure(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, 200, map[string]string{"device_id": id, "server_id": s.devices.ServerID()})
 }
 func deviceFail(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, map[string]string{"error": message, "code": code})
@@ -226,9 +244,30 @@ func (s *Server) updateDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if device.Status != "approved" {
-		_ = s.push.set(device.ID, false)
+		for _, id := range s.devices.GroupIDs(device.ID) {
+			_ = s.push.set(id, false)
+		}
 	}
 	writeJSON(w, 200, map[string]any{"device": device, "server_id": s.devices.ServerID()})
+}
+func (s *Server) mergeDevices(w http.ResponseWriter, r *http.Request) {
+	if !requireDeviceAdmin(w, r) {
+		return
+	}
+	var input struct {
+		Into           string `json:"into"`
+		Revision       int    `json:"revision"`
+		TargetRevision int    `json:"target_revision"`
+	}
+	if !decodeDeviceInput(w, r, &input) {
+		return
+	}
+	identity := currentAuth(r)
+	if err := s.devices.MergeGroups(r.PathValue("id"), input.Into, input.Revision, input.TargetRevision, identity.Device.ID, identity.Method == "owner"); err != nil {
+		deviceFailure(w, err)
+		return
+	}
+	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 func (s *Server) logoutDevice(w http.ResponseWriter, r *http.Request) {
 	if currentAuth(r).Method == "device" {

@@ -51,6 +51,7 @@ type Device struct {
 	Status      string `json:"status"`
 	Revision    int    `json:"revision"`
 	Admin       bool   `json:"admin"`
+	GroupID     string `json:"group_id,omitempty"`
 }
 
 type record struct {
@@ -102,6 +103,7 @@ type Store struct {
 	lockPath     string
 	serverID     string
 	devices      map[string]record
+	groups       map[string]string
 	challenges   map[string]challengeState
 	sessions     map[[32]byte]sessionState
 	rates        map[string]rateWindow
@@ -176,7 +178,7 @@ func Open(dir string) (_ *Store, resultErr error) {
 	if err := errors.Join(writeErr, f.Close()); err != nil {
 		return nil, err
 	}
-	s := &Store{dir: dir, lockPath: lockPath, devices: make(map[string]record), challenges: make(map[string]challengeState), sessions: make(map[[32]byte]sessionState), rates: make(map[string]rateWindow)}
+	s := &Store{dir: dir, lockPath: lockPath, devices: make(map[string]record), groups: make(map[string]string), challenges: make(map[string]challengeState), sessions: make(map[[32]byte]sessionState), rates: make(map[string]rateWindow)}
 	f, err = os.Open(filepath.Join(dir, "devices.json"))
 	if errors.Is(err, os.ErrNotExist) {
 		s.serverID, err = randomID()
@@ -212,13 +214,16 @@ func Open(dir string) (_ *Store, resultErr error) {
 	s.ownerClaimed = snap.OwnerClaimed
 	for _, item := range snap.Devices {
 		_, id, err := parseKey(item.PublicKey)
-		if err != nil || id != item.ID || item.Fingerprint != id || !validName(item.Name) || item.Revision < 1 || (item.Status != "pending" && item.Status != "approved" && item.Status != "revoked") || (item.Admin && item.Status != "approved") {
+		if err != nil || id != item.ID || item.Fingerprint != id || item.GroupID != "" || !validName(item.Name) || item.Revision < 1 || (item.Status != "pending" && item.Status != "approved" && item.Status != "revoked") || (item.Admin && item.Status != "approved") {
 			return nil, errors.New("invalid device record")
 		}
 		if _, exists := s.devices[id]; exists {
 			return nil, errors.New("duplicate device record")
 		}
 		s.devices[id] = item
+	}
+	if err := s.loadGroups(); err != nil {
+		return nil, err
 	}
 	return s, nil
 }
@@ -326,7 +331,9 @@ func (s *Store) List(actorID string, owner bool) ([]Device, error) {
 	}
 	items := make([]Device, 0, len(s.devices))
 	for _, item := range s.devices {
-		items = append(items, item.trustedDevice())
+		device := item.trustedDevice()
+		device.GroupID = s.deviceGroup(device.ID)
+		items = append(items, device)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
 	return items, nil
@@ -353,36 +360,45 @@ func (s *Store) Update(id string, revision int, status string, admin *bool, acto
 	if item.Revision != revision {
 		return Device{}, ErrConflict
 	}
-	if item.Revision == int(^uint(0)>>1) {
-		return Device{}, ErrLimit
-	}
-	item.Status = status
-	item.Revision++
-	if status == "revoked" {
-		item.Admin = false
-	}
 	updated := make(map[string]record, len(s.devices))
 	for k, v := range s.devices {
 		updated[k] = v
 	}
-	updated[id] = item
+	ids := []string{id}
+	if status == "revoked" {
+		ids = s.groupIDs(id)
+	}
+	affected := make(map[string]bool, len(ids))
+	for _, member := range ids {
+		entry := updated[member]
+		if entry.Revision == int(^uint(0)>>1) {
+			return Device{}, ErrLimit
+		}
+		entry.Status = status
+		entry.Revision++
+		if status == "revoked" {
+			entry.Admin = false
+		}
+		updated[member] = entry
+		affected[member] = true
+	}
 	if err := s.save(updated, s.ownerClaimed); err != nil {
 		return Device{}, err
 	}
 	s.devices = updated
 	if status == "revoked" {
 		for key, session := range s.sessions {
-			if session.DeviceID == id {
+			if affected[session.DeviceID] {
 				delete(s.sessions, key)
 			}
 		}
 		for key, challenge := range s.challenges {
-			if challenge.DeviceID == id {
+			if affected[challenge.DeviceID] {
 				delete(s.challenges, key)
 			}
 		}
 	}
-	return item.trustedDevice(), nil
+	return updated[id].trustedDevice(), nil
 }
 func (s *Store) approved(id string) (record, error) {
 	item, exists := s.devices[id]
@@ -424,7 +440,7 @@ func (s *Store) Allow(operation, peer string) error {
 	}
 	now := time.Now()
 	s.expire(now)
-	limits := map[string]int{"register": 6, "challenge": 30, "verify": 60}
+	limits := map[string]int{"register": 6, "resolve": 30, "challenge": 30, "verify": 60}
 	limit, ok := limits[operation]
 	if !ok {
 		return ErrInvalid

@@ -164,6 +164,7 @@ button,input,textarea,select{font:inherit}button{min-height:48px;transition:back
 .primary-button,.send-button{border-radius:12px}
 .primary-button{box-shadow:0 1px 2px #0f11150f}
 .activities-card,.life-card,.care-banner,.activity-banner,.reminder-banner,.topics-card,.device-card,.role-proposal-card,.login-card{box-shadow:0 0 0 .5px var(--outline-variant);border-radius:14px}
+.device-page>.device-list{margin-top:8px;gap:8px}.device-page-nav{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.device-page input[type=search]{margin-top:8px;max-width:100%}.device-card details>select{max-width:100%}.device-card details>code{margin:7px 0}
 .tool-log summary{letter-spacing:0}
 .sidebar-note{border-top:0}
 

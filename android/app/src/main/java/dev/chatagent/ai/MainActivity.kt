@@ -280,7 +280,7 @@ class MainActivity : Activity() {
                 if (configuredServer?.origin != address.origin) {
                     configuredServer?.origin?.let { old ->
                         PushReceiverService.stop(this, old, true)
-                        deviceIdentity.setSuspended(old, true); vault.clear(old); careNotifications.configure(old, false)
+                        vault.clear(old); careNotifications.configure(old, false)
                     }
                     autoUpdateChecked = false; pendingInstall = null
                     gateway?.close(); gateway = null; server = null
@@ -364,7 +364,7 @@ class MainActivity : Activity() {
                     val payload = JSONObject(data)
                     if (payload.optString("marker") != marker || configuredServer?.origin != remoteOrigin) return
                     val type = payload.optString("type")
-                    if (type == "device_identity" || type == "device_sign") {
+                    if (type in listOf("device_identity", "device_sign", "device_candidates", "device_remember")) {
                         val id = payload.optString("id")
                         val encoded = if (type == "device_sign") payload.optString("payload") else ""
                         fun bindingCurrent() = exportPort === port && exportMarker == marker &&
@@ -375,8 +375,15 @@ class MainActivity : Activity() {
                         io.execute {
                             if (!bindingCurrent()) return@execute
                             val reply = try {
-                                (if (type == "device_identity") deviceIdentity.identity(remoteOrigin)
-                                else deviceIdentity.sign(remoteOrigin, encoded)).put("ok", true)
+                                val serverId = payload.optString("server_id")
+                                val deviceId = payload.optString("device_id")
+                                val result = when (type) {
+                                    "device_identity" -> deviceIdentity.identity(remoteOrigin, serverId, deviceId)
+                                    "device_candidates" -> deviceIdentity.candidates(remoteOrigin, serverId)
+                                    "device_remember" -> deviceIdentity.remember(remoteOrigin, serverId, deviceId)
+                                    else -> deviceIdentity.sign(remoteOrigin, encoded)
+                                }
+                                result.put("ok", true)
                             } catch (_: Exception) { JSONObject().put("ok", false) }
                             reply.put("id", id)
                             runOnUiThread {

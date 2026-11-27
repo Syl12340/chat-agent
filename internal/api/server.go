@@ -532,11 +532,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PATCH /api/push/settings", s.updatePushSettings)
 	mux.HandleFunc("GET /api/push/inbox", s.pushInbox)
 	mux.HandleFunc("POST /api/device/register", s.registerDevice)
+	mux.HandleFunc("POST /api/device/resolve", s.resolveDevice)
 	mux.HandleFunc("POST /api/device/challenge", s.challengeDevice)
 	mux.HandleFunc("POST /api/device/verify", s.verifyDevice)
 	mux.HandleFunc("POST /api/device/logout", s.logoutDevice)
 	mux.HandleFunc("GET /api/devices", s.listDevices)
 	mux.HandleFunc("PATCH /api/devices/{id}", s.updateDevice)
+	mux.HandleFunc("POST /api/devices/{id}/merge", s.mergeDevices)
 	mux.HandleFunc("POST /api/voice/speech", s.speech)
 	mux.HandleFunc("GET /api/updates/android", s.androidUpdate)
 	mux.HandleFunc("GET /api/updates/android/{sha}/app.apk", s.androidAPK)
@@ -647,7 +649,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // version is the service version reported by /api/status.
-const version = "0.7.35"
+const version = "0.7.36"
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model

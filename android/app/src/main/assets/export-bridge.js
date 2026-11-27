@@ -36,7 +36,9 @@
       save: (scope,value) => request('preferences_save', {scope,value}).then(() => undefined)
     }) });
     Object.defineProperty(window, 'ChatAndroidDevice', { configurable: true, value: Object.freeze({
-      identity: () => request('device_identity', {}, 30000).then(({ device_id, public_key, name, suspended }) => ({ device_id, public_key, name, suspended })),
+      identity: (server_id = '', device_id = '') => request('device_identity', { server_id, device_id }, 30000).then(({ device_id, public_key, name, suspended }) => ({ device_id, public_key, name, suspended })),
+      candidates: server_id => request('device_candidates', {server_id}, 30000).then(reply => reply.candidates),
+      remember: (server_id, device_id) => request('device_remember', {server_id, device_id}),
       sign(payloadBase64) {
         if (typeof payloadBase64 !== 'string' || payloadBase64.length > 2732) return Promise.reject(new Error('设备认证挑战无效'));
         return request('device_sign', { payload: payloadBase64 }, 30000).then(({ signature }) => ({ signature }));
