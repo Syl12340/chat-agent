@@ -176,3 +176,44 @@ func TestResolveAndMergeExistingDeviceCredentials(t *testing.T) {
 		}
 	}
 }
+
+func TestStableDeviceSlotReplacesOnlyPendingCredential(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	makePublic := func() string {
+		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		der, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return base64.StdEncoding.EncodeToString(der)
+	}
+	slot := "b1d761e5064bd814877eb07cb394c6d768660dc9288823b14c5287c17b979f21"
+	first, err := store.RegisterDevice(makePublic(), "same phone", slot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := store.RegisterDevice(makePublic(), "same phone", slot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ID == second.ID || len(store.devices) != 1 || store.slots[slot] != second.ID {
+		t.Fatalf("pending slot accumulated credentials: first=%s second=%s records=%d", first.ID, second.ID, len(store.devices))
+	}
+	second, err = store.Update(second.ID, second.Revision, "approved", nil, "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RegisterDevice(makePublic(), "same phone", slot); !errors.Is(err, ErrKeyChanged) {
+		t.Fatalf("approved slot accepted a replacement key: %v", err)
+	}
+	if len(store.devices) != 1 || store.slots[slot] != second.ID {
+		t.Fatal("approved slot changed after rejected replacement")
+	}
+}

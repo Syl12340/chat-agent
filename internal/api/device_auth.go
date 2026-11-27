@@ -76,6 +76,8 @@ func deviceFailure(w http.ResponseWriter, err error) {
 		deviceFail(w, 403, "device_revoked", "设备授权已撤销")
 	case errors.Is(err, deviceauth.ErrConflict):
 		deviceFail(w, 409, "device_revision_conflict", "设备记录已变更，请刷新后重试")
+	case errors.Is(err, deviceauth.ErrKeyChanged):
+		deviceFail(w, 409, "device_key_changed", "这台设备的签名密钥已变化，需要在信任设备中重新授权")
 	case errors.Is(err, deviceauth.ErrAdmin):
 		deviceFail(w, 403, "device_admin_required", "此操作需要设备管理员权限")
 	case errors.Is(err, deviceauth.ErrOwnerClaimed):
@@ -148,21 +150,22 @@ func (s *Server) registerDevice(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		PublicKey string `json:"public_key"`
 		Name      string `json:"name"`
+		SlotID    string `json:"slot_id,omitempty"`
 		ClaimCode string `json:"claim_code,omitempty"`
 	}
 	if !decodeDeviceInput(w, r, &input) {
 		return
 	}
-	register := s.devices.Register
+	register := s.devices.RegisterDevice
 	if input.ClaimCode != "" {
 		digest := sha256.Sum256([]byte(input.ClaimCode))
 		if s.config.InstanceName == "" || len(input.ClaimCode) != 64 || !time.Now().Before(s.config.ClaimExpires) || subtle.ConstantTimeCompare([]byte(hex.EncodeToString(digest[:])), []byte(s.config.ClaimHash)) != 1 {
 			deviceFail(w, 403, "invalid_instance_claim", "实例认领链接无效或已过期")
 			return
 		}
-		register = s.devices.ClaimOwner
+		register = s.devices.ClaimOwnerDevice
 	}
-	device, err := register(input.PublicKey, input.Name)
+	device, err := register(input.PublicKey, input.Name, input.SlotID)
 	if err != nil {
 		deviceFailure(w, err)
 		return
@@ -194,11 +197,12 @@ func (s *Server) verifyDevice(w http.ResponseWriter, r *http.Request) {
 		DeviceID    string `json:"device_id"`
 		ChallengeID string `json:"challenge_id"`
 		Signature   string `json:"signature"`
+		SlotID      string `json:"slot_id,omitempty"`
 	}
 	if !decodeDeviceInput(w, r, &input) {
 		return
 	}
-	session, err := s.devices.Verify(input.DeviceID, input.ChallengeID, input.Signature)
+	session, err := s.devices.VerifyDevice(input.DeviceID, input.ChallengeID, input.Signature, input.SlotID)
 	if err != nil {
 		deviceFailure(w, err)
 		return

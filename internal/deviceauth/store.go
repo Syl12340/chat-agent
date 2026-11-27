@@ -40,6 +40,7 @@ var (
 	ErrClosed       = errors.New("device store closed")
 	ErrAdmin        = errors.New("device administrator required")
 	ErrOwnerClaimed = errors.New("instance already has an owner")
+	ErrKeyChanged   = errors.New("device signing key changed")
 )
 
 const maxDevices = 512
@@ -104,6 +105,7 @@ type Store struct {
 	serverID     string
 	devices      map[string]record
 	groups       map[string]string
+	slots        map[string]string
 	challenges   map[string]challengeState
 	sessions     map[[32]byte]sessionState
 	rates        map[string]rateWindow
@@ -178,7 +180,7 @@ func Open(dir string) (_ *Store, resultErr error) {
 	if err := errors.Join(writeErr, f.Close()); err != nil {
 		return nil, err
 	}
-	s := &Store{dir: dir, lockPath: lockPath, devices: make(map[string]record), groups: make(map[string]string), challenges: make(map[string]challengeState), sessions: make(map[[32]byte]sessionState), rates: make(map[string]rateWindow)}
+	s := &Store{dir: dir, lockPath: lockPath, devices: make(map[string]record), groups: make(map[string]string), slots: make(map[string]string), challenges: make(map[string]challengeState), sessions: make(map[[32]byte]sessionState), rates: make(map[string]rateWindow)}
 	f, err = os.Open(filepath.Join(dir, "devices.json"))
 	if errors.Is(err, os.ErrNotExist) {
 		s.serverID, err = randomID()
@@ -225,6 +227,9 @@ func Open(dir string) (_ *Store, resultErr error) {
 	if err := s.loadGroups(); err != nil {
 		return nil, err
 	}
+	if err := s.loadSlots(); err != nil {
+		return nil, err
+	}
 	return s, nil
 }
 func (s *Store) save(devices map[string]record, ownerClaimed bool) error {
@@ -256,24 +261,68 @@ func (s *Store) Close() error {
 	return os.Remove(s.lockPath)
 }
 func (s *Store) Register(publicKey, name string) (Device, error) {
-	return s.register(publicKey, name, false)
+	return s.register(publicKey, name, "", false)
+}
+
+// RegisterDevice binds a cryptographic credential to one stable client slot.
+// A changed key may replace an unapproved key in that slot, but it can never
+// overwrite an approved or revoked credential without an administrator.
+func (s *Store) RegisterDevice(publicKey, name, slotID string) (Device, error) {
+	return s.register(publicKey, name, slotID, false)
 }
 
 // ClaimOwner atomically enrolls the first administrator and consumes the claim.
 // The caller must verify the instance's bootstrap credential before calling it.
 func (s *Store) ClaimOwner(publicKey, name string) (Device, error) {
-	return s.register(publicKey, name, true)
+	return s.register(publicKey, name, "", true)
 }
 
-func (s *Store) register(publicKey, name string, claim bool) (Device, error) {
+func (s *Store) ClaimOwnerDevice(publicKey, name, slotID string) (Device, error) {
+	return s.register(publicKey, name, slotID, true)
+}
+
+func (s *Store) register(publicKey, name, slotID string, claim bool) (Device, error) {
 	_, id, err := parseKey(publicKey)
-	if err != nil || !validName(name) {
+	if err != nil || !validName(name) || (slotID != "" && !hexID(slotID)) {
 		return Device{}, ErrInvalid
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
 		return Device{}, ErrClosed
+	}
+	if previousID := s.slots[slotID]; slotID != "" && previousID != "" && previousID != id {
+		previous, ok := s.devices[previousID]
+		if !ok {
+			return Device{}, ErrConflict
+		}
+		switch previous.Status {
+		case "approved":
+			return Device{}, ErrKeyChanged
+		case "revoked":
+			return Device{}, ErrRevoked
+		case "pending":
+			updated := make(map[string]record, len(s.devices))
+			for key, value := range s.devices {
+				if key != previousID {
+					updated[key] = value
+				}
+			}
+			item := record{Device: Device{ID: id, Fingerprint: id, Name: name, Status: "pending", Revision: previous.Revision + 1}, PublicKey: publicKey}
+			updated[id] = item
+			if err := s.save(updated, s.ownerClaimed); err != nil {
+				return Device{}, err
+			}
+			oldSlots := s.slots
+			newSlots := cloneSlots(oldSlots)
+			newSlots[slotID] = id
+			if err := s.saveSlots(newSlots); err != nil {
+				_ = s.save(s.devices, s.ownerClaimed)
+				return Device{}, err
+			}
+			s.devices, s.slots = updated, newSlots
+			return item.trustedDevice(), nil
+		}
 	}
 	item, exists := s.devices[id]
 	if exists && !claim {
@@ -306,6 +355,15 @@ func (s *Store) register(publicKey, name string, claim bool) (Device, error) {
 	updated[id] = item
 	if err := s.save(updated, s.ownerClaimed || claim); err != nil {
 		return Device{}, err
+	}
+	if slotID != "" && s.slots[slotID] != id {
+		newSlots := cloneSlots(s.slots)
+		newSlots[slotID] = id
+		if err := s.saveSlots(newSlots); err != nil {
+			_ = s.save(s.devices, s.ownerClaimed)
+			return Device{}, err
+		}
+		s.slots = newSlots
 	}
 	s.devices = updated
 	s.ownerClaimed = s.ownerClaimed || claim
@@ -510,6 +568,10 @@ func (s *Store) Challenge(id string) (Challenge, error) {
 	return challenge, nil
 }
 func (s *Store) Verify(id, challengeID, signature string) (Session, error) {
+	return s.VerifyDevice(id, challengeID, signature, "")
+}
+
+func (s *Store) VerifyDevice(id, challengeID, signature, slotID string) (Session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
@@ -537,6 +599,9 @@ func (s *Store) Verify(id, challengeID, signature string) (Session, error) {
 	digest := sha256.Sum256(challenge.Raw)
 	if !ecdsa.VerifyASN1(key, digest[:], sig) {
 		return Session{}, ErrSignature
+	}
+	if err := s.bindSlotLocked(slotID, id); err != nil {
+		return Session{}, err
 	}
 	if len(s.sessions) >= 2048 {
 		return Session{}, ErrLimit

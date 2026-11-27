@@ -18,17 +18,32 @@ async function browserKey() {
     request.onupgradeneeded=()=>request.result.createObjectStore('identity');
     request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(new Error('无法打开本机设备存储'));
   });
-  const read=()=>new Promise((resolve,reject)=>{const tx=db.transaction('identity');const q=tx.objectStore('identity').get('p256');q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(new Error('无法读取设备密钥'));});
+  const read=name=>new Promise((resolve,reject)=>{const tx=db.transaction('identity');const q=tx.objectStore('identity').get(name);q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(new Error('无法读取设备身份'));});
+  const add=(name,value)=>new Promise((resolve,reject)=>{const tx=db.transaction('identity','readwrite');tx.objectStore('identity').add(value,name);tx.oncomplete=resolve;tx.onabort=()=>reject(new Error('设备身份已在另一个页面创建'));});
   try {
-    let pair=await read();
+    let pair=await read('p256');
     if(!pair){
       const generated=await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},false,['sign','verify']);
-      try {await new Promise((resolve,reject)=>{const tx=db.transaction('identity','readwrite');tx.objectStore('identity').add(generated,'p256');tx.oncomplete=resolve;tx.onabort=()=>reject(new Error('设备密钥已在另一个页面创建'));});}catch{}
-      pair=await read();
+      try {await add('p256',generated);}catch{}
+      pair=await read('p256');
     }
     if(!pair?.privateKey||!pair.publicKey)throw new Error('无法保存设备密钥，请检查浏览器存储权限');
-    return pair;
+    let slot=await read('slot-v1');
+    if(!(slot instanceof Uint8Array) || slot.length!==32){
+      const generated=crypto.getRandomValues(new Uint8Array(32));
+      try {await add('slot-v1',generated);}catch{}
+      slot=await read('slot-v1');
+    }
+    if(!(slot instanceof Uint8Array) || slot.length!==32)throw new Error('无法保存设备槽位，请检查浏览器存储权限');
+    return {pair,slot};
   } finally {db.close();}
+}
+
+async function deviceSlot(serverID, seed, kind='web') {
+  const prefix=new TextEncoder().encode(`chat-agent-device-slot-v1\n${kind}\n${serverID}\n`);
+  const input=new Uint8Array(prefix.length+seed.length);input.set(prefix);input.set(seed,prefix.length);
+  const digest=await crypto.subtle.digest('SHA-256',input);
+  return Array.from(new Uint8Array(digest),v=>v.toString(16).padStart(2,'0')).join('');
 }
 
 // WebCrypto emits IEEE-P1363 r||s; the Android/Go contract uses ASN.1 DER.
@@ -73,29 +88,28 @@ export function createDeviceAuth({state, onToken, onError, adminRequest}) {
     if(identityPromise)return identityPromise;
     identityPromise=(async()=>{
       let identity;
+      let serverID='';
+      try {
+        const discovered=await publicJSON('/api/device/resolve', {candidates:[]});
+        if (!isDigest(discovered.server_id)) throw new Error('服务器设备身份无效');
+        serverID=discovered.server_id;
+      } catch (error) { if (error.status!==404) throw error; }
       if(native){
         if(!window.ChatAndroidDevice)await new Promise(resolve=>{const ready=()=>{clearTimeout(timer);window.removeEventListener('chat-native-ready',ready);resolve();};const timer=setTimeout(ready,5000);window.addEventListener('chat-native-ready',ready);});
         if(!window.ChatAndroidDevice)throw new Error('请更新 Android 客户端以启用设备鉴权');
         const bridge=window.ChatAndroidDevice;
-        let serverID='';
-        if (bridge.candidates) {
-          try {
-            const discovered=await publicJSON('/api/device/resolve', {candidates:[]});
-            if (!isDigest(discovered.server_id)) throw new Error('服务器设备身份无效');
-            serverID=discovered.server_id;
-          } catch (error) { if (error.status!==404) throw error; }
-        }
-        if (serverID) {
-          const candidates=await bridge.candidates(serverID);
+        if (serverID && bridge.candidates) {
+          const reply=await bridge.candidates(serverID);
+          const candidates=Array.isArray(reply)?reply:(Array.isArray(reply?.candidates)?reply.candidates:[]);
           const found=candidates.length ? await publicJSON('/api/device/resolve', {candidates}) : {server_id:serverID,device_id:''};
           if (found.server_id!==serverID || (found.device_id && !candidates.includes(found.device_id))) throw new Error('服务器设备身份发生变化，请重新连接');
           identity={...await bridge.identity(serverID,found.device_id),server_id:serverID};
         } else identity=await bridge.identity();
       }else{
         if(!window.isSecureContext||!crypto.subtle||!window.indexedDB)throw new Error('设备注册需要 HTTPS 或本机安全连接');
-        pair=await browserKey();
+        const browser=await browserKey();pair=browser.pair;
         const spki=await crypto.subtle.exportKey('spki',pair.publicKey),digest=await crypto.subtle.digest('SHA-256',spki);
-        identity={device_id:Array.from(new Uint8Array(digest),v=>v.toString(16).padStart(2,'0')).join(''),public_key:toBase64(spki),name:browserName()};
+        identity={device_id:Array.from(new Uint8Array(digest),v=>v.toString(16).padStart(2,'0')).join(''),public_key:toBase64(spki),name:browserName(),slot_id:serverID?await deviceSlot(serverID,browser.slot):'',server_id:serverID};
       }
       if(!/^[0-9a-f]{64}$/.test(identity.device_id)||!identity.public_key)throw new Error('设备身份不可用');
       if($('device-fingerprint'))$('device-fingerprint').textContent=identity.device_id.match(/.{1,8}/g).join(' ');
@@ -110,7 +124,7 @@ export function createDeviceAuth({state, onToken, onError, adminRequest}) {
     const stamp=epoch;controller=new AbortController();const signal=controller.signal;
     flight=(async()=>{
       const id=await getIdentity();valid(stamp);
-      const registrationInput={public_key:id.public_key,name:($('device-name')?.value||id.name||'我的设备').trim()};
+      const registrationInput={public_key:id.public_key,name:($('device-name')?.value||id.name||'我的设备').trim(),...(isDigest(id.slot_id)?{slot_id:id.slot_id}:{})};
       let registeredServer='';
       if(claimCode){
         try{registeredServer=(await publicJSON('/api/device/register',{...registrationInput,claim_code:claimCode},signal)).server_id;}
@@ -137,9 +151,9 @@ export function createDeviceAuth({state, onToken, onError, adminRequest}) {
       if(lines.length!==6||lines[0]!=='chat-agent-device-v1'||lines[1]!==challenge.server_id||lines[2]!==id.device_id||lines[3]!==challenge.challenge_id||lines[5]!==challenge.expires_at)throw new Error('服务器身份请求格式无效');
       const signature=native?(await window.ChatAndroidDevice.sign(challenge.payload)).signature:toBase64(derSignature(await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},pair.privateKey,payload)));
       valid(stamp);
-      const result=await publicJSON('/api/device/verify',{device_id:id.device_id,challenge_id:challenge.challenge_id,signature},signal);valid(stamp);
+      const result=await publicJSON('/api/device/verify',{device_id:id.device_id,challenge_id:challenge.challenge_id,signature,...(isDigest(id.slot_id)?{slot_id:id.slot_id}:{})},signal);valid(stamp);
       if(!result.token?.startsWith('dvc1_')||result.server_id!==challenge.server_id||result.device?.id!==id.device_id)throw new Error('设备会话无效');
-      if(id.server_id)await window.ChatAndroidDevice.remember(id.server_id,id.device_id);
+      if(native&&id.server_id&&window.ChatAndroidDevice)await window.ChatAndroidDevice.remember(id.server_id,id.device_id);
       valid(stamp);
       cached=result;setPaused(false);stopRetry();say('设备已授权，正在连接…');return result.token;
     })().finally(()=>{if(stamp===epoch){flight=null;controller=null;}});

@@ -2,6 +2,7 @@ package dev.chatagent.ai
 
 import android.content.Context
 import android.os.Build
+import android.provider.Settings
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -14,6 +15,7 @@ import java.security.KeyPairGenerator
 import java.security.KeyStore
 import java.security.MessageDigest
 import java.security.PrivateKey
+import java.security.SecureRandom
 import java.security.Signature
 import java.security.spec.ECGenParameterSpec
 import java.util.Collections
@@ -27,6 +29,7 @@ class DeviceIdentity(context: Context) {
         private val idFormat = Regex("[0-9a-f]{64}")
         private val lock = Any()
     }
+    private val application = context.applicationContext
     private val preferences = context.getSharedPreferences("chat-device-identity", Context.MODE_PRIVATE)
     private data class Selection(val origin: String, val server: String, val alias: String)
     private var selection: Selection? = null
@@ -40,6 +43,19 @@ class DeviceIdentity(context: Context) {
     }
 
     private fun keyStore(): KeyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+
+    private fun slotID(serverId: String): String {
+        require(idFormat.matches(serverId))
+        val systemID = Settings.Secure.getString(application.contentResolver, Settings.Secure.ANDROID_ID)
+            ?.takeIf { it.isNotBlank() && it != "9774d56d682e549c" }
+        val seed = systemID ?: preferences.getString("device-slot-seed", null) ?: run {
+            val generated = ByteArray(32).also(SecureRandom()::nextBytes)
+                .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+            check(preferences.edit().putString("device-slot-seed", generated).commit())
+            generated
+        }
+        return fingerprint("chat-agent-device-slot-v1\nandroid\n$serverId\n$seed".toByteArray(Charsets.UTF_8))
+    }
 
     private fun createKey(store: KeyStore, alias: String) {
         if (!store.containsAlias(alias)) {
@@ -68,7 +84,7 @@ class DeviceIdentity(context: Context) {
     fun candidates(remoteOrigin: String, serverId: String): JSONObject = synchronized(lock) {
         val store = keyStore()
         val ids = aliases(store, remoteOrigin, serverId).take(40).map { fingerprint(store.getCertificate(it).publicKey.encoded) }
-        JSONObject().put("candidates", JSONArray(ids))
+        JSONObject().put("candidates", JSONArray(ids)).put("slot_id", slotID(serverId))
     }
 
     fun identity(remoteOrigin: String, serverId: String = "", deviceId: String = ""): JSONObject = synchronized(lock) {
@@ -86,6 +102,7 @@ class DeviceIdentity(context: Context) {
         JSONObject().put("device_id", fingerprint(publicKey))
             .put("public_key", Base64.encodeToString(publicKey, Base64.NO_WRAP))
             .put("name", Build.MODEL)
+            .put("slot_id", if (serverId.isEmpty()) "" else slotID(serverId))
             .put("suspended", preferences.getBoolean("$origin.suspended", false))
     }
 
