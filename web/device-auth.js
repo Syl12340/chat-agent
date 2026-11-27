@@ -19,22 +19,33 @@ async function browserKey() {
     request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(new Error('无法打开本机设备存储'));
   });
   const read=name=>new Promise((resolve,reject)=>{const tx=db.transaction('identity');const q=tx.objectStore('identity').get(name);q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(new Error('无法读取设备身份'));});
-  const add=(name,value)=>new Promise((resolve,reject)=>{const tx=db.transaction('identity','readwrite');tx.objectStore('identity').add(value,name);tx.oncomplete=resolve;tx.onabort=()=>reject(new Error('设备身份已在另一个页面创建'));});
+  // Entries added here go through one transaction. Writing the key and the slot
+  // as two separate transactions is what allowed a store holding a key but no
+  // slot, which a later run then filled with a different value.
+  const write=entries=>new Promise((resolve,reject)=>{const tx=db.transaction('identity','readwrite');const store=tx.objectStore('identity');for(const [name,value] of entries)store.add(value,name);tx.oncomplete=resolve;tx.onabort=()=>reject(new Error('设备身份已在另一个页面创建'));});
   try {
     let pair=await read('p256');
-    if(!pair){
-      const generated=await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},false,['sign','verify']);
-      try {await add('p256',generated);}catch{}
-      pair=await read('p256');
-    }
-    if(!pair?.privateKey||!pair.publicKey)throw new Error('无法保存设备密钥，请检查浏览器存储权限');
     let slot=await read('slot-v1');
-    if(!(slot instanceof Uint8Array) || slot.length!==32){
-      const generated=crypto.getRandomValues(new Uint8Array(32));
-      try {await add('slot-v1',generated);}catch{}
+    const needPair=!pair?.privateKey||!pair.publicKey;
+    const needSlot=!(slot instanceof Uint8Array)||slot.length!==32;
+    if(needPair||needSlot){
+      // Everything missing is created in one transaction. Writing them one at a
+      // time is what could leave a store holding a key but no slot, and a later
+      // run would then fill that gap with a different value.
+      const entries=[];
+      if(needPair)entries.push(['p256',await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},false,['sign','verify'])]);
+      if(needSlot){
+        // The slot stays independent of the key on purpose: it is how the server
+        // recognises a device whose signing credential was replaced. Deriving it
+        // from the key would make a rotated key look like a different device.
+        entries.push(['slot-v1',crypto.getRandomValues(new Uint8Array(32))]);
+      }
+      try {await write(entries);}catch{}
+      pair=await read('p256');
       slot=await read('slot-v1');
     }
-    if(!(slot instanceof Uint8Array) || slot.length!==32)throw new Error('无法保存设备槽位，请检查浏览器存储权限');
+    if(!pair?.privateKey||!pair.publicKey)throw new Error('无法保存设备密钥，请检查浏览器存储权限');
+    if(!(slot instanceof Uint8Array)||slot.length!==32)throw new Error('无法保存设备槽位，请检查浏览器存储权限');
     return {pair,slot};
   } finally {db.close();}
 }
