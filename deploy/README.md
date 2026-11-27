@@ -147,7 +147,9 @@ go build -trimpath -buildvcs=false -ldflags '-s -w' -o bin/chat-agent-linux-amd6
 
 生产服务已加载工作区插件时，用管理员设备打开要授权的普通会话，在「连接信息 → 服务器运维」开启「允许当前会话查看和管理服务器」。保存后，下一轮开始时会根据该会话的授权装配服务器工具，无需重新部署或绑定电脑。当前开关同时授予工作区和已配置的主机运维工具，请只在预期的私聊会话开启。若看不到这项设置，先确认当前设备拥有管理员权限，并且连接的是云端 CA。
 
-在主机本地配置 `CHAT_HOST_TOOL_SESSIONS` 为获准会话 ID，多个用逗号分隔。再按需要将 `builtin.workspace:filesystem:workspace://server` 或 `builtin.server:filesystem:diagnostics://host` 加入现有 `CHAT_PLUGIN_GRANTS`。停用任一插件可将对应 ID 加入 `CHAT_PLUGINS_DISABLED`。
+将 `builtin.workspace:filesystem:workspace://server` 加入 `CHAT_PLUGIN_GRANTS` 并设置独立的 `CHAT_WORKSPACE_ROOT` 后，已信任设备可以在 App 或网页的私聊里直接使用服务器工作区。Linux amd64 以非 root 运行且支持 Landlock ABI 4 时，模型可调用 `workspace_shell`。用户在对话中确认准确的命令、路径和模式后，原轮次继续运行。只读模式仅可写临时目录，工作区写入模式也只能写工作区及临时目录。两种模式均禁用网络，隔离无法建立时终止执行。
+
+服务器运维和预设动作仍由 `CHAT_HOST_TOOL_SESSIONS` 或当前会话的运维开关授权。将 `builtin.server:filesystem:diagnostics://host` 加入 `CHAT_PLUGIN_GRANTS` 可启用运维插件。停用插件可将对应 ID 加入 `CHAT_PLUGINS_DISABLED`。
 
 工作区指向 `CHAT_WORKSPACE_ROOT` 的独立目录。执行动作可选，由 `CHAT_WORKSPACE_ACTIONS` 的 JSON 对象定义。键是模型可选的动作名，值是宿主配置的完整 argv 数组。只把受信动作放入白名单。执行器在 Linux 上以 CA 服务账号运行，使用进程组取消和固定超时。它继承服务单元的访问权限，适用于受信任务。
 

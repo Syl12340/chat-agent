@@ -75,7 +75,7 @@ func TestRecallContextLifecycle(t *testing.T) {
 	// The read path now goes through the plugin catalog, not a host closure: this
 	// also asserts the tool is actually offered to that conversation.
 	var open probe.Tool
-	for _, tool := range app.pluginTools(app.toolCapabilities(), "new-conversation", "companion") {
+	for _, tool := range app.pluginTools(app.toolCapabilities(), "new-conversation", "companion", false) {
 		if tool.Name == "shared_activity_open" {
 			open = tool
 		}

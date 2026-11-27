@@ -75,6 +75,18 @@ func (s *Server) hostPluginAllowed(id, session string) bool {
 	}
 }
 
+func (s *Server) hostToolAllowed(plugin, tool, session string, applicationTurn bool) bool {
+	if plugin == workspace.ID && tool != "workspace_exec" {
+		if applicationTurn {
+			return session != "" && !s.publicChannelSession(session)
+		}
+		if tool == "workspace_shell" {
+			return false
+		}
+	}
+	return s.hostPluginAllowed(plugin, session)
+}
+
 // hostToolsAllowed unions the deployment default with the operator's runtime
 // grants. Both are per conversation; neither can widen the other's meaning.
 func (s *Server) hostToolsAllowed(session string) bool {

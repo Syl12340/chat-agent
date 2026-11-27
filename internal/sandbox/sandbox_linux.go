@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"syscall"
 	"unsafe"
@@ -76,7 +77,7 @@ const (
 		accessRefer | accessTruncate
 	// writeFileRights writes to existing files without the creation and removal
 	// rights. /dev/null is the reason this exists.
-	writeFileRights = readRights | accessWriteFile | accessTruncate
+	writeFileRights = accessReadFile | accessWriteFile | accessTruncate
 )
 
 type rulesetAttr struct {
@@ -192,6 +193,10 @@ func Run(policy Policy, argv []string) error {
 	if len(argv) == 0 {
 		return errors.New("沙箱需要一个要执行的命令")
 	}
+	// Landlock and seccomp apply to the calling thread. The thread that execs
+	// the shell must be the same one that installed both policies.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	if err := Restrict(policy); err != nil {
 		return err
 	}
@@ -227,7 +232,7 @@ func Run(policy Policy, argv []string) error {
 
 // ParseArgs reads the internal re-exec form:
 //
-//	__sandbox [--ro DIR]... [--rw DIR]... [--rwfile DIR]... [--no-network] -- COMMAND [ARG]...
+//	__sandbox [--ro DIR]... [--rw DIR]... [--rwfile FILE]... [--no-network] -- COMMAND [ARG]...
 func ParseArgs(args []string) (Policy, []string, error) {
 	policy := Policy{}
 	i := 0

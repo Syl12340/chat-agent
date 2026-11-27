@@ -417,7 +417,7 @@ func (s *Server) agentForTurn(sess *probe.Session, inputs []string, sessionID st
 	c.DisableBuiltinClock = true
 	if !publicChannel {
 		capabilities := s.toolCapabilities()
-		c.Tools = append(c.Tools, s.pluginTools(capabilities, sessionID, role.ID)...)
+		c.Tools = append(c.Tools, s.pluginTools(capabilities, sessionID, role.ID, c.InteractiveApproval)...)
 		c.Tools = append(c.Tools, s.decisionTool()...)
 		c.Tools = append(c.Tools, s.imageTools(role.ID, sessionID, c.RequestID)...)
 		c.Tools = append(c.Tools, s.localAgentTools(localTaskScope{SessionID: sessionID, RoleID: role.ID, RequestID: c.RequestID})...)
@@ -434,6 +434,12 @@ func (s *Server) agentForTurn(sess *probe.Session, inputs []string, sessionID st
 			}
 		}
 		c.Tools = filtered
+	}
+	for _, tool := range c.Tools {
+		if tool.Name == "workspace_shell" {
+			prompt.Add("server-workspace", 59, "\nFor tasks on the CA server, use the server workspace tools directly. `workspace_shell` runs in that workspace and does not require a paired computer. Use read-only for inspection and workspace-write for changes. The app will ask the user to approve the exact command and resumes this run after the decision. Use `workspace_share` for a file the user wants to download. Local-device tools are for tasks on a paired computer.\n")
+			break
+		}
 	}
 	c.SystemPrompt, err = prompt.Render()
 	if err != nil {

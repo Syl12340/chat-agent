@@ -6,14 +6,8 @@ import (
 	"fmt"
 )
 
-// ErrNeedsApproval means this call was declared to need an independent
-// evaluation, none could be obtained, and no human has authorized this exact
-// call.
-//
-// It is deliberately not a permanent refusal: the assessor is an advisor and the
-// user is the authority. A missing opinion escalates to the person; it never
-// passes silently and never blocks forever.
-var ErrNeedsApproval = errors.New("这项操作需要独立评估，但评估服务当前不可用。请把具体风险和影响范围讲清楚；用户在界面上确认执行后，原样重试这一次调用（不要修改参数），不要替用户假设同意")
+// ErrNeedsApproval marks a call that is waiting for host-recorded human consent.
+var ErrNeedsApproval = errors.New("这项操作需要用户在界面确认原调用")
 
 // gateDecision runs the host's decision checkpoint for one call.
 //
@@ -93,6 +87,9 @@ func (e *ToolExecutor) requireHumanApproval(execution ToolExecution, record *Dec
 	}
 	const reason = "该主机操作被配置为必须由用户逐次批准"
 	record.Outcome = "needs_approval"
+	if record.Reason == "" {
+		record.Reason = reason
+	}
 	record.Approval = &ApprovalRequest{Tool: execution.Name, Digest: digest, Reason: reason}
 	if !execution.interactiveApproval {
 		e.approvals.NoteDenied(sessionID, roleID, execution.Name, digest, reason)
@@ -157,8 +154,7 @@ func decisionSummary(record *DecisionRecord) string {
 	case "skipped":
 		return ""
 	case "needs_approval":
-		return "决策服务不可用（" + record.Reason + "）。这项操作风险较高，没有执行。" +
-			"请向用户说明具体风险和影响范围；用户在界面上确认执行后，才可以原样重试这一次调用。"
+		return "操作等待用户确认（" + record.Reason + "）。请说明具体风险和影响范围，等待界面决定。"
 	case "user_override":
 		return "本次执行已获用户在界面上的明确确认，已记录批准编号。"
 	case "refused":

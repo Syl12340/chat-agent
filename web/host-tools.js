@@ -17,13 +17,14 @@ export function createHostTools({state,json,onError}) {
       : Boolean(session && (automatic || sessions.includes(session) || fromEnv));
     allow.checked=granted;
     allow.disabled=pending || !session || fromEnv || automatic;
-    note.hidden=!fromEnv&&!automatic;
-    note.textContent=automatic ? '可直接在对话中读取工作区。修改文件和执行命令时需要确认。' : fromEnv ? '这个会话由服务器环境配置固定授权，页面上不能关闭。' : '';
+    const workspace = value?.workspace_available ? `${value.scope_label || '服务器'}工作区可在应用内私聊直接使用。${value.shell_available ? '支持沙箱 Shell，每条命令在对话中确认。' : '此实例当前未开放沙箱 Shell。'}` : '';
+    note.textContent=[workspace, fromEnv && !automatic ? '当前会话的运维权限由服务器配置。' : ''].filter(Boolean).join(' ');
+    note.hidden=!note.textContent;
     const text=failure || (pending ? '正在保存…'
-      : automatic ? `已启用：当前会话直接使用${value?.scope_label||'本机'}工作区。`
+      : automatic ? ''
       : fromEnv ? '由服务器配置授权。'
-      : granted ? '已授权：当前会话可以查看服务器状态、日志和版本。'
-      : '未授权：当前会话看不到服务器工具。');
+      : granted ? '当前会话已授权使用运维工具。'
+      : '当前会话的运维工具已关闭。');
     status.textContent=text; status.hidden=!text;
   };
   async function refresh(){
@@ -32,9 +33,11 @@ export function createHostTools({state,json,onError}) {
     try{
       value=await json('/api/host-tools');
       section.hidden=!value.configured;
-      if(value.instance){title.textContent='服务器工作区';description.textContent=`${value.instance} 的私有工作区可在应用内的对话直接使用。`;label.lastChild.textContent=' 私有工作区已启用';}
-      else if(value.auto_grant){title.textContent='本机工作区';description.textContent='本地 Agent loop 直接读取当前电脑工作区。文件写入仍需逐次批准；Windows 尚无强制 shell 沙箱，因此不会开放任意命令。';label.lastChild.textContent=' 本机工作区已直接启用';}
-      else{title.textContent='服务器运维';description.textContent='开启后，这个会话可以查看服务器状态、日志和版本，也能在你的服务器沙箱里读写文件。维护动作仍然要在每次执行前单独批准，开关本身不等于执行许可。';label.lastChild.textContent=' 允许当前会话查看和管理服务器';}
+      const operations = value.tools?.some(tool => tool.startsWith('server_') || tool === 'workspace_exec');
+      description.hidden = label.hidden = value.auto_grant || !operations;
+      title.textContent = value.auto_grant ? `${value.scope_label || '服务器'}工作区` : '服务器工作区与运维';
+      description.textContent = '可以为当前会话单独开启服务器运维和预设动作。维护动作仍需逐次批准。';
+      label.lastChild.textContent = ' 允许当前会话使用运维工具';
       failure='';
       render();
     }catch(error){section.hidden=true;value=null;onError(error);}

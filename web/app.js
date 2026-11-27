@@ -678,10 +678,16 @@ function workspaceDownload(data) {
 // toolApproval renders the single human confirmation a refused call may offer.
 // Showing it is not consent: the button only asks the host to record one.
 function toolApproval(log, approval) {
+  const previous = log.approvalRequest;
   log.approvalRequest = approval || null;
   if (!approval) {
     if (log.approval) { log.approval.remove(); delete log.approval; }
     return;
+  }
+  if (approval.tool === 'workspace_shell' && previous?.digest !== approval.digest) {
+    const group = log.node.closest('.tool-group');
+    if (group) group.open = true;
+    log.node.open = true;
   }
   if (!log.approval) {
     const node = document.createElement('div'); node.className = 'tool-approval';

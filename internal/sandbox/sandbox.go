@@ -21,10 +21,7 @@ type Policy struct {
 	ReadOnly []string
 	// Writable directories are readable, writable and executable.
 	Writable []string
-	// WritableFiles directories allow writing to files that already exist, but
-	// not creating, renaming or deleting entries. /dev needs exactly this: a
-	// write sink like /dev/null is expected to work, while nothing under /dev
-	// should become creatable.
+	// WritableFiles grants access to exact existing files, such as /dev/null.
 	WritableFiles []string
 	// DenyNetwork refuses creating network and local IPC sockets. Existing
 	// descriptors are not inherited by the sandbox runner.

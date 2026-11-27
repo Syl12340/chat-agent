@@ -67,14 +67,14 @@ func newPluginHost(manifest pluginapi.Manifest, dataDir string, policy pluginapi
 //
 // The wrap keeps the error surface identical to built-in tools so callers cannot
 // tell a plugin tool from a core one.
-func (s *Server) pluginTools(enable pluginapi.Enablement, sessionID, roleID string) []probe.Tool {
+func (s *Server) pluginTools(enable pluginapi.Enablement, sessionID, roleID string, applicationTurn bool) []probe.Tool {
 	if s.plugins == nil {
 		return nil
 	}
 	admission := s.plugins.Admit(enable)
 	out := make([]probe.Tool, 0, len(admission.Tools))
 	for _, loaded := range admission.Tools {
-		if !s.hostPluginAllowed(loaded.PluginID, sessionID) {
+		if !s.hostToolAllowed(loaded.PluginID, loaded.Tool.Name, sessionID, applicationTurn) {
 			continue
 		}
 		tool := loaded.Tool
@@ -93,7 +93,7 @@ func (s *Server) pluginTools(enable pluginapi.Enablement, sessionID, roleID stri
 			Receipt:          probe.ReceiptCapability(tool.Receipt),
 			Parameters:       tool.Parameters,
 			Guard: func(_ context.Context, _ probe.ToolExecution) error {
-				if !s.hostPluginAllowed(loaded.PluginID, sessionID) {
+				if !s.hostToolAllowed(loaded.PluginID, tool.Name, sessionID, applicationTurn) {
 					return errors.New("当前会话的工具权限已撤销")
 				}
 				return nil
@@ -112,9 +112,6 @@ func (s *Server) pluginTools(enable pluginapi.Enablement, sessionID, roleID stri
 				}
 				return out, nil
 			},
-		}
-		if s.config.InstanceName != "" && tool.Name == "workspace_shell" {
-			definition.ApprovalRequired = true
 		}
 		out = append(out, definition)
 	}

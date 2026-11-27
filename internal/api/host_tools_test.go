@@ -89,6 +89,9 @@ func TestHostToolsAreGrantedPerSessionAtRuntime(t *testing.T) {
 	if granted() {
 		t.Fatal("a fresh conversation already had machine access")
 	}
+	if !app.hostToolAllowed("builtin.workspace", "workspace_shell", session.ID, true) || app.hostToolAllowed("builtin.workspace", "workspace_shell", session.ID, false) || app.hostToolAllowed("builtin.workspace", "workspace_exec", session.ID, true) {
+		t.Fatal("the app should get sandbox access without enabling channel or fixed system actions")
+	}
 	request("POST", "/api/host-tools/sessions", map[string]any{"session": session.ID, "allow": true}, &state, 200)
 	if !slices.Contains(state.Sessions, session.ID) || !granted() {
 		t.Fatalf("grant did not take effect: %+v", state)
@@ -110,7 +113,7 @@ func TestHostToolsAreGrantedPerSessionAtRuntime(t *testing.T) {
 
 func hostToolNamesFor(app *Server, session string) []string {
 	names := []string{}
-	for _, tool := range app.pluginTools(app.toolCapabilities(), session, "companion") {
+	for _, tool := range app.pluginTools(app.toolCapabilities(), session, "companion", false) {
 		names = append(names, tool.Name)
 	}
 	return names

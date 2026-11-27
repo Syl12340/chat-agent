@@ -13,7 +13,7 @@ func (s *Server) workspaceFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session := r.PathValue("id")
-	if !s.hostPluginAllowed(workspace.ID, session) || s.config.HostTools.WorkspaceRoot == "" || !s.pluginPolicy.PluginEnabled(workspace.ID) || !s.pluginPolicy.Grant(workspace.ID, workspace.Permission) {
+	if !s.hostToolAllowed(workspace.ID, "workspace_share", session, true) || s.config.HostTools.WorkspaceRoot == "" || !s.pluginPolicy.PluginEnabled(workspace.ID) || !s.pluginPolicy.Grant(workspace.ID, workspace.Permission) {
 		fail(w, http.StatusForbidden, "这个会话没有服务器工作区权限")
 		return
 	}

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -19,7 +20,9 @@ import (
 func canExecute() bool { return os.Geteuid() != 0 }
 
 // sandboxReady reports whether real confinement is available.
-func sandboxReady() bool { return sandbox.Probe().ABI >= 4 }
+func sandboxReady() bool {
+	return runtime.GOARCH == "amd64" && canExecute() && sandbox.Probe().ABI >= 4
+}
 
 // readOnlyPaths are the system directories a confined command may read. Writes
 // are granted only for the workspace, so a command that needs to change
@@ -81,11 +84,7 @@ func runAction(ctx context.Context, dir string, argv []string) (string, string) 
 // characters in the string. If confinement is unavailable the command does not
 // run at all -- an unconfined shell would be a different product.
 func runShell(ctx context.Context, root, dir, command, mode string) (string, string, error) {
-	status := sandbox.Probe()
-	if status.ABI < 4 {
-		return "", "SANDBOX_UNAVAILABLE", nil
-	}
-	if !canExecute() {
+	if !sandboxReady() {
 		return "", "SANDBOX_UNAVAILABLE", nil
 	}
 	self, err := os.Executable()
@@ -112,7 +111,7 @@ func runShell(ctx context.Context, root, dir, command, mode string) (string, str
 	argv = append(argv, "--ro", root)
 	// /dev/null is a write sink that every shell expects; writing existing device
 	// files has to work even though nothing under /dev may be created.
-	argv = append(argv, "--rwfile", "/dev", "--rw", tmp)
+	argv = append(argv, "--rwfile", "/dev/null", "--rw", tmp)
 	if mode == "workspace-write" {
 		argv = append(argv, "--rw", root)
 	} else if mode != "read-only" {

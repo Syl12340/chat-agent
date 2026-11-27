@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"slices"
 	"sort"
 
 	serverdiag "chat-agent/plugins/builtin/server"
@@ -17,15 +18,18 @@ func (s *Server) hostToolState(w http.ResponseWriter, r *http.Request) {
 	if !requireDeviceAdmin(w, r) {
 		return
 	}
+	names := s.hostToolNames()
 	writeJSON(w, 200, map[string]any{
-		"configured":   s.hostToolingConfigured(),
-		"auto_grant":   s.config.HostTools.AutoGrant || s.config.InstanceName != "",
-		"instance":     s.config.InstanceName,
-		"scope_label":  map[bool]string{true: "本机", false: "服务器"}[s.config.DesktopLocal],
-		"tools":        s.hostToolNames(),
-		"sessions":     s.hostGrants.List(),
-		"env_sessions": append([]string{}, s.config.HostTools.Sessions...),
-		"limit":        maxHostGrantSessions,
+		"configured":          s.hostToolingConfigured(),
+		"auto_grant":          s.config.HostTools.AutoGrant || s.config.InstanceName != "",
+		"instance":            s.config.InstanceName,
+		"scope_label":         map[bool]string{true: "本机", false: "服务器"}[s.config.DesktopLocal],
+		"tools":               names,
+		"workspace_available": slices.Contains(names, "workspace_list"),
+		"shell_available":     slices.Contains(names, "workspace_shell"),
+		"sessions":            s.hostGrants.List(),
+		"env_sessions":        append([]string{}, s.config.HostTools.Sessions...),
+		"limit":               maxHostGrantSessions,
 	})
 }
 

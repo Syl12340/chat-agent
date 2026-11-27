@@ -140,14 +140,14 @@ func (p *Plugin) Register(registry *pluginapi.Registry) error {
 	if sandboxReady() {
 		shell := `{"type":"object","properties":{"workspace":{"type":"string","enum":["server"]},"command":{"type":"string","minLength":1,"maxLength":4096},"cwd":{"type":"string","maxLength":256},"mode":{"type":"string","enum":["read-only","workspace-write"]}},"required":["workspace","command","mode"],"additionalProperties":false}`
 		tools = append(tools, pluginapi.Tool{
-			Name:        "workspace_shell",
-			Description: "Run a shell command on the server under a fail-closed Landlock and seccomp policy. Choose read-only for inspection and workspace-write only when the requested task needs to modify the approved workspace. System program directories remain read-only; host configuration, process state and all socket creation are denied.",
-			Usage:       "plan and run ordinary shell commands as a careful human operator would: inspect before editing, use one coherent command at a time, select the narrowest mode, check the result, and never use sudo. This is not a root shell.",
-			Parameters:  json.RawMessage(shell),
-			Kind:        "execute",
-			Decision:    string(probe.DecisionRequired),
-			Risk:        string(probe.RiskHigh),
-			Handler:     p.shell,
+			Name:             "workspace_shell",
+			Description:      "Run a shell command on the server under a fail-closed Landlock and seccomp policy. Choose read-only for inspection and workspace-write only when the requested task needs to modify the approved workspace. System program directories remain read-only; host configuration, process state and all socket creation are denied.",
+			Usage:            "plan and run ordinary shell commands as a careful human operator would: inspect before editing, use one coherent command at a time, select the narrowest mode, check the result, and never use sudo. This is not a root shell.",
+			Parameters:       json.RawMessage(shell),
+			Kind:             "execute",
+			Risk:             string(probe.RiskHigh),
+			ApprovalRequired: true,
+			Handler:          p.shell,
 		})
 	}
 	for i, tool := range tools {
@@ -572,7 +572,7 @@ func (p *Plugin) shell(ctx context.Context, raw json.RawMessage) (pluginapi.Resu
 		return pluginapi.Result{}, errors.New("invalid workspace")
 	}
 	command := strings.TrimSpace(args.Command)
-	if command == "" || len(command) > 4096 {
+	if command == "" || len(args.Command) > 4096 {
 		return pluginapi.Result{}, errors.New("command must be between 1 and 4096 bytes")
 	}
 	if args.Mode != "read-only" && args.Mode != "workspace-write" {

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -9,13 +10,30 @@ import (
 )
 
 func startToolView(event probe.Event) turns.ToolEvent {
+	call := event.ToolCall
+	arguments := truncate(call.Function.Arguments, 512)
+	if call.Function.Name == "workspace_shell" {
+		// Show every executable character in the approval card. Canonical JSON
+		// avoids retaining arbitrary whitespace or repeated keys from the model.
+		var shellArgs struct {
+			Workspace string `json:"workspace"`
+			Command   string `json:"command"`
+			Cwd       string `json:"cwd,omitempty"`
+			Mode      string `json:"mode"`
+		}
+		if json.Unmarshal([]byte(call.Function.Arguments), &shellArgs) == nil && len(shellArgs.Command) <= 4096 && len(shellArgs.Cwd) <= 1024 {
+			if encoded, err := json.Marshal(shellArgs); err == nil {
+				arguments = string(encoded)
+			}
+		}
+	}
 	return turns.ToolEvent{
-		ID:   event.ToolCall.ID,
-		Name: event.ToolCall.Function.Name,
+		ID:   call.ID,
+		Name: call.Function.Name,
 		// Keep a bounded copy of the arguments. Without them the card can say
 		// which tool ran but not what it was asked to do, which is the half a
 		// reader needs to judge the result.
-		Arguments: truncate(event.ToolCall.Function.Arguments, 512),
+		Arguments: arguments,
 		View:      event.ToolView,
 		Status:    "running",
 	}
