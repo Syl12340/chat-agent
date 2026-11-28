@@ -150,6 +150,27 @@ func (s *Server) resumeTurns(w http.ResponseWriter, r *http.Request) {
 	s.startTurnWorkerLocked(id, sess)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
+// taskContract answers with the four-level view of one turn, so a caller does not
+// have to reconstruct task state from turn fields and tool events itself.
+func (s *Server) taskContract(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.get(w, r); !ok {
+		return
+	}
+	id := r.PathValue("id")
+	items, _, err := s.turns.List(id)
+	if err != nil {
+		turnFailure(w, err)
+		return
+	}
+	for _, turn := range items {
+		if turn.ID == r.PathValue("turn") {
+			writeJSON(w, 200, turns.ContractOf(id, turn))
+			return
+		}
+	}
+	fail(w, http.StatusNotFound, "没有这个任务")
+}
+
 func (s *Server) withdrawTurn(w http.ResponseWriter, r *http.Request) {
 	sess, ok := s.get(w, r)
 	if !ok {
