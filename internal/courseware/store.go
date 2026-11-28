@@ -70,6 +70,9 @@ func Open(dir string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Join(dir, "text"), 0700); err != nil {
 		return nil, err
 	}
+	if err := os.MkdirAll(filepath.Join(dir, "source"), 0700); err != nil {
+		return nil, err
+	}
 	s := &Store{dir: dir, state: snapshot{Version: 1, Documents: []Document{}}}
 	raw, err := os.ReadFile(filepath.Join(dir, "index.json"))
 	if errors.Is(err, os.ErrNotExist) {
@@ -151,9 +154,19 @@ func (s *Store) Add(role, name, mediaType string, raw []byte) (Document, error) 
 	if err := storage.Replace(filepath.Join(s.dir, "text", id+".txt"), []byte(text)); err != nil {
 		return Document{}, err
 	}
+	// Keep the original bytes next to the extracted text. Without them the store
+	// only remembers what one extractor made of the file: the page a reader was
+	// looking at cannot be shown again, and a later extractor cannot be re-run on
+	// real input. Written after the text so a crash leaves an orphaned source
+	// rather than a document whose text is missing.
+	if err := storage.Replace(filepath.Join(s.dir, "source", id+sourceExt(name)), raw); err != nil {
+		_ = os.Remove(filepath.Join(s.dir, "text", id+".txt"))
+		return Document{}, err
+	}
 	next := snapshot{Version: 1, Documents: append(append([]Document(nil), s.state.Documents...), doc)}
 	if err := s.save(next); err != nil {
 		_ = os.Remove(filepath.Join(s.dir, "text", id+".txt"))
+		_ = os.Remove(filepath.Join(s.dir, "source", id+sourceExt(name)))
 		return Document{}, err
 	}
 	return doc, nil
@@ -164,12 +177,14 @@ func (s *Store) Delete(role, id string, revision int) error {
 	defer s.mu.Unlock()
 	next := snapshot{Version: 1, Documents: make([]Document, 0, len(s.state.Documents))}
 	found := false
+	docName := ""
 	for _, d := range s.state.Documents {
 		if d.RoleID == role && d.ID == id {
 			if d.Revision != revision {
 				return errors.New("课件已变化，请刷新")
 			}
 			found = true
+			docName = d.Name
 			continue
 		}
 		next.Documents = append(next.Documents, d)
@@ -180,7 +195,44 @@ func (s *Store) Delete(role, id string, revision int) error {
 	if err := s.save(next); err != nil {
 		return err
 	}
-	return os.Remove(filepath.Join(s.dir, "text", id+".txt"))
+	_ = os.Remove(filepath.Join(s.dir, "text", id+".txt"))
+	_ = os.Remove(filepath.Join(s.dir, "source", id+sourceExt(docName)))
+	return nil
+}
+
+// sourceExt keeps the stored original recognisable by whatever opens it later.
+// Only an extension made of letters and digits is kept, so a crafted name cannot
+// steer the write outside the source directory.
+func sourceExt(name string) string {
+	ext := strings.ToLower(filepath.Ext(name))
+	if len(ext) < 2 || len(ext) > 12 {
+		return ".bin"
+	}
+	for _, c := range ext[1:] {
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9') {
+			return ".bin"
+		}
+	}
+	return ext
+}
+
+// Source returns the bytes that were actually uploaded. The text projection is
+// what the model reads; this is what the person opened, so an extractor's guess
+// can always be checked against the real page instead of being taken on trust.
+func (s *Store) Source(role, id string) (Document, []byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, doc := range s.state.Documents {
+		if doc.RoleID != role || doc.ID != id {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(s.dir, "source", id+sourceExt(doc.Name)))
+		if err != nil {
+			return Document{}, nil, err
+		}
+		return doc, raw, nil
+	}
+	return Document{}, nil, os.ErrNotExist
 }
 
 func (s *Store) Read(role, id, query string, offset, limit int) (Document, string, SourceRef, error) {

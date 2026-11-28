@@ -12,8 +12,40 @@ import (
 	"strings"
 )
 
-func (s *Server) exportCoursewareSource(w http.ResponseWriter, r *http.Request) {
+// coursewareFile serves the uploaded original so a reader can see the page the
+// text was extracted from. The extracted text is a projection; this is what the
+// person actually handed over, and the only way to check the projection.
+func (s *Server) coursewareFile(w http.ResponseWriter, r *http.Request) {
 	role, ok := s.memoryRole(w, r)
+	if !ok {
+		return
+	}
+	doc, raw, err := s.courseware.Source(role, r.PathValue("document"))
+	if errors.Is(err, os.ErrNotExist) {
+		fail(w, http.StatusNotFound, "课件不存在")
+		return
+	}
+	if err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	mediaType := doc.MediaType
+	if mediaType == "" {
+		mediaType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", mediaType)
+	// Shown in place rather than downloaded: the point is looking at the page.
+	w.Header().Set("Content-Disposition", "inline")
+	// The file came from outside. It is served from this origin, so it must not be
+	// able to run anything or reach the API with the viewer's credentials.
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
+	w.Header().Set("Cache-Control", "private, max-age=60")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(raw)
+}
+
+func (s *Server) exportCoursewareSource(w http.ResponseWriter, r *http.Request) {	role, ok := s.memoryRole(w, r)
 	if !ok {
 		return
 	}
