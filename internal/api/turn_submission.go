@@ -105,6 +105,12 @@ func (s *Server) SubmitTurn(ctx context.Context, input TurnSubmission) (turns.Tu
 	if err != nil || (reserved && len(input.Images) > 0) {
 		return turns.Turn{}, false, submissionError(http.StatusBadRequest, "互动答案格式无效，不能附带图片", err)
 	}
+	// A correction is folded into a turn that is already running, and that path
+	// carries text only. Refusing is honest: accepting an attachment and dropping it
+	// would silently change what the user said.
+	if input.Supplement && (len(input.Images) > 0 || response != nil) {
+		return turns.Turn{}, false, submissionError(http.StatusBadRequest, "补充当前任务目前只支持文字；图片和互动答案请单独发送", nil)
+	}
 	choice, err := s.selectChat(input.Model, input.Thinking)
 	if err != nil {
 		return turns.Turn{}, false, submissionError(http.StatusBadRequest, err.Error(), err)
@@ -167,19 +173,29 @@ func (s *Server) SubmitTurn(ctx context.Context, input TurnSubmission) (turns.Tu
 	// honored when there is a live agent to receive it; otherwise the message stays
 	// a normal queued turn rather than disappearing into a turn that already ended.
 	if !duplicate && input.Supplement && active != nil && active.agent != nil {
-		if active.agent.AddSupplement(input.Content) {
-			// Drop the queued copy, or the model would see the same instruction
-			// twice: once inside the running turn and once as its own turn.
-			if removeErr := s.turns.Remove(input.SessionID, turn.ID); removeErr != nil {
-				log.Printf("supplement queued copy not removed: %v", removeErr)
-			} else {
-				turn.QueueDisposition = "current_task"
-				return turn, false, nil
+		// The record is written before the runtime is told. That order is what makes
+		// a retry idempotent and keeps the words after a restart; notifying first
+		// would leave a crash window where the message exists nowhere.
+		if accepted, markErr := s.turns.MarkSupplement(input.SessionID, turn.ID); markErr == nil {
+			if active.agent.AddSupplement(turn.ID, input.Content) {
+				accepted.QueueDisposition = "current_task"
+				return accepted, false, nil
+			}
+			// The turn refused it after all. Put the request back rather than losing
+			// it: it becomes an ordinary queued turn for the next round.
+			if unmarkErr := s.turns.UnmarkSupplement(input.SessionID, turn.ID); unmarkErr != nil {
+				log.Printf("supplement could not be returned to the queue: %v", unmarkErr)
+				return turns.Turn{}, false, submissionError(http.StatusServiceUnavailable, "补充消息暂时无法受理，请稍后重试", unmarkErr)
 			}
 		}
 	}
 	if duplicate {
+		// A retry of an already-accepted supplement reports the original outcome
+		// instead of running the same words a second time.
 		turn.QueueDisposition = "duplicate"
+		if turn.Status == "supplement" {
+			turn.QueueDisposition = "current_task"
+		}
 	} else {
 		turn.QueueDisposition = disposition
 	}

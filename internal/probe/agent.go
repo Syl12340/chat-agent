@@ -206,14 +206,22 @@ type Agent struct {
 	// the session lock for its entire duration - appending to the transcript
 	// mid-turn deadlocks the writer against itself.
 	supplementMu sync.Mutex
-	supplements  []string
+	supplements  []pendingSupplement
+}
+
+// pendingSupplement is a correction waiting for a legal point in the transcript.
+// The request id is the durable identity the queue already assigned, so the host
+// can tell a retry of the same words from a second instruction.
+type pendingSupplement struct {
+	requestID string
+	content   string
 }
 
 // AddSupplement records a correction for the turn that is currently running. The
-// next assembly folds it in as an extra user instruction, so a request like
-// "only the first five pages" takes effect on the very next model call instead of
-// waiting for a new turn. Returns false when the turn cannot take more.
-func (a *Agent) AddSupplement(text string) bool {
+// next assembly writes it into the transcript as a real user message, so it has a
+// durable id, reaches every later model step, and is still there after a restart.
+// Returns false when the turn cannot take more.
+func (a *Agent) AddSupplement(requestID, text string) bool {
 	text = strings.TrimSpace(text)
 	if text == "" || len(text) > 8<<10 {
 		return false
@@ -223,14 +231,14 @@ func (a *Agent) AddSupplement(text string) bool {
 	if len(a.supplements) >= 4 {
 		return false
 	}
-	a.supplements = append(a.supplements, text)
+	a.supplements = append(a.supplements, pendingSupplement{requestID: requestID, content: text})
 	return true
 }
 
 // takeSupplements hands out queued corrections, but only when the transcript ends
 // on something a user message may legally follow. Placing one after an assistant
 // tool call would separate that call from its results.
-func (a *Agent) takeSupplements(last Message) []string {
+func (a *Agent) takeSupplements(last Message) []pendingSupplement {
 	a.supplementMu.Lock()
 	defer a.supplementMu.Unlock()
 	if len(a.supplements) == 0 {
@@ -242,6 +250,23 @@ func (a *Agent) takeSupplements(last Message) []string {
 	out := a.supplements
 	a.supplements = nil
 	return out
+}
+
+// supplementOrigin marks a persisted message the user added to a turn that was
+// already running. The client shows it differently from the opening request and
+// the model still sees the words as the user's own.
+const supplementOrigin = "supplement"
+
+// applySupplements writes corrections into the transcript. The caller holds the
+// session lock for the whole turn, which is exactly why this must happen here: the
+// request handler cannot append, and a correction that exists only inside one model
+// request would be lost by the next step or the next restart.
+func (a *Agent) applySupplements(items []pendingSupplement) error {
+	messages := make([]Message, 0, len(items))
+	for _, item := range items {
+		messages = append(messages, Message{Role: "user", Content: item.content, Origin: supplementOrigin})
+	}
+	return a.session.append(messages...)
 }
 
 func New(c Config, sess *Session) (*Agent, error) {

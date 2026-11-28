@@ -201,6 +201,10 @@ func decodeState(id string, b []byte) (*state, bool, error) {
 			t.Error = "服务曾中断；没有自动重新调用模型。"
 			st.Paused = true
 			changed = true
+		case "supplement":
+			// Accepted into a turn that was already running. It is kept so a retry with
+			// the same request id still matches its digest, and so the words the user
+			// typed survive a restart. It never runs as a turn of its own.
 		case "completed", "canceled", "failed", "interrupted", "withdrawn":
 		default:
 			return nil, false, errors.New("invalid turn status")
@@ -558,6 +562,65 @@ func (s *Store) Withdraw(id, rid string) error {
 	}
 	return ErrNotFound
 }
+// MarkSupplement records that a queued request was accepted into the turn that was
+// already running. The record is kept instead of deleted so that a retry with the
+// same request id still matches its digest, the words the user typed survive a
+// restart, and a refused handoff can put the request back in the queue. It stops
+// being queued, so it never runs as a turn of its own.
+func (s *Store) MarkSupplement(id, rid string) (Turn, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st, err := s.load(id)
+	if err != nil {
+		return Turn{}, err
+	}
+	next := clone(st)
+	for i := range next.Items {
+		r := &next.Items[i]
+		if r.ID != rid {
+			continue
+		}
+		switch r.Status {
+		case "supplement":
+			return cloneTurn(r.Turn), nil
+		case "queued":
+			r.Status = "supplement"
+			if err = s.save(next); err != nil {
+				return Turn{}, err
+			}
+			return cloneTurn(r.Turn), nil
+		default:
+			return Turn{}, ErrConflict
+		}
+	}
+	return Turn{}, ErrNotFound
+}
+
+// UnmarkSupplement returns an accepted supplement to the queue. It is the undo for
+// a handoff the running turn refused after the record was already written, which
+// is why the record is written first and the runtime told second.
+func (s *Store) UnmarkSupplement(id, rid string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st, err := s.load(id)
+	if err != nil {
+		return err
+	}
+	next := clone(st)
+	for i := range next.Items {
+		r := &next.Items[i]
+		if r.ID != rid {
+			continue
+		}
+		if r.Status != "supplement" {
+			return ErrConflict
+		}
+		r.Status = "queued"
+		return s.save(next)
+	}
+	return ErrNotFound
+}
+
 func (s *Store) Begin(id string, start int, merge func(Turn) bool) ([]Turn, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

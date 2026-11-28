@@ -111,11 +111,24 @@ func (a *Agent) assemble(ctx context.Context, step StepContext) (PromptAssembly,
 	projected = append(projected, messages[index:]...)
 	messages = projected
 	// Fold in anything the user said while this turn was already running. The
-	// boundary matters: this runs between model requests, so the working set can
-	// still change without rewriting what already happened.
+	// boundary matters: this runs between model requests, so the transcript can
+	// still grow without rewriting what already happened.
 	if len(messages) > 0 {
-		for _, supplement := range a.takeSupplements(messages[len(messages)-1]) {
-			messages = append(messages, Message{Role: "user", Content: supplementPrefix + supplement})
+		if applied := a.takeSupplements(messages[len(messages)-1]); len(applied) > 0 {
+			if err := a.applySupplements(applied); err != nil {
+				return PromptAssembly{}, err
+			}
+			for _, item := range applied {
+				messages = append(messages, Message{Role: "user", Content: item.content, Origin: supplementOrigin})
+			}
+		}
+	}
+	// A correction is an instruction about the remaining work, not a new topic. The
+	// marker is applied when projecting, so the stored message keeps exactly what
+	// the user typed and clients can present it as their own words.
+	for i := range messages {
+		if messages[i].Origin == supplementOrigin && messages[i].Role == "user" {
+			messages[i].Content = supplementPrefix + messages[i].Content
 		}
 	}
 	if err := ctx.Err(); err != nil {
