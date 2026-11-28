@@ -35,6 +35,7 @@ const (
 type Plugin struct {
 	client   *webtools.Client
 	manifest pluginapi.Manifest
+	pages    *pageStore
 }
 
 // New builds the plugin from a configured client. It returns nil when the client
@@ -52,7 +53,7 @@ func New(client *webtools.Client) pluginapi.Plugin {
 	}
 	if client.FetchEnabled() {
 		capabilities = append(capabilities, CapabilityFetch)
-		tools = append(tools, "web_fetch")
+		tools = append(tools, "web_fetch", "web_open", "web_read")
 	}
 	if len(tools) == 0 {
 		return nil
@@ -65,6 +66,7 @@ func New(client *webtools.Client) pluginapi.Plugin {
 	}
 	return &Plugin{
 		client: client,
+		pages:  newPageStore(),
 		manifest: pluginapi.Manifest{
 			APIVersion: pluginapi.APIVersion,
 			Kind:       pluginapi.Kind,
@@ -96,6 +98,15 @@ func (p *Plugin) Register(registry *pluginapi.Registry) error {
 	if contains(p.manifest.Spec.Tools, "web_fetch") {
 		if err := registry.Tool(p.fetchTool()); err != nil {
 			return err
+		}
+	}
+	// Exploration tools are part of the same capability as reading: they answer
+	// questions about a page the reader already holds.
+	if contains(p.manifest.Spec.Tools, "web_open") {
+		for _, tool := range p.exploreTools() {
+			if err := registry.Tool(tool); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

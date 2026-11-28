@@ -73,7 +73,8 @@ func (s *Server) validateUIResponse(sess *probe.Session, id string, response *in
 
 var uiReadOnlyTools = map[string]bool{
 	"get_current_time": true, "memory_search": true, "skill_load": true,
-	"web_search": true, "web_fetch": true, "todo_list": true, "reminder_list": true,
+	"web_search": true, "web_fetch": true, "web_open": true, "web_read": true,
+	"todo_list": true, "reminder_list": true,
 }
 
 const interactivePolicy = `

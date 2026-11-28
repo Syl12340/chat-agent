@@ -90,6 +90,7 @@ func (s *Server) pluginTools(enable pluginapi.Enablement, sessionID, roleID stri
 			Decision:         probe.DecisionRequirement(tool.Decision),
 			Risk:             probe.RiskLevel(tool.Risk),
 			ApprovalRequired: tool.ApprovalRequired,
+			ApprovalWhen:     tool.ApprovalWhen,
 			Receipt:          probe.ReceiptCapability(tool.Receipt),
 			Parameters:       tool.Parameters,
 			Guard: func(_ context.Context, _ probe.ToolExecution) error {

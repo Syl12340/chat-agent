@@ -51,6 +51,7 @@ import (
 	preferencesplugin "chat-agent/plugins/builtin/preferences"
 	roleprofileplugin "chat-agent/plugins/builtin/roleprofile"
 	"chat-agent/plugins/builtin/search"
+	"chat-agent/plugins/builtin/workspace"
 	skillplugin "chat-agent/plugins/builtin/skill"
 	tasksplugin "chat-agent/plugins/builtin/tasks"
 	topicplugin "chat-agent/plugins/builtin/topic"
@@ -246,6 +247,14 @@ func New(c Config) (*Server, error) {
 		taskStore.Close()
 		mem.Close()
 		return nil, err
+	}
+	// The workspace tools fetch through the same egress client the web tools use, so
+	// a download cannot reach an address a page read would have refused. Nothing is
+	// injected when web access is off, and the tool is then simply absent.
+	for _, plugin := range hostPlugins {
+		if p, ok := plugin.(*workspace.Plugin); ok {
+			p.SetWeb(webClient)
+		}
 	}
 	companionStore, err := companion.Open(filepath.Join(path, "companion"))
 	if err != nil {

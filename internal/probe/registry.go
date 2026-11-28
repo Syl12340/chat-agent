@@ -36,6 +36,13 @@ type Tool struct {
 	// ApprovalRequired forces a host-issued, single-use ticket even when an
 	// independent decision service considers the call safe.
 	ApprovalRequired bool `json:"-"`
+	// ApprovalWhen asks for a ticket only for some arguments, and returns the reason
+	// the person will read. An empty string means this particular call needs no
+	// confirmation. It exists because a capability that is normally allowed can still
+	// be asked to do something wider, and the model cannot decide that by itself:
+	// repeating the current level costs nothing, reaching for more always asks. A
+	// model argument can never satisfy either field.
+	ApprovalWhen func(json.RawMessage) string `json:"-"`
 	// Decision is the host's requirement, not a suggestion: the executor enforces
 	// it even when the model never asks. Empty means DecisionNever.
 	Decision DecisionRequirement `json:"-"`

@@ -89,6 +89,13 @@ func TestRegistersThroughLoader(t *testing.T) {
 	if _, found := catalog.Tool("web_fetch"); !found {
 		t.Fatal("web_fetch should be registered alongside search")
 	}
+	// Exploration belongs to the same capability: opening a page and reading views
+	// of it are how a model keeps looking instead of quoting one fetch.
+	for _, name := range []string{"web_open", "web_read"} {
+		if _, found := catalog.Tool(name); !found {
+			t.Fatalf("%s should be registered with the page reader", name)
+		}
+	}
 	// A disabled capability is hidden, but the plugin stays installed.
 	if admitted := catalog.Admit(pluginapi.Select("other.capability")); len(admitted.Tools) != 0 {
 		t.Fatalf("a disabled capability must not be admitted: %+v", admitted.Tools)
@@ -96,10 +103,10 @@ func TestRegistersThroughLoader(t *testing.T) {
 	if admitted := catalog.Admit(pluginapi.Select(CapabilitySearch)); len(admitted.Tools) != 1 {
 		t.Fatalf("only the enabled capability may be admitted: %+v", admitted.Tools)
 	}
-	if admitted := catalog.Admit(pluginapi.AllowAll()); len(admitted.Tools) != 2 {
-		t.Fatalf("AllowAll should admit both tools: %+v", admitted.Tools)
+	if admitted := catalog.Admit(pluginapi.AllowAll()); len(admitted.Tools) != 4 {
+		t.Fatalf("AllowAll should admit every tool: %+v", admitted.Tools)
 	}
-	if len(catalog.Tools()) != 2 {
+	if len(catalog.Tools()) != 4 {
 		t.Fatal("filtering the admission must not remove tools from the catalog")
 	}
 }

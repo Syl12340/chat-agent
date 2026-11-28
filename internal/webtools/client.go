@@ -3,8 +3,9 @@ package webtools
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
-	"html"
 	"io"
 	"net"
 	"net/http"
@@ -31,11 +32,6 @@ type Client struct {
 	searchURL string
 	http      *http.Client
 	resolver  Resolver
-}
-type Page struct {
-	URL       string `json:"url"`
-	Content   string `json:"content"`
-	Truncated bool   `json:"truncated"`
 }
 type Result struct {
 	Title   string `json:"title"`
@@ -76,11 +72,11 @@ func hostName(value string) bool {
 func parseURL(value string) (*url.URL, error) {
 	u, err := url.Parse(value)
 	if err != nil || u.Scheme != "https" || u.User != nil || u.Fragment != "" || (u.Port() != "" && u.Port() != "443") {
-		return nil, errors.New("only HTTPS port 443 URLs without credentials or fragments are allowed")
+		return nil, failure(StagePolicy, CodeInvalidURL, "only HTTPS port 443 URLs without credentials or fragments are allowed")
 	}
 	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
 	if !hostName(host) {
-		return nil, errors.New("a valid DNS hostname is required")
+		return nil, failure(StagePolicy, CodeInvalidURL, "a valid DNS hostname is required, not an address or a bare name")
 	}
 	u.Host = host
 	return u, nil
@@ -121,20 +117,26 @@ func NewPublicHTTPClient() *http.Client { return (&Client{resolver: net.DefaultR
 
 func (client *Client) publicHTTP() *http.Client {
 	transport := &http.Transport{Proxy: nil, DialContext: client.dial, TLSHandshakeTimeout: 4 * time.Second, ResponseHeaderTimeout: 5 * time.Second, IdleConnTimeout: 30 * time.Second, MaxIdleConns: 4, MaxConnsPerHost: 2, MaxResponseHeaderBytes: 16 << 10}
-	return &http.Client{Transport: transport, Timeout: 8 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("redirects are disabled") }}
+	return &http.Client{Transport: transport, Timeout: 8 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errRedirectBlocked }}
 }
+
+// errRedirectBlocked is the sentinel the redirect policy returns; the request path
+// turns it into a named failure so a caller can tell "the page moved" from "the
+// address is unsafe".
+var errRedirectBlocked = errors.New("redirects are disabled")
+
 func (c *Client) dial(ctx context.Context, network, address string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil || port != "443" {
-		return nil, errors.New("blocked destination")
+		return nil, failure(StagePolicy, CodePolicyDenied, "only port 443 is reachable")
 	}
 	addresses, err := c.resolver.LookupIPAddr(ctx, host)
 	if err != nil || len(addresses) == 0 || len(addresses) > 16 {
-		return nil, errors.New("DNS resolution failed")
+		return nil, &Failure{Stage: StageTransport, Code: CodeDNSFailed, Message: "the host name did not resolve", Retryable: true, Host: host}
 	}
 	for _, address := range addresses {
 		if !public(address.IP) {
-			return nil, errors.New("private, reserved or mixed DNS destination blocked")
+			return nil, &Failure{Stage: StagePolicy, Code: CodePrivateDestination, Message: "the host resolves to a private or reserved address, which is never fetched", Host: host}
 		}
 	}
 	dialer := net.Dialer{Timeout: 3 * time.Second}
@@ -147,7 +149,7 @@ func (c *Client) dial(ctx context.Context, network, address string) (net.Conn, e
 			return nil, context.Cause(ctx)
 		}
 	}
-	return nil, errors.New("cannot connect to public destination")
+	return nil, &Failure{Stage: StageTransport, Code: CodeConnectTimeout, Message: "could not open a connection to the site", Retryable: true, Host: host}
 }
 func (c *Client) FetchEnabled() bool  { return c != nil && (len(c.hosts) > 0 || c.searchURL != "") }
 func (c *Client) SearchEnabled() bool { return c != nil && c.searchURL != "" }
@@ -173,15 +175,15 @@ func (c *Client) readAs(ctx context.Context, u *url.URL, key, agent string) ([]b
 		if ctx.Err() != nil {
 			return nil, "", false, context.Cause(ctx)
 		}
-		return nil, "", false, errors.New("web request failed; redirects and unsafe destinations are blocked")
+		return nil, "", false, transportFailure(err, u.Hostname())
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return nil, "", false, errors.New("web endpoint did not return HTTP 200")
+		return nil, "", false, statusFailure(resp, u.Hostname(), time.Now())
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, (256<<10)+1))
 	if err != nil {
-		return nil, "", false, errors.New("cannot read web response")
+		return nil, "", false, &Failure{Stage: StageTransport, Code: CodeConnectTimeout, Message: "the connection broke while reading the page", Retryable: true, Host: u.Hostname()}
 	}
 	truncated := len(data) > 256<<10
 	if truncated {
@@ -190,8 +192,31 @@ func (c *Client) readAs(ctx context.Context, u *url.URL, key, agent string) ([]b
 	return data, strings.ToLower(strings.Split(resp.Header.Get("Content-Type"), ";")[0]), truncated, nil
 }
 
-var scripts = regexp.MustCompile(`(?is)<(script|style)\b[^>]*>.*?</(?:script|style)\s*>`)
-var tags = regexp.MustCompile(`(?s)<[^>]*>`)
+// transportFailure names what went wrong before any bytes arrived. The dialer
+// already classifies DNS and destination problems, so those are passed through;
+// what is left is a redirect, a TLS problem, or a timeout.
+func transportFailure(err error, host string) *Failure {
+	var named *Failure
+	if errors.As(err, &named) {
+		return named
+	}
+	if errors.Is(err, errRedirectBlocked) {
+		return &Failure{Stage: StagePolicy, Code: CodeRedirectBlocked, Message: "the site redirects elsewhere, and redirects are not followed; open the final address instead", Host: host}
+	}
+	var netErr net.Error
+	timeout := errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout())
+	var recordErr tls.RecordHeaderError
+	var authorityErr x509.UnknownAuthorityError
+	var hostnameErr x509.HostnameError
+	var certificateErr x509.CertificateInvalidError
+	if errors.As(err, &recordErr) || errors.As(err, &authorityErr) || errors.As(err, &hostnameErr) || errors.As(err, &certificateErr) {
+		return &Failure{Stage: StageTransport, Code: CodeTLSFailed, Message: "the site's certificate could not be verified", Host: host}
+	}
+	if timeout {
+		return &Failure{Stage: StageTransport, Code: CodeConnectTimeout, Message: "the site did not answer in time", Retryable: true, Host: host}
+	}
+	return &Failure{Stage: StageTransport, Code: CodeUnknown, Message: "the request could not be completed", Host: host}
+}
 
 func bounded(text string, n int) string {
 	if len(text) <= n {
@@ -205,7 +230,7 @@ func bounded(text string, n int) string {
 }
 func (c *Client) Fetch(ctx context.Context, value string) (Page, error) {
 	if !c.FetchEnabled() {
-		return Page{}, errors.New("web fetch is disabled")
+		return Page{}, failure(StagePolicy, CodePolicyDenied, "web fetch is disabled on this host")
 	}
 	u, err := parseURL(value)
 	if err != nil {
@@ -215,25 +240,42 @@ func (c *Client) Fetch(ctx context.Context, value string) (Page, error) {
 	// transport still pins DNS, rejects private/reserved addresses and blocks
 	// redirects. A configured list narrows that surface explicitly.
 	if len(c.hosts) > 0 && !c.hosts[u.Hostname()] {
-		return Page{}, errors.New("host is not explicitly allowed")
+		return Page{}, &Failure{Stage: StagePolicy, Code: CodePolicyDenied, Message: "this host is not in the fetch allowlist", Host: u.Hostname()}
 	}
 	data, kind, truncated, err := c.read(ctx, u, "")
 	if err != nil {
 		return Page{}, err
 	}
-	if kind != "text/plain" && kind != "text/html" && kind != "application/json" {
-		return Page{}, errors.New("unsupported web content type")
-	}
-	text := string(data)
 	if kind == "text/html" {
-		text = html.UnescapeString(tags.ReplaceAllString(scripts.ReplaceAllString(text, " "), " "))
+		// Structure is parsed, not stripped: the headings, links and tables are what
+		// make the next step possible.
+		page := ParsePage(u.String(), data, truncated)
+		// A page that asks a human to prove they are one has text, and returning that
+		// text as the article would be a confident lie.
+		if challengePage(page.Title, page.Content) {
+			return Page{}, &Failure{Stage: StageContent, Code: CodeChallengeRequired, Message: "the site returned a verification page instead of the article; a human has to open it, retrying will not help", Host: u.Hostname()}
+		}
+		// An empty shell is what a JavaScript application looks like to a reader that
+		// does not run scripts. Retrying the same fetch cannot change that.
+		if page.Kind == KindEmpty {
+			return Page{}, &Failure{Stage: StageContent, Code: CodeNeedsRender, Message: "the page carries no readable text without running its scripts; this needs a rendering path", Host: u.Hostname()}
+		}
+		if len(page.Content) > 12<<10 {
+			page.Truncated = true
+			page.Content = bounded(page.Content, 12<<10)
+			page.TextBytes = len(page.Content)
+		}
+		return page, nil
 	}
-	text = strings.Join(strings.Fields(text), " ")
+	if kind != "text/plain" && kind != "application/json" {
+		return Page{}, &Failure{Stage: StageContent, Code: CodeUnsupportedType, Message: "the address serves " + kind + ", which is not a readable page; a downloadable file needs the document path", Host: u.Hostname()}
+	}
+	text := collapseWhitespace(string(data))
 	if len(text) > 12<<10 {
 		truncated = true
 		text = bounded(text, 12<<10)
 	}
-	return Page{URL: u.String(), Content: text, Truncated: truncated}, nil
+	return Page{URL: u.String(), Content: text, Truncated: truncated, Kind: KindArticle, Parse: "good", Bytes: len(data), TextBytes: len(text)}, nil
 }
 
 // singleCJK reports a field that is exactly one CJK ideograph. Models sometimes
@@ -395,7 +437,7 @@ func latinQuery(query string) bool {
 func (c *Client) searchOnce(ctx context.Context, query string) ([]Result, error) {
 	u, err := url.Parse(c.searchURL)
 	if err != nil {
-		return nil, errors.New("invalid search engine endpoint")
+		return nil, failure(StagePolicy, CodePolicyDenied, "the configured search endpoint is not a valid URL")
 	}
 	values := u.Query()
 	values.Set("q", query)
@@ -415,14 +457,24 @@ func (c *Client) searchOnce(ctx context.Context, query string) ([]Result, error)
 		return nil, err
 	}
 	if kind != "text/html" {
-		return nil, errors.New("search engine did not return an HTML results page")
+		return nil, &Failure{Stage: StageContent, Code: CodeUnsupportedType, Message: "the search engine returned " + kind + " instead of a results page", Host: u.Hostname()}
 	}
 	if truncated {
-		return nil, errors.New("search engine results page exceeded the size limit")
+		return nil, &Failure{Stage: StageContent, Code: CodeOutputTruncated, Message: "the results page exceeded the size limit and was cut, so its result blocks cannot be trusted", Host: u.Hostname()}
 	}
-	results := parseResults(string(data))
+	page := string(data)
+	results := parseResults(page)
 	if len(results) == 0 {
-		return nil, errors.New("search engine returned a results page with no parsable links")
+		// Three unrelated outcomes used to share one message. A person who hits a
+		// wall, a query that honestly found nothing, and an adapter that no longer
+		// matches the engine need different next steps.
+		if challengePage("", page) {
+			return nil, &Failure{Stage: StageParse, Code: CodeChallengeRequired, Message: "the search engine answered with a verification page; a human has to open it and retrying will not help", Host: u.Hostname()}
+		}
+		if noResultsPage(page) {
+			return nil, &Failure{Stage: StageParse, Code: CodeNoResults, Message: "the search engine found nothing for this query; try different or broader words", Host: u.Hostname()}
+		}
+		return nil, &Failure{Stage: StageParse, Code: CodeSearchParseFailed, Message: "the results page no longer matches what this reader can parse, so the engine's markup has changed; this is a tooling problem, not an empty query", Host: u.Hostname()}
 	}
 	if len(results) > 5 {
 		results = results[:5]
@@ -443,4 +495,54 @@ func ResultURL(value string) (string, error) {
 		return "", err
 	}
 	return u.String(), nil
+}
+
+// Download reads the raw bytes of one public HTTPS address.
+//
+// It exists because the confined shell has no sockets: a task that needs a file
+// from the web must get it through the same egress checks as every other request,
+// not by opening a connection of its own. The address still has to pass the policy
+// that guards a page read - public DNS, no private or reserved destination, no
+// redirect - only the accepted content types and the size differ, because the
+// caller asked for bytes rather than for something to read.
+func (c *Client) Download(ctx context.Context, value string, maxBytes int64) ([]byte, string, error) {
+	if c == nil || !c.FetchEnabled() {
+		return nil, "", failure(StagePolicy, CodePolicyDenied, "web download is disabled on this host")
+	}
+	u, err := parseURL(value)
+	if err != nil {
+		return nil, "", err
+	}
+	if len(c.hosts) > 0 && !c.hosts[u.Hostname()] {
+		return nil, "", &Failure{Stage: StagePolicy, Code: CodePolicyDenied, Message: "this host is not in the fetch allowlist", Host: u.Hostname()}
+	}
+	if maxBytes <= 0 || maxBytes > 64<<20 {
+		maxBytes = 16 << 20
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, "", failure(StagePolicy, CodeInvalidURL, "the address is not a valid request target")
+	}
+	req.Header.Set("User-Agent", browserAgent)
+	req.Header.Set("Accept", "*/*")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, "", context.Cause(ctx)
+		}
+		return nil, "", transportFailure(err, u.Hostname())
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, "", statusFailure(resp, u.Hostname(), time.Now())
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
+	if err != nil {
+		return nil, "", &Failure{Stage: StageTransport, Code: CodeConnectTimeout, Message: "the connection broke while downloading", Retryable: true, Host: u.Hostname()}
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, "", &Failure{Stage: StageContent, Code: CodeOutputTruncated, Message: "the file is larger than the download limit", Host: u.Hostname()}
+	}
+	kind := strings.ToLower(strings.TrimSpace(strings.Split(resp.Header.Get("Content-Type"), ";")[0]))
+	return data, kind, nil
 }

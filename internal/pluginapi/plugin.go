@@ -102,6 +102,13 @@ type Tool struct {
 	// ApprovalRequired makes every invocation wait for a host-issued one-shot
 	// ticket. A model argument can never satisfy this requirement.
 	ApprovalRequired bool
+	// ApprovalWhen asks for a one-shot ticket only for some arguments and returns
+	// the reason the person will read. An empty string means this call needs no
+	// confirmation. It is for capabilities that are normally allowed but can be
+	// asked to do something wider: repeating the current level costs nothing,
+	// reaching for more always asks. The executor, not the plugin, enforces it, so
+	// a handler cannot skip the question.
+	ApprovalWhen func(json.RawMessage) string
 	// Receipt declares whether the handler returns an atomic business receipt.
 	Receipt string
 	// Capability is the manifest capability this tool needs. The core exposes the

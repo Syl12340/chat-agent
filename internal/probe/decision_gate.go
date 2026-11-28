@@ -29,6 +29,13 @@ func (e *ToolExecutor) gateDecision(ctx context.Context, execution ToolExecution
 		if tool.ApprovalRequired {
 			return e.requireHumanApproval(execution, &DecisionRecord{Required: DecisionNever, Risk: tool.Risk})
 		}
+		// A call may ask for more than its capability normally allows. Repeating the
+		// current level is free; anything wider asks the person first.
+		if tool.ApprovalWhen != nil {
+			if reason := tool.ApprovalWhen(execution.Arguments); reason != "" {
+				return e.requireHumanApproval(execution, &DecisionRecord{Required: DecisionNever, Risk: tool.Risk, Reason: reason})
+			}
+		}
 		return nil, nil
 	}
 	gate := e.gate

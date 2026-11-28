@@ -84,6 +84,13 @@ func runAction(ctx context.Context, dir string, argv []string) (string, string) 
 // characters in the string. If confinement is unavailable the command does not
 // run at all -- an unconfined shell would be a different product.
 func runShell(ctx context.Context, root, dir, command, mode string) (string, string, error) {
+	// The unrestricted level is the one the person approved for this single call.
+	// It runs as the service account with no Landlock, no seccomp and no socket
+	// ban; that account is what remains as a boundary, which is why this level is
+	// never a default and never survives to a second call.
+	if mode == "danger-full-access" {
+		return runOpen(ctx, dir, command)
+	}
 	if !sandboxReady() {
 		return "", "SANDBOX_UNAVAILABLE", nil
 	}
@@ -157,5 +164,39 @@ func runShell(ctx context.Context, root, dir, command, mode string) (string, str
 
 // sandboxStatus describes the enforcement available to this plugin.
 func sandboxStatus() string { return sandbox.Describe() }
+
+// runOpen runs one command with no confinement at all.
+//
+// Nothing here is a sandbox: the command reaches the host with the service
+// account's own rights, including sockets. It exists only for a call the person
+// explicitly approved after seeing why the confined levels were not enough, so it
+// still gets the parts that are about hygiene rather than confinement: its own
+// process group, killed as a group on cancel, a capped output buffer, and a parent
+// that takes it down if the service dies.
+func runOpen(ctx context.Context, dir, command string) (string, string, error) {
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
+	cmd.Dir = dir
+	cmd.Env = []string{"PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin", "LANG=C.UTF-8", "HOME=/nonexistent"}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGKILL}
+	cmd.Cancel = func() error {
+		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		if errors.Is(err, syscall.ESRCH) {
+			return os.ErrProcessDone
+		}
+		return err
+	}
+	cmd.WaitDelay = time.Second
+	var output cappedOutput
+	output.limit = limit
+	cmd.Stdout, cmd.Stderr = &output, &output
+	runErr := cmd.Run()
+	status := "succeeded"
+	if ctx.Err() != nil {
+		status = "canceled"
+	} else if runErr != nil {
+		status = "failed"
+	}
+	return strings.ToValidUTF8(output.String(), "\uFFFD"), status, nil
+}
 
 var _ = time.Second

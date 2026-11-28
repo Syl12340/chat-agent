@@ -23,12 +23,23 @@ import (
 
 	"chat-agent/internal/pluginapi"
 	"chat-agent/internal/probe"
+	"chat-agent/internal/webtools"
 )
 
 const ID = "builtin.workspace"
 const Permission = "filesystem:workspace://server"
 const limit = 12 << 10
 const downloadLimit = 32 << 20
+
+// widerModes is the escalation ladder. It is deliberately not a preference: a
+// call may only reach a level strictly above the one it chose, so "widen" can
+// never be used to narrow, and there is no path from the wider level back to a
+// level the caller could have picked without asking. The executor asks the person
+// before any of these apply, and the grant covers one call.
+var widerModes = map[string][]string{
+	"read-only":       {"workspace-write", "danger-full-access"},
+	"workspace-write": {"danger-full-access"},
+}
 
 // writeLimit bounds a whole file; limit bounds one read response. They used to be
 // the same number, which meant a file larger than one response could not be read
@@ -41,7 +52,15 @@ type Plugin struct {
 	root    *os.Root
 	actions map[string][]string
 	writeMu sync.Mutex
+	// web is the host's egress client. Download needs it because the confined
+	// shell has no sockets; without a client the tool stays absent rather than
+	// falling back to an unchecked fetch.
+	web *webtools.Client
 }
+
+// SetWeb lets the host hand over its egress client. It is optional: a deployment
+// without web access simply does not offer workspace_download.
+func (p *Plugin) SetWeb(client *webtools.Client) { p.web = client }
 
 func New(path, dataDir, actionsJSON string) (*Plugin, error) {
 	if !filepath.IsAbs(path) {
@@ -138,16 +157,42 @@ func (p *Plugin) Register(registry *pluginapi.Registry) error {
 		tools = append(tools, pluginapi.Tool{Name: "workspace_exec", Description: "Run a fixed operator-configured action in the trusted workspace. Process restrictions are not a security sandbox.", Usage: "use only when the user explicitly requests the configured action.", Parameters: json.RawMessage(schema), Handler: p.execute})
 	}
 	if sandboxReady() {
-		shell := `{"type":"object","properties":{"workspace":{"type":"string","enum":["server"]},"command":{"type":"string","minLength":1,"maxLength":4096},"cwd":{"type":"string","maxLength":256},"mode":{"type":"string","enum":["read-only","workspace-write"]}},"required":["workspace","command","mode"],"additionalProperties":false}`
+		shell := `{"type":"object","properties":{"workspace":{"type":"string","enum":["server"]},"command":{"type":"string","minLength":1,"maxLength":4096},"cwd":{"type":"string","maxLength":256},` +
+			`"mode":{"type":"string","enum":["read-only","workspace-write"],"description":"The confinement this command needs. Choose the narrowest level that suffices."},` +
+			`"sandbox_permissions":{"type":"string","enum":["workspace-write","danger-full-access"],"description":"The narrowest wider level for a one-shot retry of the exact command the sandbox just denied. Repeating the current level needs no approval; asking for more always asks the person first."},` +
+			`"justification":{"type":"string","minLength":1,"maxLength":500,"description":"One sentence, shown to the person, saying why this command cannot work at the current level. Required with sandbox_permissions and invalid without it."}},` +
+			`"required":["workspace","command","mode"],"additionalProperties":false}`
 		tools = append(tools, pluginapi.Tool{
-			Name:             "workspace_shell",
-			Description:      "Run a shell command on the server under a fail-closed Landlock and seccomp policy. Choose read-only for inspection and workspace-write only when the requested task needs to modify the approved workspace. System program directories remain read-only; host configuration, process state and all socket creation are denied.",
-			Usage:            "plan and run ordinary shell commands as a careful human operator would: inspect before editing, use one coherent command at a time, select the narrowest mode, check the result, and never use sudo. This is not a root shell.",
-			Parameters:       json.RawMessage(shell),
-			Kind:             "execute",
-			Risk:             string(probe.RiskHigh),
-			ApprovalRequired: true,
-			Handler:          p.shell,
+			Name: "workspace_shell",
+			Description: "Run a shell command on the server under a fail-closed Landlock and seccomp policy. Choose read-only for inspection and workspace-write only when the requested task needs to modify the approved workspace. " +
+				"System program directories remain read-only, host configuration and process state are unreachable, and socket creation is denied under both levels. " +
+				"Two levels exist only as escalation targets: workspace-write widens writes, and danger-full-access removes the confinement for one approved call, including its network ban. " +
+				"Escalation is never the default and never applies to a second call; if the person rejects it, stop and explain instead of working around the boundary.",
+			Usage: "plan and run ordinary shell commands as a careful human operator would: inspect before editing, use one coherent command at a time, select the narrowest mode, check the result, and never use sudo. " +
+				"Ask for sandbox_permissions only after a real denial, with the narrowest level that would have sufficed and one sentence of justification. This is not a root shell.",
+			Parameters: json.RawMessage(shell),
+			Kind:       "execute",
+			Risk:       string(probe.RiskHigh),
+			// Repeating the current level is ordinary work; only reaching wider asks.
+			ApprovalWhen: shellApprovalReason,
+			Handler:      p.shell,
+		})
+	}
+	if p.web != nil && p.web.FetchEnabled() {
+		// The confined shell has no sockets, so a task that needs a file from the web
+		// has no way to get one. This is that way: the host fetches under the same
+		// public-HTTPS policy as any page read, then publishes the bytes into the
+		// workspace where the shell can work on them.
+		tools = append(tools, pluginapi.Tool{
+			Name: "workspace_download",
+			Description: "Download one public HTTPS file into the server workspace and return its path, size and SHA-256. " +
+				"Use it because the shell has no network: fetch here first, then process the file with workspace_shell. " +
+				"Private and reserved destinations, redirects and oversized bodies are refused, so some addresses will fail; report that plainly.",
+			Usage:      "use when the task needs a file that already exists at a public address. Give the destination path inside the workspace, never an absolute host path, and pass expected_sha256 when the source publishes one.",
+			Parameters: json.RawMessage(`{"type":"object","properties":{"workspace":{"type":"string","enum":["server"]},"url":{"type":"string","maxLength":2048},"path":{"type":"string","minLength":1,"maxLength":256},"expected_sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"}},"required":["workspace","url","path"],"additionalProperties":false}`),
+			Kind:       "edit",
+			Risk:       string(probe.RiskMedium),
+			Handler:    p.download,
 		})
 	}
 	for i, tool := range tools {
@@ -555,28 +600,136 @@ func encoded(value any) (pluginapi.Result, error) {
 	return pluginapi.Result{Output: string(data)}, err
 }
 
-// shell runs one command line inside the confined workspace.
+// shellApprovalReason decides whether one shell call needs a person's approval.
+// An empty result means no: choosing a level is ordinary work, and only reaching
+// past it asks. The reason is what the person reads, so it names both levels and
+// carries the model's own sentence.
+func shellApprovalReason(raw json.RawMessage) string {
+	var args struct {
+		Mode               string `json:"mode"`
+		SandboxPermissions string `json:"sandbox_permissions"`
+		Justification      string `json:"justification"`
+	}
+	if json.Unmarshal(raw, &args) != nil || args.SandboxPermissions == "" || args.SandboxPermissions == args.Mode {
+		return ""
+	}
+	return "把服务器 shell 从 " + args.Mode + " 升到 " + args.SandboxPermissions + "：" + strings.TrimSpace(args.Justification)
+}
+
+// resolveShellMode returns the level one call actually runs at.
+//
+// The two arguments travel together, and the target must be strictly wider than
+// the chosen level. Both rules are enforced here, at execution, because the
+// schema can only list the closed set of targets while "wider" depends on what
+// this call asked for.
+func resolveShellMode(mode, permissions, justification string) (string, error) {
+	if mode != "read-only" && mode != "workspace-write" {
+		return "", errors.New("sandbox mode must be read-only or workspace-write")
+	}
+	if (permissions == "") != (strings.TrimSpace(justification) == "") {
+		return "", errors.New("sandbox_permissions requires a justification, and a justification is only valid with sandbox_permissions")
+	}
+	if permissions == "" {
+		return mode, nil
+	}
+	if !slices.Contains(widerModes[mode], permissions) {
+		return "", errors.New("sandbox_permissions must be strictly wider than mode")
+	}
+	return permissions, nil
+}
 //
 // The point of the capability is a terminal on the server, so the command is
 // free-form and reaches /bin/sh. What constrains it is the filesystem policy:
 // read-only system directories, one writable workspace, no TCP. When that
 // policy cannot be enforced the command does not run and the caller is told
 // SANDBOX_UNAVAILABLE, because running unconfined would be a different promise.
+// download fetches one public file and publishes it into the workspace.
+//
+// The bytes land through the host's egress client, never through the shell, so the
+// same public-HTTPS policy applies as for reading a page. The destination is
+// written through a private temporary file and then renamed into place, so a
+// half-finished download can never become a file the shell picks up and treats as
+// real input.
+func (p *Plugin) download(ctx context.Context, raw json.RawMessage) (pluginapi.Result, error) {
+	var args struct {
+		Workspace      string `json:"workspace"`
+		URL            string `json:"url"`
+		Path           string `json:"path"`
+		ExpectedSHA256 string `json:"expected_sha256"`
+	}
+	if json.Unmarshal(raw, &args) != nil || args.Workspace != "server" {
+		return pluginapi.Result{}, errors.New("invalid workspace")
+	}
+	if !allowedPath(args.Path) || args.Path == "." {
+		return pluginapi.Result{}, errors.New("destination must be a relative path inside the workspace")
+	}
+	data, mediaType, err := p.web.Download(ctx, args.URL, downloadLimit)
+	if err != nil {
+		return pluginapi.Result{}, err
+	}
+	if len(data) == 0 {
+		return pluginapi.Result{}, errors.New("the address returned an empty body")
+	}
+	digest := sha256.Sum256(data)
+	sum := fmt.Sprintf("%x", digest[:])
+	if args.ExpectedSHA256 != "" && args.ExpectedSHA256 != sum {
+		return pluginapi.Result{}, errors.New("downloaded bytes do not match expected_sha256")
+	}
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return pluginapi.Result{}, err
+	}
+	parent := filepath.ToSlash(filepath.Dir(args.Path))
+	if parent != "." {
+		if err := p.root.MkdirAll(parent, 0700); err != nil {
+			return pluginapi.Result{}, errors.New("workspace parent directory is unavailable")
+		}
+	}
+	var random [8]byte
+	if _, err := io.ReadFull(rand.Reader, random[:]); err != nil {
+		return pluginapi.Result{}, err
+	}
+	temporary := filepath.ToSlash(filepath.Join(parent, ".ca-download-"+hex.EncodeToString(random[:])))
+	file, err := p.root.OpenFile(temporary, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return pluginapi.Result{}, errors.New("workspace temporary file is unavailable")
+	}
+	defer p.root.Remove(temporary)
+	_, err = file.Write(data)
+	if err == nil {
+		err = file.Sync()
+	}
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return pluginapi.Result{}, errors.New("workspace download could not be written")
+	}
+	if err = p.root.Rename(temporary, args.Path); err != nil {
+		return pluginapi.Result{}, errors.New("workspace publish failed")
+	}
+	return encoded(map[string]any{"path": args.Path, "bytes": len(data), "sha256": sum, "media_type": mediaType, "status": "downloaded"})
+}
+
 func (p *Plugin) shell(ctx context.Context, raw json.RawMessage) (pluginapi.Result, error) {
 	var args struct {
 		Workspace, Command string
 		Cwd                string `json:"cwd"`
 		Mode               string `json:"mode"`
+		SandboxPermissions string `json:"sandbox_permissions"`
+		Justification      string `json:"justification"`
 	}
-	if json.Unmarshal(raw, &args) != nil || args.Workspace != "server" {
+	if args.Workspace != "server" {
 		return pluginapi.Result{}, errors.New("invalid workspace")
 	}
 	command := strings.TrimSpace(args.Command)
 	if command == "" || len(args.Command) > 4096 {
 		return pluginapi.Result{}, errors.New("command must be between 1 and 4096 bytes")
 	}
-	if args.Mode != "read-only" && args.Mode != "workspace-write" {
-		return pluginapi.Result{}, errors.New("sandbox mode must be read-only or workspace-write")
+	effective, err := resolveShellMode(args.Mode, args.SandboxPermissions, args.Justification)
+	if err != nil {
+		return pluginapi.Result{}, err
 	}
 	dir := p.path
 	if cwd := strings.TrimSpace(args.Cwd); cwd != "" && cwd != "." {
@@ -592,12 +745,18 @@ func (p *Plugin) shell(ctx context.Context, raw json.RawMessage) (pluginapi.Resu
 			return pluginapi.Result{}, errors.New("workspace cwd must be an existing directory")
 		}
 	}
-	output, status, err := runShell(ctx, p.path, dir, command, args.Mode)
+	output, status, err := runShell(ctx, p.path, dir, command, effective)
 	if err != nil {
 		return pluginapi.Result{}, err
 	}
+	// The result states the confinement that actually applied, not the one asked
+	// for: a caller reading "network: sockets denied" must be able to trust it.
+	network := "sockets denied"
+	if effective == "danger-full-access" {
+		network = "unrestricted (approved for this call only)"
+	}
 	return encoded(map[string]any{
 		"status": status, "output": output, "cwd": strings.TrimPrefix(dir, p.path),
-		"mode": args.Mode, "writable": map[bool]string{true: "workspace only", false: "temporary scratch only"}[args.Mode == "workspace-write"], "network": "sockets denied", "sandbox": sandboxStatus(),
+		"mode": effective, "writable": map[bool]string{true: "workspace only", false: "temporary scratch only"}[effective == "workspace-write"], "network": network, "sandbox": sandboxStatus(),
 	})
 }
