@@ -878,6 +878,14 @@ function renderHistory(messages, turns = [], hashes = new Map()) {
   }
   ui.messages.replaceChildren(fragment);
   renderedSession = state.current;
+  // A completed turn can still carry a note: the reply reads as a finished job,
+  // but an operation behind it failed. Show it instead of letting silence look
+  // like success.
+  for (const root of roots) {
+    if (root.status !== 'completed' || !root.error) continue;
+    const note = ui.messages.querySelector(`[data-message-id="${CSS.escape(`${state.current}:turn:${root.id}`)}"] .message-status`);
+    if (note) note.textContent = root.error;
+  }
   for (const node of ui.messages.querySelectorAll('[data-history-details]')) {
     const saved = details.get(historyDetailKey(node));
     const scroll = saved && node.querySelector('.reasoning-body, .tool-output');

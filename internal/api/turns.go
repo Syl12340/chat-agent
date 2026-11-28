@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"chat-agent/internal/interactive"
@@ -338,6 +340,15 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 					log.Printf("chat turn failed: category=%s", code)
 				}
 			}
+			if status == "completed" {
+				// A reply is not the same thing as the work having happened. When
+				// attempts to change something outside the transcript failed, the
+				// reply must not read as a finished job - the model said it did the
+				// thing, but the evidence in this turn says otherwise.
+				if failures := failedSideEffects(events); failures > 0 {
+					message = fmt.Sprintf("本轮有 %d 个操作失败，结果可能不完整。", failures)
+				}
+			}
 			if finishErr := s.turns.FinishWithReasoning(id, root, status, text, reasoning, message, len(sess.Messages()), events); finishErr != nil {
 				_ = s.turns.Pause(id, true)
 				return
@@ -378,6 +389,36 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 
 // Caller holds s.mu. A chat tool may explicitly allow its own current run;
 // panel mutations and all other running conversations remain blocked.
+// sideEffecting names the tools that change something outside the transcript.
+// A reply claiming the work is done carries no weight when these failed: the only
+// evidence that something happened is that the tool reported success.
+var sideEffecting = map[string]bool{
+	"workspace_write": true,
+	"workspace_shell": true,
+	"local_workspace": true,
+	"image_generate":  true,
+	"image_cancel":    true,
+	"server_action":   true,
+	"reminder_add":    true,
+	"reminder_cancel": true,
+	"todo_add":        true,
+	"todo_complete":   true,
+	"memory_write":    true,
+	"knowledge_manage": true,
+}
+
+// failedSideEffects counts side-effecting tool calls that reported an error.
+// Read-only tools are ignored: a failed search leaves nothing to be wrong about.
+func failedSideEffects(events []turns.ToolEvent) int {
+	failed := 0
+	for _, event := range events {
+		if sideEffecting[event.Name] && strings.TrimSpace(event.Error) != "" {
+			failed++
+		}
+	}
+	return failed
+}
+
 func (s *Server) roleContextCuts(role string, currentRun ...string) (map[string]int, error) {
 	cuts := map[string]int{}
 	entries, err := s.runtime.Entries()
