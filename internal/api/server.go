@@ -573,6 +573,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/sessions/{id}/turns", s.enqueueTurn)
 	mux.HandleFunc("POST /api/sessions/{id}/turns/resume", s.resumeTurns)
 	mux.HandleFunc("DELETE /api/sessions/{id}/turns/{request}", s.withdrawTurn)
+	mux.HandleFunc("GET /api/sessions/{id}/tasks", s.taskContracts)
 	mux.HandleFunc("GET /api/sessions/{id}/tasks/{turn}", s.taskContract)
 	mux.HandleFunc("GET /api/episodes", s.listEpisodes)
 	mux.HandleFunc("POST /api/episodes", s.createEpisode)
@@ -655,7 +656,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // version is the service version reported by /api/status.
-const version = "0.7.46"
+const version = "0.7.47"
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model

@@ -71,7 +71,19 @@ func TestArtifactsRequireStructuredOutput(t *testing.T) {
 	}
 
 	image := ToolEvent{Name: "image_generate", Output: `{"url":"/api/images/abc"}`}
-	if got := artifactsOf(image); len(got) != 1 || got[0].Kind != "image" {
-		t.Fatalf("an image has its own kind: %+v", got)
+	if got := artifactsOf(image); len(got) != 1 || got[0].Kind != "image" || got[0].Download != "/api/images/abc" {
+		t.Fatalf("an image has its own kind and a download path: %+v", got)
+	}
+
+	// A tool that only reported an identifier still yields a usable link.
+	byID := ToolEvent{Name: "image_generate", Output: `{"entity_id":"7f3a"}`}
+	if got := artifactsOf(byID); len(got) != 1 || got[0].Download != "/api/images/7f3a" {
+		t.Fatalf("image identifier should map to a download path: %+v", got)
+	}
+
+	// A file without a reported URL is still recorded, just without a link.
+	bare := ToolEvent{Name: "workspace_share", Output: `{"path":"out/report.pdf"}`}
+	if got := artifactsOf(bare); len(got) != 1 || got[0].Download != "" {
+		t.Fatalf("an artifact must survive even when no link can be derived: %+v", got)
 	}
 }

@@ -150,6 +150,25 @@ func (s *Server) resumeTurns(w http.ResponseWriter, r *http.Request) {
 	s.startTurnWorkerLocked(id, sess)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
+// taskContracts answers with the four-level view of every turn in a session, so a
+// page can render task state from one source instead of deriving it per message.
+func (s *Server) taskContracts(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.get(w, r); !ok {
+		return
+	}
+	id := r.PathValue("id")
+	items, _, err := s.turns.List(id)
+	if err != nil {
+		turnFailure(w, err)
+		return
+	}
+	out := make([]turns.Task, 0, len(items))
+	for _, turn := range items {
+		out = append(out, turns.ContractOf(id, turn))
+	}
+	writeJSON(w, 200, out)
+}
+
 // taskContract answers with the four-level view of one turn, so a caller does not
 // have to reconstruct task state from turn fields and tool events itself.
 func (s *Server) taskContract(w http.ResponseWriter, r *http.Request) {

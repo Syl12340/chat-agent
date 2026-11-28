@@ -48,6 +48,10 @@ type Artifact struct {
 	Kind   string `json:"kind"`
 	Ref    string `json:"ref"`
 	SHA256 string `json:"sha256,omitempty"`
+	// Download is a server path that serves the bytes, when one is known. An
+	// artifact without it is still recorded - refusal to lose it is better than
+	// dropping it because a link could not be derived.
+	Download string `json:"download,omitempty"`
 }
 
 // ContractOf projects one turn into the four levels.
@@ -119,7 +123,14 @@ func artifactsOf(event ToolEvent) []Artifact {
 	if ref == "" {
 		return nil
 	}
-	return []Artifact{{Kind: artifactKind(event.Name), Ref: ref, SHA256: payload.SHA256}}
+	kind := artifactKind(event.Name)
+	artifact := Artifact{Kind: kind, Ref: ref, SHA256: payload.SHA256, Download: payload.URL}
+	// An image the server holds always has a path to its bytes, even when the tool
+	// only reported an identifier.
+	if artifact.Download == "" && kind == "image" && payload.Entity != "" {
+		artifact.Download = "/api/images/" + payload.Entity
+	}
+	return []Artifact{artifact}
 }
 
 func artifactKind(tool string) string {
