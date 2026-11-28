@@ -189,6 +189,9 @@ func openSessionFile(path, lockPath string) (_ *Session, openErr error) {
 }
 
 // append is called only while Run owns mu. Persist before publishing to memory.
+// Giving it its own lock was tried and deadlocked the whole probe package: the
+// lock is held somewhere the stack dump could not name, so the writer's mutual
+// exclusion has to be established before a supplement can arrive mid-turn.
 func (s *Session) append(messages ...Message) error {
 	known := map[string]bool{}
 	for _, message := range s.messages {

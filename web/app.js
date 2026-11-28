@@ -871,10 +871,16 @@ function renderHistory(messages, turns = [], hashes = new Map()) {
     for (const node of ui.messages.children) {
       if (node.dataset.messageId) previous.set(node.dataset.messageId, node);
     }
+    let reused = 0, considered = 0;
     if (previous.size) for (const node of Array.from(fragment.children)) {
       const old = node.dataset.messageId && previous.get(node.dataset.messageId);
-      if (old && old.isConnected && old.className === node.className && old.textContent === node.textContent) fragment.replaceChild(old, node);
+      if (!old) continue;
+      considered++;
+      if (old.isConnected && old.className === node.className && old.textContent === node.textContent) { fragment.replaceChild(old, node); reused++; }
     }
+    // Kept on the window so a person (or a test) can tell whether reuse is
+    // actually happening instead of inferring it from how the page feels.
+    window.__renderReuse = { reused, considered, session: state.current };
   }
   ui.messages.replaceChildren(fragment);
   renderedSession = state.current;
