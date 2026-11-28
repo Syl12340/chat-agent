@@ -2,6 +2,7 @@ package turns
 
 import (
 	"encoding/json"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -70,12 +71,12 @@ func ContractOf(sessionID string, turn Turn) Task {
 			Thinking:   turn.Thinking,
 			Status:     turn.Status,
 			Reply:      turn.Text,
-			Operations: operationsOf(turn.Tools),
+			Operations: operationsOf(sessionID, turn.Tools),
 		}},
 	}
 }
 
-func operationsOf(tools []ToolEvent) []Operation {
+func operationsOf(sessionID string, tools []ToolEvent) []Operation {
 	out := make([]Operation, 0, len(tools))
 	for _, event := range tools {
 		status := event.Status
@@ -94,7 +95,7 @@ func operationsOf(tools []ToolEvent) []Operation {
 			// the server workspace and a paired computer behave differently.
 			operation.Location = event.View.Endpoint
 		}
-		operation.Artifacts = artifactsOf(event)
+		operation.Artifacts = artifactsOf(sessionID, event)
 		out = append(out, operation)
 	}
 	return out
@@ -102,45 +103,70 @@ func operationsOf(tools []ToolEvent) []Operation {
 
 // artifactsOf reads results that outlive the reply. Only an explicit structured
 // field counts: guessing from prose would invent files that were never produced.
-func artifactsOf(event ToolEvent) []Artifact {
-	switch event.Name {
-	case "workspace_share", "workspace_write", "image_generate", "courseware_upload":
-	default:
+//
+// The link is derived from the session, never copied from the tool. Only the host
+// knows how to serve these bytes to this conversation, and only the host's own
+// routes sit behind the API's authentication. A tool-reported absolute URL points
+// somewhere else, so the artifact is kept without a link instead of being shown as
+// a button that cannot work.
+func artifactsOf(sessionID string, event ToolEvent) []Artifact {
+	kind := artifactKind(event.Name)
+	if kind == "" {
 		return nil
 	}
 	var payload struct {
-		Path   string `json:"path"`
-		URL    string `json:"url"`
-		SHA256 string `json:"sha256"`
-		File   string `json:"file"`
-		Entity string `json:"entity_id"`
+		Path        string `json:"path"`
+		Name        string `json:"name"`
+		URL         string `json:"url"`
+		DownloadURL string `json:"download_url"`
+		ImageID     string `json:"image_id"`
+		SHA256      string `json:"sha256"`
 	}
 	trimmed := strings.TrimSpace(event.Output)
 	if !strings.HasPrefix(trimmed, "{") || json.Unmarshal([]byte(trimmed), &payload) != nil {
 		return nil
 	}
-	ref := firstNonEmpty(payload.Path, payload.URL, payload.File, payload.Entity)
+	ref := firstNonEmpty(payload.Path, payload.Name, payload.ImageID)
 	if ref == "" {
 		return nil
 	}
-	kind := artifactKind(event.Name)
-	artifact := Artifact{Kind: kind, Ref: ref, SHA256: payload.SHA256, Download: payload.URL}
-	// An image the server holds always has a path to its bytes, even when the tool
-	// only reported an identifier.
-	if artifact.Download == "" && kind == "image" && payload.Entity != "" {
-		artifact.Download = "/api/images/" + payload.Entity
-	}
-	return []Artifact{artifact}
+	return []Artifact{{
+		Kind:     kind,
+		Ref:      ref,
+		SHA256:   payload.SHA256,
+		Download: artifactDownload(sessionID, payload.DownloadURL, payload.URL, payload.ImageID, payload.Path, payload.SHA256),
+	}}
 }
 
+// artifactDownload returns a route this host will actually serve. Reported routes
+// are only trusted when they are already relative, which means the host built
+// them; an absolute URL is somebody else's address.
+func artifactDownload(sessionID, downloadURL, rawURL, imageID, path, digest string) string {
+	if route := firstNonEmpty(downloadURL, rawURL); strings.HasPrefix(route, "/") {
+		return route
+	}
+	scoped := "/api/sessions/" + url.PathEscape(sessionID)
+	if imageID != "" {
+		return scoped + "/images/" + url.PathEscape(imageID)
+	}
+	// A written file has no link of its own, but the digest it reported is exactly
+	// what the download route verifies against.
+	if path != "" && digest != "" {
+		return scoped + "/workspace-files/" + url.PathEscape(digest) + "?path=" + url.QueryEscape(path)
+	}
+	return ""
+}
+
+// artifactKind is the allow-list: a tool that cannot produce a deliverable has no
+// kind, so its output is never interpreted.
 func artifactKind(tool string) string {
 	switch tool {
-	case "image_generate":
+	case "image_generate", "image_status":
 		return "image"
-	case "courseware_upload":
-		return "courseware"
-	default:
+	case "workspace_share", "workspace_write":
 		return "file"
+	default:
+		return ""
 	}
 }
 

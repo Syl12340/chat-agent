@@ -302,6 +302,20 @@ func (s *Store) register(publicKey, name, slotID string, claim bool) (Device, er
 		case "revoked":
 			return Device{}, ErrRevoked
 		case "pending":
+			// A registration proves knowledge of a public key, not possession of the
+			// matching private one - the key is not secret. So if this identifier
+			// already belongs to a device the operator has decided about, an
+			// anonymous request must not be able to move it: otherwise anyone who
+			// can read a public key could downgrade an approved device to pending,
+			// or undo a revocation by putting the credential back up for approval.
+			if existing, ok := s.devices[id]; ok {
+				switch existing.Status {
+				case "approved":
+					return Device{}, ErrKeyChanged
+				case "revoked":
+					return Device{}, ErrRevoked
+				}
+			}
 			updated := make(map[string]record, len(s.devices))
 			for key, value := range s.devices {
 				if key != previousID {

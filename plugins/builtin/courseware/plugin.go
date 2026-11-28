@@ -64,6 +64,16 @@ func (p *Plugin) read(ctx context.Context, raw json.RawMessage) (pluginapi.Resul
 	if err != nil {
 		return pluginapi.Result{}, err
 	}
-	out, _ := json.Marshal(map[string]any{"document": doc.Name, "document_id": doc.ID, "query": a.Query, "source_ref": source, "excerpt": text, "untrusted": true})
-	return pluginapi.Result{Output: string(out)}, nil
+	out := map[string]any{"document": doc.Name, "document_id": doc.ID, "query": a.Query, "source_ref": source, "excerpt": text, "untrusted": true, "extraction_status": doc.Status()}
+	if doc.Pages > 0 {
+		out["pages"] = doc.Pages
+	}
+	if doc.Incomplete() {
+		// The model must not present a partial extraction as the whole lecture. The
+		// warnings name what is missing, and the notice says what to do about it.
+		out["extraction_warnings"] = doc.Warnings
+		out["notice"] = "这份课件的文本不完整。讲解时必须说明缺失的范围，不要把现有文本当成全篇，也不要补写没有读到的内容。"
+	}
+	encoded, _ := json.Marshal(out)
+	return pluginapi.Result{Output: string(encoded)}, nil
 }

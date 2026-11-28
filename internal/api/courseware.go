@@ -10,6 +10,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"chat-agent/internal/courseware"
 )
 
 // coursewareFile serves the uploaded original so a reader can see the page the
@@ -21,6 +23,12 @@ func (s *Server) coursewareFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	doc, raw, err := s.courseware.Source(role, r.PathValue("document"))
+	if errors.Is(err, courseware.ErrSourceMissing) {
+		// The record is from before originals were kept. Saying so lets the person
+		// re-upload instead of wondering where the page went.
+		fail(w, http.StatusNotFound, err.Error())
+		return
+	}
 	if errors.Is(err, os.ErrNotExist) {
 		fail(w, http.StatusNotFound, "课件不存在")
 		return
@@ -64,6 +72,12 @@ func (s *Server) exportCoursewareSource(w http.ResponseWriter, r *http.Request) 
 	doc, text, source, readErr := s.courseware.Read(role, r.PathValue("document"), "", offset, limit)
 	if errors.Is(readErr, os.ErrNotExist) {
 		fail(w, http.StatusNotFound, "课件不存在")
+		return
+	}
+	// The upload is stored but its text could not be extracted: a conflict with the
+	// document's state, not a bad request from the caller.
+	if errors.Is(readErr, courseware.ErrTextUnavailable) {
+		fail(w, http.StatusConflict, readErr.Error())
 		return
 	}
 	if readErr != nil {
@@ -112,6 +126,10 @@ func (s *Server) readCoursewareSource(w http.ResponseWriter, r *http.Request) {
 	doc, text, source, readErr := s.courseware.Read(role, r.PathValue("document"), query, offset, limit)
 	if errors.Is(readErr, os.ErrNotExist) {
 		fail(w, http.StatusNotFound, "课件不存在")
+		return
+	}
+	if errors.Is(readErr, courseware.ErrTextUnavailable) {
+		fail(w, http.StatusConflict, readErr.Error())
 		return
 	}
 	if readErr != nil {

@@ -103,7 +103,7 @@ const lifeUI = createLifeUI({ state, json, drawer, onError: handleError, onOpenS
 const turnUI = createTurnsUI({ state, json, storage, onError: handleError, onHistory: applyTurnHistory, onState: updateUI, onSettled: refreshAfterTurn, createSession: createRemoteSession, onDraftRestore: restoreTurnDraft, onAccepted: payload=>chatInput?.accepted(payload) });
 const activitiesUI = createActivitiesUI({ state, json, drawer, onError: handleError, onContinue: openActivityChat, onChanged: () => turnUI.refresh() });
 const localAgentUI = createLocalAgentUI({state,json,drawer,onError:handleError});
-const coursewareUI = createCoursewareUI({state,json,drawer,onDraft:restoreDraft,onError:handleError,roleName});
+const coursewareUI = createCoursewareUI({state,json,drawer,fetchBytes,onDraft:restoreDraft,onError:handleError,roleName});
 chatInput = createChatInput({state,request,json,createSession:createRemoteSession,notice,onChange:updateUI,onImageLoad:()=>scrollBottom()});
 interactiveUI = createUIRenderer({onSubmit:submitUIAnswer,onExpand:(node,meta)=>workspace.expand(node,meta),onPlace:node=>workspace.placement(node),canSubmit:uiSubmitPermission});
 // A manual connection owns authentication immediately, even while native restore awaits.
@@ -760,6 +760,52 @@ function historyDetailKey(node) {
   return JSON.stringify([node.closest('[data-message-id]')?.dataset.messageId, node.dataset.historyDetails]);
 }
 
+// Artifact bytes are behind the API's authentication. Fetching through the same
+// transport the rest of the page uses keeps the token off the URL bar and lets a
+// stale session renew itself instead of failing with a bare 401.
+async function fetchBytes(path) {
+  const response = await request(path);
+  if (!response.ok) throw new Error(response.status === 404 ? '文件已不存在' : `读取失败 (${response.status})`);
+  return response.blob();
+}
+
+async function openArtifact(artifact, trigger, label) {
+  const restore = () => {
+    trigger.disabled = false;
+    trigger.textContent = artifact.sha256 ? `${label} · ${artifact.sha256.slice(0, 8)}` : label;
+  };
+  // A popup opened after an await is blocked, so the window is reserved while the
+  // click is still the user's gesture and pointed at the blob once it exists.
+  const preview = artifact.kind === 'image' ? window.open('', '_blank') : null;
+  if (preview) preview.opener = null;
+  trigger.disabled = true;
+  trigger.textContent = '正在获取…';
+  let url = '';
+  try {
+    const response = await request(artifact.download);
+    if (!response.ok) throw new Error(response.status === 404 ? '文件已不存在' : `读取失败 (${response.status})`);
+    url = URL.createObjectURL(await response.blob());
+    if (preview) {
+      preview.location = url;
+    } else {
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = String(artifact.ref || 'artifact').split('/').pop() || 'artifact';
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+    }
+    restore();
+  } catch (error) {
+    preview?.close();
+    trigger.textContent = error?.message ? `打不开：${error.message}` : '打不开这个成果';
+  } finally {
+    trigger.disabled = false;
+    // The preview tab still needs the object URL; a download does not.
+    if (url && !preview) setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+}
+
 function renderHistory(messages, turns = [], hashes = new Map()) {
   chatInput.beforeHistoryRender();
   const focus=interactiveUI.captureFocus();
@@ -906,13 +952,15 @@ function renderHistory(messages, turns = [], hashes = new Map()) {
     const box = document.createElement('div');
     box.className = 'task-artifacts';
     for (const artifact of artifacts) {
-      const link = document.createElement('a');
-      link.className = 'life-action';
-      link.href = artifact.download;
-      link.target = '_blank';
-      link.rel = 'noopener';
-      const label = artifact.kind === 'image' ? '查看图片' : artifact.kind === 'courseware' ? '查看课件' : '下载成果';
+      // A plain anchor would be fetched without the bearer token and come back
+      // 401, so the bytes are pulled through the authenticated transport and handed
+      // to the browser as a local object URL.
+      const link = document.createElement('button');
+      link.type = 'button';
+      link.className = 'life-action task-artifact';
+      const label = artifact.kind === 'image' ? '查看图片' : '下载成果';
       link.textContent = artifact.sha256 ? `${label} · ${artifact.sha256.slice(0, 8)}` : label;
+      link.addEventListener('click', () => openArtifact(artifact, link, label));
       box.append(link);
     }
     host.append(box);

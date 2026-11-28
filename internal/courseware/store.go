@@ -30,6 +30,14 @@ import (
 const sourceLimit = 16 << 20
 const textLimit = 2 << 20
 
+var (
+	// ErrSourceMissing means the record predates original storage, so there is
+	// nothing to open. The file can simply be uploaded again.
+	ErrSourceMissing = errors.New("这份课件没有保留原件，请重新上传")
+	// ErrTextUnavailable means extraction never produced text for this document.
+	ErrTextUnavailable = errors.New("这份课件没有可读的文本，可以打开原件查看")
+)
+
 type Document struct {
 	ID        string    `json:"id"`
 	RoleID    string    `json:"role_id"`
@@ -41,6 +49,17 @@ type Document struct {
 	Revision  int       `json:"revision"`
 	Locator   string    `json:"locator,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
+
+	// The original is kept whether or not extraction worked, so a file this reader
+	// cannot parse is still stored for a later extractor instead of being refused
+	// and lost. These three fields say what the text projection actually covers.
+	Extraction string   `json:"extraction_status"`
+	Warnings   []string `json:"extraction_warnings,omitempty"`
+	Pages      int      `json:"extraction_pages,omitempty"`
+	// SourceBytes and SourceSHA256 are the original as stored. Reading it back
+	// against them proves the bytes served are the bytes uploaded.
+	SourceBytes  int    `json:"source_bytes,omitempty"`
+	SourceSHA256 string `json:"source_sha256,omitempty"`
 }
 
 type SourceRef struct {
@@ -85,7 +104,13 @@ func Open(dir string) (*Store, error) {
 		return nil, errors.New("damaged courseware store")
 	}
 	for _, d := range s.state.Documents {
-		if !storage.ValidID(d.RoleID) || len(d.ID) != 32 || strings.ContainsAny(d.ID, `/\\`) || d.Revision < 1 || len(d.SHA256) != 64 || d.TextBytes < 1 || d.TextBytes > textLimit {
+		status := normalizeStatus(d.Extraction)
+		if !storage.ValidID(d.RoleID) || len(d.ID) != 32 || strings.ContainsAny(d.ID, `/\\`) || d.Revision < 1 || len(d.SHA256) != 64 || d.TextBytes < 0 || d.TextBytes > textLimit {
+			return nil, errors.New("damaged courseware store")
+		}
+		// A record either carries readable text or says extraction failed; there is
+		// no third state where the projection is silently empty.
+		if (status == extractionFailed) != (d.TextBytes == 0) || (status != extractionFailed && !Extraction{Status: status}.valid()) {
 			return nil, errors.New("damaged courseware store")
 		}
 	}
@@ -110,24 +135,17 @@ func (s *Store) List(role string) ([]Document, error) {
 	return out, nil
 }
 
+// Add stores an upload in three phases: the original goes in first, extraction
+// runs against it, and only then does an index entry make the text readable.
+//
+// The order matters. Parsing used to come first, so a file this extractor could
+// not read was refused and thrown away - the person had handed it over once and a
+// better extractor later had nothing to work on. Now an unreadable file is kept
+// and marked failed.
 func (s *Store) Add(role, name, mediaType string, raw []byte) (Document, error) {
 	name = strings.TrimSpace(filepath.Base(name))
 	if !storage.ValidID(role) || name == "." || name == "" || len(name) > 180 || len(raw) == 0 || len(raw) > sourceLimit {
 		return Document{}, errors.New("invalid courseware upload")
-	}
-	text, err := ExtractText(name, raw)
-	if err != nil {
-		return Document{}, err
-	}
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return Document{}, errors.New("课件中没有可提取的文本")
-	}
-	if len(text) > textLimit {
-		text = text[:textLimit]
-	}
-	if !utf8.ValidString(text) {
-		return Document{}, errors.New("提取结果不是 UTF-8 文本")
 	}
 	var idRaw [16]byte
 	if _, err := rand.Read(idRaw[:]); err != nil {
@@ -135,11 +153,11 @@ func (s *Store) Add(role, name, mediaType string, raw []byte) (Document, error) 
 	}
 	id := hex.EncodeToString(idRaw[:])
 	digest := sha256.Sum256(raw)
+	sum := fmt.Sprintf("%x", digest[:])
 	locator := ""
 	if strings.EqualFold(filepath.Ext(name), ".pptx") {
 		locator = "slide"
 	}
-	doc := Document{ID: id, RoleID: role, Name: name, MediaType: mediaType, Bytes: len(raw), SHA256: fmt.Sprintf("%x", digest[:]), TextBytes: len(text), Revision: 1, Locator: locator, CreatedAt: time.Now().UTC()}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	count := 0
@@ -151,22 +169,54 @@ func (s *Store) Add(role, name, mediaType string, raw []byte) (Document, error) 
 	if count >= 64 {
 		return Document{}, errors.New("每个角色最多保存 64 份课件")
 	}
-	if err := storage.Replace(filepath.Join(s.dir, "text", id+".txt"), []byte(text)); err != nil {
+
+	// Phase one: the original, before anything is parsed.
+	sourcePath := filepath.Join(s.dir, "source", id+sourceExt(name))
+	if err := storage.Replace(sourcePath, raw); err != nil {
 		return Document{}, err
 	}
-	// Keep the original bytes next to the extracted text. Without them the store
-	// only remembers what one extractor made of the file: the page a reader was
-	// looking at cannot be shown again, and a later extractor cannot be re-run on
-	// real input. Written after the text so a crash leaves an orphaned source
-	// rather than a document whose text is missing.
-	if err := storage.Replace(filepath.Join(s.dir, "source", id+sourceExt(name)), raw); err != nil {
-		_ = os.Remove(filepath.Join(s.dir, "text", id+".txt"))
-		return Document{}, err
+
+	// Phase two: extraction. A failure is a state of the document, not a reason to
+	// discard the upload.
+	text, extraction, extractErr := ExtractTextReport(name, raw)
+	text = strings.TrimSpace(text)
+	if extractErr != nil || text == "" {
+		if extractErr == nil {
+			extractErr = errors.New("课件中没有可提取的文本")
+		}
+		extraction = Extraction{Status: extractionFailed, Warnings: []string{extractErr.Error()}}
+		text = ""
+	} else {
+		if len(text) > textLimit {
+			text = text[:textLimit]
+		}
+		if !utf8.ValidString(text) {
+			_ = os.Remove(sourcePath)
+			return Document{}, errors.New("提取结果不是 UTF-8 文本")
+		}
+	}
+
+	// Phase three: publish. The text file is written before the index entry, so a
+	// crash leaves an unused file rather than a record pointing at text that is not
+	// there.
+	textPath := filepath.Join(s.dir, "text", id+".txt")
+	if text != "" {
+		if err := storage.Replace(textPath, []byte(text)); err != nil {
+			_ = os.Remove(sourcePath)
+			return Document{}, err
+		}
+	}
+	doc := Document{
+		ID: id, RoleID: role, Name: name, MediaType: mediaType,
+		Bytes: len(raw), SHA256: sum, TextBytes: len(text), Revision: 1,
+		Locator: locator, CreatedAt: time.Now().UTC(),
+		Extraction: extraction.Status, Warnings: extraction.Warnings, Pages: extraction.Pages,
+		SourceBytes: len(raw), SourceSHA256: sum,
 	}
 	next := snapshot{Version: 1, Documents: append(append([]Document(nil), s.state.Documents...), doc)}
 	if err := s.save(next); err != nil {
-		_ = os.Remove(filepath.Join(s.dir, "text", id+".txt"))
-		_ = os.Remove(filepath.Join(s.dir, "source", id+sourceExt(name)))
+		_ = os.Remove(textPath)
+		_ = os.Remove(sourcePath)
 		return Document{}, err
 	}
 	return doc, nil
@@ -227,8 +277,18 @@ func (s *Store) Source(role, id string) (Document, []byte, error) {
 			continue
 		}
 		raw, err := os.ReadFile(filepath.Join(s.dir, "source", id+sourceExt(doc.Name)))
+		if errors.Is(err, os.ErrNotExist) {
+			// Stored before originals were kept. Saying so is actionable - the file can
+			// be uploaded again - while a bare "not found" would look like data loss.
+			return Document{}, nil, ErrSourceMissing
+		}
 		if err != nil {
 			return Document{}, nil, err
+		}
+		// The bytes served have to be the bytes recorded, or the page being shown is
+		// not the page the text came from.
+		if doc.SourceBytes > 0 && (len(raw) != doc.SourceBytes || fmt.Sprintf("%x", sha256.Sum256(raw)) != doc.SourceSHA256) {
+			return Document{}, nil, errors.New("原件与记录不一致，请重新上传")
 		}
 		return doc, raw, nil
 	}
@@ -255,6 +315,11 @@ func (s *Store) Read(role, id, query string, offset, limit int) (Document, strin
 	s.mu.Unlock()
 	if !found {
 		return Document{}, "", SourceRef{}, os.ErrNotExist
+	}
+	// A document whose extraction failed has no text to project. Returning an empty
+	// string would look like an empty lecture; the original is still there to open.
+	if normalizeStatus(doc.Extraction) == extractionFailed {
+		return doc, "", SourceRef{}, ErrTextUnavailable
 	}
 	raw, err := os.ReadFile(filepath.Join(s.dir, "text", id+".txt"))
 	if err != nil {
@@ -305,30 +370,54 @@ func (s *Store) save(next snapshot) error {
 
 // ExtractText is the bounded document parser used for both uploads and chat attachments.
 func ExtractText(name string, raw []byte) (string, error) {
+	text, _, err := ExtractTextReport(name, raw)
+	return text, err
+}
+
+// ExtractTextReport returns the same text plus what the parser knows about how
+// much of the document it covers. Callers that only need the text use ExtractText;
+// anything that stores the result should keep the report, because a partial
+// extraction and a complete one are not the same material.
+func ExtractTextReport(name string, raw []byte) (string, Extraction, error) {
 	if len(raw) == 0 || len(raw) > sourceLimit {
-		return "", errors.New("文件为空或超过大小限制")
+		return "", Extraction{}, errors.New("文件为空或超过大小限制")
 	}
 	ext := strings.ToLower(filepath.Ext(name))
 	switch ext {
 	case ".txt", ".md", ".markdown", ".csv", ".json", ".log":
 		if !utf8.Valid(raw) {
-			return "", errors.New("文本课件必须是 UTF-8")
+			return "", Extraction{}, errors.New("文本课件必须是 UTF-8")
 		}
-		return string(raw), nil
+		return string(raw), Extraction{Status: extractionComplete}, nil
 	case ".html", ".htm":
 		if !utf8.Valid(raw) {
-			return "", errors.New("HTML 课件必须是 UTF-8")
+			return "", Extraction{}, errors.New("HTML 课件必须是 UTF-8")
 		}
-		return stripHTML(string(raw)), nil
+		return stripHTML(string(raw)), Extraction{Status: extractionComplete}, nil
 	case ".docx":
-		return extractZIPXML(raw, "word/")
+		return zipXMLReport(extractZIPXML(raw, "word/"))
 	case ".pptx":
-		return extractPPTX(raw)
+		return zipXMLReport(extractPPTX(raw))
 	case ".pdf":
 		return extractPDF(raw)
 	default:
-		return "", fmt.Errorf("不支持的课件格式 %q", ext)
+		return "", Extraction{}, fmt.Errorf("不支持的课件格式 %q", ext)
 	}
+}
+
+// zipXMLReport marks a capped Office extraction. The parsers stop at textLimit and
+// return what they have, which is a partial document by construction.
+func zipXMLReport(text string, err error) (string, Extraction, error) {
+	if err != nil {
+		return "", Extraction{}, err
+	}
+	if len(text) >= textLimit {
+		return text, Extraction{
+			Status:   extractionLimited,
+			Warnings: []string{"文档文本超过单份上限，只保留了前面一部分"},
+		}, nil
+	}
+	return text, Extraction{Status: extractionComplete}, nil
 }
 
 type pptxSlide struct {

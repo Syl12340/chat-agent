@@ -54,36 +54,49 @@ func TestContractOfProjectsAFinishedTurn(t *testing.T) {
 // A file only counts as a deliverable when the tool said so in a structured
 // field. Prose that mentions a path is not evidence.
 func TestArtifactsRequireStructuredOutput(t *testing.T) {
-	structured := ToolEvent{Name: "workspace_share", Output: `{"path":"out/report.pdf","sha256":"abc123"}`}
-	got := artifactsOf(structured)
-	if len(got) != 1 || got[0].Ref != "out/report.pdf" || got[0].Kind != "file" || got[0].SHA256 != "abc123" {
+	structured := ToolEvent{Name: "workspace_share", Output: `{"kind":"workspace_file","name":"report.pdf","bytes":12,"sha256":"abc123","download_url":"/api/sessions/s1/workspace-files/abc123?path=out%2Freport.pdf"}`}
+	got := artifactsOf("s1", structured)
+	if len(got) != 1 || got[0].Ref != "report.pdf" || got[0].Kind != "file" || got[0].SHA256 != "abc123" {
 		t.Fatalf("structured output was not turned into an artifact: %+v", got)
+	}
+	if got[0].Download != "/api/sessions/s1/workspace-files/abc123?path=out%2Freport.pdf" {
+		t.Fatalf("the host's own download route was not kept: %+v", got[0])
 	}
 
 	prose := ToolEvent{Name: "workspace_share", Output: "已保存到 out/report.pdf"}
-	if got := artifactsOf(prose); got != nil {
+	if got := artifactsOf("s1", prose); got != nil {
 		t.Fatalf("prose must not invent an artifact: %+v", got)
 	}
 
 	unrelated := ToolEvent{Name: "web_search", Output: `{"path":"nope"}`}
-	if got := artifactsOf(unrelated); got != nil {
+	if got := artifactsOf("s1", unrelated); got != nil {
 		t.Fatalf("a read-only tool must not produce artifacts: %+v", got)
 	}
 
-	image := ToolEvent{Name: "image_generate", Output: `{"url":"/api/images/abc"}`}
-	if got := artifactsOf(image); len(got) != 1 || got[0].Kind != "image" || got[0].Download != "/api/images/abc" {
-		t.Fatalf("an image has its own kind and a download path: %+v", got)
+	// The identifier an image tool reports maps onto this conversation's route. The
+	// route is per-session, so a link built without one would be a 404 at best.
+	image := ToolEvent{Name: "image_generate", Output: `{"image_id":"7f3a","profile":"oil","seed":7}`}
+	if got := artifactsOf("s1", image); len(got) != 1 || got[0].Kind != "image" || got[0].Download != "/api/sessions/s1/images/7f3a" {
+		t.Fatalf("image identifier should map to a session-scoped route: %+v", got)
 	}
 
-	// A tool that only reported an identifier still yields a usable link.
-	byID := ToolEvent{Name: "image_generate", Output: `{"entity_id":"7f3a"}`}
-	if got := artifactsOf(byID); len(got) != 1 || got[0].Download != "/api/images/7f3a" {
-		t.Fatalf("image identifier should map to a download path: %+v", got)
+	// An absolute URL belongs to somebody else. Showing it would hand the user a
+	// button that cannot authenticate, so the artifact keeps its identity only.
+	foreign := ToolEvent{Name: "image_generate", Output: `{"image_id":"7f3a","url":"https://elsewhere.example/x.png"}`}
+	if got := artifactsOf("s1", foreign); len(got) != 1 || got[0].Download != "/api/sessions/s1/images/7f3a" {
+		t.Fatalf("a foreign URL must not become the download link: %+v", got)
 	}
 
-	// A file without a reported URL is still recorded, just without a link.
-	bare := ToolEvent{Name: "workspace_share", Output: `{"path":"out/report.pdf"}`}
-	if got := artifactsOf(bare); len(got) != 1 || got[0].Download != "" {
+	// A written file can be linked because the digest it reported is what the
+	// download route verifies.
+	written := ToolEvent{Name: "workspace_write", Output: `{"path":"notes/a b.md","bytes":3,"sha256":"dd","status":"written"}`}
+	if got := artifactsOf("s1", written); len(got) != 1 || got[0].Download != "/api/sessions/s1/workspace-files/dd?path=notes%2Fa+b.md" {
+		t.Fatalf("a written file should derive its own download route: %+v", got)
+	}
+
+	// A share that reports no digest still survives, just without a link.
+	bare := ToolEvent{Name: "workspace_share", Output: `{"name":"report.pdf"}`}
+	if got := artifactsOf("s1", bare); len(got) != 1 || got[0].Download != "" {
 		t.Fatalf("an artifact must survive even when no link can be derived: %+v", got)
 	}
 }
