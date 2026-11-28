@@ -325,7 +325,7 @@ func ExtractText(name string, raw []byte) (string, error) {
 	case ".pptx":
 		return extractPPTX(raw)
 	case ".pdf":
-		return "", errors.New("当前部署未配置 PDF 文本提取器；请先上传 Markdown、文本、DOCX 或 PPTX")
+		return extractPDF(raw)
 	default:
 		return "", fmt.Errorf("不支持的课件格式 %q", ext)
 	}
