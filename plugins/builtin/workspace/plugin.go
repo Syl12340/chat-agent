@@ -112,6 +112,12 @@ func (p *Plugin) Manifest() pluginapi.Manifest {
 	if sandboxReady() {
 		tools = append(tools, "workspace_shell")
 	}
+	// Declared only when the host actually handed over an egress client: a manifest
+	// that lists the tool without one would promise a capability the plugin cannot
+	// deliver.
+	if p.web != nil && p.web.FetchEnabled() {
+		tools = append(tools, "workspace_download")
+	}
 	return pluginapi.Manifest{
 		APIVersion: pluginapi.APIVersion, Kind: pluginapi.Kind,
 		Metadata: pluginapi.Metadata{ID: ID, Name: "工作区", Version: "0.3.0"},
