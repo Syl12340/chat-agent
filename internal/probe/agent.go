@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"chat-agent/internal/media"
@@ -200,6 +201,47 @@ type Agent struct {
 	executor  ToolExecutor
 	provider  ModelProvider
 	turnStart int
+	// supplements are corrections that arrived while this turn was already
+	// running. They live here rather than on the session because the turn holds
+	// the session lock for its entire duration - appending to the transcript
+	// mid-turn deadlocks the writer against itself.
+	supplementMu sync.Mutex
+	supplements  []string
+}
+
+// AddSupplement records a correction for the turn that is currently running. The
+// next assembly folds it in as an extra user instruction, so a request like
+// "only the first five pages" takes effect on the very next model call instead of
+// waiting for a new turn. Returns false when the turn cannot take more.
+func (a *Agent) AddSupplement(text string) bool {
+	text = strings.TrimSpace(text)
+	if text == "" || len(text) > 8<<10 {
+		return false
+	}
+	a.supplementMu.Lock()
+	defer a.supplementMu.Unlock()
+	if len(a.supplements) >= 4 {
+		return false
+	}
+	a.supplements = append(a.supplements, text)
+	return true
+}
+
+// takeSupplements hands out queued corrections, but only when the transcript ends
+// on something a user message may legally follow. Placing one after an assistant
+// tool call would separate that call from its results.
+func (a *Agent) takeSupplements(last Message) []string {
+	a.supplementMu.Lock()
+	defer a.supplementMu.Unlock()
+	if len(a.supplements) == 0 {
+		return nil
+	}
+	if last.Role == "assistant" && len(last.ToolCalls) > 0 {
+		return nil
+	}
+	out := a.supplements
+	a.supplements = nil
+	return out
 }
 
 func New(c Config, sess *Session) (*Agent, error) {

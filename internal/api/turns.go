@@ -265,6 +265,13 @@ func (s *Server) startTurnWorkerLocked(id string, sess *probe.Session) {
 					// the queue, so the operator gets the reason here.
 					log.Printf("turn agent unavailable: %v", err)
 				}
+				if agent != nil {
+					s.mu.Lock()
+					if s.runs[id] == state {
+						state.agent = agent
+					}
+					s.mu.Unlock()
+				}
 			}
 			if selectionErr != nil {
 				err = selectionErr

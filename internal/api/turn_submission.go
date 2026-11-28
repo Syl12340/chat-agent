@@ -156,6 +156,11 @@ func (s *Server) SubmitTurn(ctx context.Context, input TurnSubmission) (turns.Tu
 	if err != nil {
 		return turns.Turn{}, false, err
 	}
+	// A supplement channel exists on the agent, but nothing feeds it automatically.
+	// Folding every later message into the running turn was tried and broke the
+	// queue: the server cannot tell "only the first five pages" from "also check
+	// the weather", so swallowing the second kind made the user's message vanish.
+	// Wiring it needs a way to know the message is a correction, not a new task.
 	if duplicate {
 		turn.QueueDisposition = "duplicate"
 	} else {

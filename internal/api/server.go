@@ -97,6 +97,10 @@ type runState struct {
 	cancel context.CancelFunc
 	done   chan struct{}
 	queued bool
+	// agent is the turn currently running, when there is one. A message that
+	// arrives after the admission window can be handed to it as a supplement
+	// instead of always waiting for the next turn.
+	agent *probe.Agent
 	// arrival is present only on ordinary queued turns. A later message nudges
 	// the short debounce window without ever extending it past its max wait.
 	arrival chan struct{}
@@ -649,7 +653,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // version is the service version reported by /api/status.
-const version = "0.7.42"
+const version = "0.7.43"
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model
