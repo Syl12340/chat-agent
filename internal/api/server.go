@@ -656,7 +656,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // version is the service version reported by /api/status.
-const version = "0.7.49"
+const version = "0.7.50"
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	model := s.config.Agent.Model

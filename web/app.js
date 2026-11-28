@@ -892,6 +892,31 @@ function renderHistory(messages, turns = [], hashes = new Map()) {
     const note = ui.messages.querySelector(`[data-message-id="${CSS.escape(`${state.current}:turn:${root.id}`)}"] .message-status`);
     if (note) note.textContent = root.error;
   }
+  // Results the task produced, read from the server's projection rather than
+  // inferred from the reply text.
+  for (const root of roots) {
+    const task = state.contracts instanceof Map ? state.contracts.get(root.id) : null;
+    if (!task) continue;
+    const artifacts = [];
+    for (const run of task.runs || []) for (const operation of run.operations || []) for (const artifact of operation.artifacts || []) if (artifact.download) artifacts.push(artifact);
+    if (!artifacts.length) continue;
+    const card = ui.messages.querySelector(`[data-message-id="${CSS.escape(`${state.current}:turn:${root.id}`)}"]`);
+    const host = card?.querySelector('.message-content');
+    if (!host || host.querySelector('.task-artifacts')) continue;
+    const box = document.createElement('div');
+    box.className = 'task-artifacts';
+    for (const artifact of artifacts) {
+      const link = document.createElement('a');
+      link.className = 'life-action';
+      link.href = artifact.download;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      const label = artifact.kind === 'image' ? '查看图片' : artifact.kind === 'courseware' ? '查看课件' : '下载成果';
+      link.textContent = artifact.sha256 ? `${label} · ${artifact.sha256.slice(0, 8)}` : label;
+      box.append(link);
+    }
+    host.append(box);
+  }
   for (const node of ui.messages.querySelectorAll('[data-history-details]')) {
     const saved = details.get(historyDetailKey(node));
     const scroll = saved && node.querySelector('.reasoning-body, .tool-output');
@@ -1038,6 +1063,14 @@ async function applyTurnHistory(history) {
   interactiveUI.syncScope(state.roleID,state.current);
   uiFloor=history.ui_context_floor || 0;
   activitiesUI.context(history.activity || null);
+  // Task state comes from the server's own projection, so the page does not
+  // re-derive which operations failed or where they ran. A failure here must not
+  // block the transcript: the turn fields are still enough to render it.
+  try {
+    const tasks = await json(`/api/sessions/${encodeURIComponent(state.current)}/tasks`);
+    state.contracts = new Map((Array.isArray(tasks) ? tasks : []).map(task => [task.id, task]));
+  } catch { state.contracts = state.contracts instanceof Map ? state.contracts : new Map(); }
+  if (revision !== historyRevision || epoch !== authEpoch || session !== state.current) return;
   const hashes=new Map();
   try {
     await Promise.all((history.messages || []).map(async(message,index)=>{
