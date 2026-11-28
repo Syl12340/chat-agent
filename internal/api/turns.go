@@ -66,12 +66,13 @@ func (s *Server) enqueueTurn(w http.ResponseWriter, r *http.Request) {
 	s.mediaMu.Lock()
 	defer s.mediaMu.Unlock()
 	var input struct {
-		RequestID string   `json:"request_id"`
-		Content   string   `json:"content"`
-		Mode      string   `json:"mode"`
-		Model     string   `json:"model"`
-		Thinking  string   `json:"thinking"`
-		ImageIDs  []string `json:"image_ids"`
+		RequestID  string   `json:"request_id"`
+		Content    string   `json:"content"`
+		Mode       string   `json:"mode"`
+		Model      string   `json:"model"`
+		Thinking   string   `json:"thinking"`
+		ImageIDs   []string `json:"image_ids"`
+		Supplement bool     `json:"supplement"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 128<<10)
 	d := json.NewDecoder(r.Body)
@@ -101,7 +102,7 @@ func (s *Server) enqueueTurn(w http.ResponseWriter, r *http.Request) {
 		images = append(images, image)
 	}
 	id := r.PathValue("id")
-	turn, duplicate, err := s.SubmitTurn(r.Context(), TurnSubmission{SessionID: id, RequestID: input.RequestID, Content: input.Content, Mode: input.Mode, Model: input.Model, Thinking: input.Thinking, Images: images})
+	turn, duplicate, err := s.SubmitTurn(r.Context(), TurnSubmission{SessionID: id, RequestID: input.RequestID, Content: input.Content, Mode: input.Mode, Model: input.Model, Thinking: input.Thinking, Images: images, Supplement: input.Supplement})
 	if err != nil {
 		turnSubmissionFailure(w, err)
 		return

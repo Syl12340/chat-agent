@@ -152,10 +152,15 @@ export function createTurnsUI({ state, json, storage, onError, onHistory, onStat
         const body={request_id:payload.request_id,content:payload.content,mode:payload.mode};
         if (payload.model!==undefined) { body.model=payload.model; body.thinking=payload.thinking; }
         if (payload.image_ids!==undefined) body.image_ids=payload.image_ids;
+        // Explicit: the person asked for this message to join the running turn.
+        // The server never infers it, because a narrowing instruction and a new
+        // question look the same from the outside.
+        if (payload.supplement) body.supplement=true;
         const accepted = await json(path(sid,'/turns'),{method:'POST',body:JSON.stringify(body)});
         if (!current(sid,stamp) || submission !== ticket) return true;
         pending = null; savePending(); cancelRead(); onAccepted?.(payload);
         if (accepted.queue_disposition === 'merge_window') say('已收到，会和刚才连发的内容一起理解。');
+        else if (accepted.queue_disposition === 'current_task') say('已纳入当前任务，下一步就会按新要求执行。');
         else if (accepted.queue_disposition === 'next_turn') say('已排到当前回复之后；不会改写正在执行的这一轮。');
         else if (accepted.queue_disposition === 'duplicate') say('这条消息已经进入队列，没有重复提交。');
         const optimistic = history || {id:sid,messages:[],turns:[],role_id:state.roleID};

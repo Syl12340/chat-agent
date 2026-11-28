@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -16,14 +17,20 @@ import (
 )
 
 type TurnSubmission struct {
-	SessionID  string
-	RequestID  string
-	Content    string
-	Mode       string
-	Model      string
-	Thinking   string
-	Images     []media.Image
-	Origin     turns.TurnOrigin
+	SessionID string
+	RequestID string
+	Content   string
+	Mode      string
+	Model     string
+	Thinking  string
+	Images    []media.Image
+	Origin    turns.TurnOrigin
+	// Supplement asks to fold this message into the turn that is already running
+	// instead of queueing it as its own turn. Only the person sending can decide
+	// that: the server cannot tell "only the first five pages" from "also check
+	// the weather", and guessing wrong either loses a request or applies one the
+	// user meant separately.
+	Supplement bool
 	DeferStart bool
 }
 
@@ -156,11 +163,21 @@ func (s *Server) SubmitTurn(ctx context.Context, input TurnSubmission) (turns.Tu
 	if err != nil {
 		return turns.Turn{}, false, err
 	}
-	// A supplement channel exists on the agent, but nothing feeds it automatically.
-	// Folding every later message into the running turn was tried and broke the
-	// queue: the server cannot tell "only the first five pages" from "also check
-	// the weather", so swallowing the second kind made the user's message vanish.
-	// Wiring it needs a way to know the message is a correction, not a new task.
+	// A supplement is an explicit request to join the running turn. It is only
+	// honored when there is a live agent to receive it; otherwise the message stays
+	// a normal queued turn rather than disappearing into a turn that already ended.
+	if !duplicate && input.Supplement && active != nil && active.agent != nil {
+		if active.agent.AddSupplement(input.Content) {
+			// Drop the queued copy, or the model would see the same instruction
+			// twice: once inside the running turn and once as its own turn.
+			if removeErr := s.turns.Remove(input.SessionID, turn.ID); removeErr != nil {
+				log.Printf("supplement queued copy not removed: %v", removeErr)
+			} else {
+				turn.QueueDisposition = "current_task"
+				return turn, false, nil
+			}
+		}
+	}
 	if duplicate {
 		turn.QueueDisposition = "duplicate"
 	} else {
